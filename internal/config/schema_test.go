@@ -14,7 +14,7 @@ func TestSchemaIsValidJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	props, _ := v["properties"].(map[string]any)
-	for _, key := range []string{"version", "sources", "extends", "facts", "scopes", "rules", "exceptions", "baseline"} {
+	for _, key := range []string{"version", "catalog", "sources", "extends", "facts", "scopes", "rules", "exceptions", "baseline"} {
 		if _, ok := props[key]; !ok {
 			t.Errorf("schema lacks top-level key %q that the loader accepts", key)
 		}

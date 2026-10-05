@@ -151,6 +151,17 @@ type Rule struct {
 	Source string `yaml:"-" json:"source,omitempty"`
 	// Layer is who owns the definition: preset, org, team or repo.
 	Layer string `yaml:"-" json:"layer,omitempty"`
+	// PolicyBy is the catalog that locked the rule or set its floor when that
+	// is not the catalog that defined it.
+	PolicyBy string `yaml:"-" json:"policy_by,omitempty"`
+}
+
+// PolicySource names the catalog whose lock or floor applies to the rule.
+func (r Rule) PolicySource() string {
+	if r.PolicyBy != "" {
+		return r.PolicyBy
+	}
+	return r.Source
 }
 
 // ExceptionsAllowed reports whether per-finding exceptions may target the rule.

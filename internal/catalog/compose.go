@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"fmt"
+	"io/fs"
 	"regexp"
 	"strings"
 
@@ -28,9 +29,9 @@ func composed(name string) (stack, file string, ok bool) {
 // Compose returns a template assembled for the project: its stacks, its
 // task runner and where its targets run. ok is false for templates that are
 // plain files; a nil body with ok means the project does not get the file.
-func (EmbeddedTemplates) Compose(name string, p fix.Project) (body []byte, ok bool, err error) {
+func (t Templates) Compose(name string, p fix.Project) (body []byte, ok bool, err error) {
 	if name == repo.RunnerFile(repo.RunnerMake) || name == repo.RunnerFile(repo.RunnerJust) || name == repo.RunnerFile(repo.RunnerTask) {
-		body, err = composeRunner(name, p)
+		body, err = t.composeRunner(name, p)
 		return body, true, err
 	}
 	stack, file, ok := composed(name)
@@ -39,9 +40,9 @@ func (EmbeddedTemplates) Compose(name string, p fix.Project) (body []byte, ok bo
 	}
 	switch {
 	case file == hooksTemplate:
-		body, err = composeHooks(stack, p)
+		body, err = t.composeHooks(stack, p)
 	case file == checkTemplate:
-		body, err = composeCheck(stack, p)
+		body, err = t.composeCheck(stack, p)
 	case p.Container == facts.ContainerDevcontainer:
 		body, err = composeDevcontainer(stack, p)
 	default:
@@ -114,8 +115,8 @@ func containerNeeds(p fix.Project) string {
 
 // composeRunner returns the runner file for the project's kind, with the
 // container switch when targets run in a container.
-func composeRunner(file string, p fix.Project) ([]byte, error) {
-	plain, err := fragment(file)
+func (t Templates) composeRunner(file string, p fix.Project) ([]byte, error) {
+	plain, err := t.fragment(file)
 	if err != nil {
 		return nil, err
 	}
@@ -189,22 +190,22 @@ func composeTaskfile(plain string, p fix.Project, inContainer bool) string {
 	return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", sw), "%RUN%", "{{.RUN}}")
 }
 
-func fragment(name string) (string, error) {
-	b, err := templates.ReadFile("templates/" + name)
+func (t Templates) fragment(name string) (string, error) {
+	b, err := fs.ReadFile(t.fsys, "templates/"+name)
 	if err != nil {
-		return "", fmt.Errorf("no template %q in this binary", name)
+		return "", fmt.Errorf("no template %q in this catalog", name)
 	}
 	return string(b), nil
 }
 
-func composeHooks(stack string, p fix.Project) ([]byte, error) {
+func (t Templates) composeHooks(stack string, p fix.Project) ([]byte, error) {
 	nested := p.Nested
-	head, err := fragment("pre-commit/head.yaml")
+	head, err := t.fragment("pre-commit/head.yaml")
 	if err != nil {
 		return nil, err
 	}
 	head = withRunner(head, p)
-	own, err := fragment("pre-commit/" + stack + ".yaml")
+	own, err := t.fragment("pre-commit/" + stack + ".yaml")
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +213,7 @@ func composeHooks(stack string, p fix.Project) ([]byte, error) {
 	b.WriteString(head)
 	fmt.Fprintf(&b, "  # %s hooks\n%s", stack, own)
 	for _, n := range nested {
-		block, err := fragment("pre-commit/" + n.Stack + ".yaml")
+		block, err := t.fragment("pre-commit/" + n.Stack + ".yaml")
 		if err != nil {
 			return nil, err
 		}
@@ -282,14 +283,14 @@ var versionFileRe = regexp.MustCompile(`(-version-file:\s*)(\S+)`)
 // composeCheck assembles the check workflow. On the machine it sets up
 // every toolchain; with a dev container it builds the container and runs
 // the check in it; with docker or podman the job runs in the image.
-func composeCheck(stack string, p fix.Project) ([]byte, error) {
-	head, err := fragment("check/head.yml")
+func (t Templates) composeCheck(stack string, p fix.Project) ([]byte, error) {
+	head, err := t.fragment("check/head.yml")
 	if err != nil {
 		return nil, err
 	}
 	switch p.Container {
 	case facts.ContainerDevcontainer:
-		inside, err := fragment("check/devcontainer.yml")
+		inside, err := t.fragment("check/devcontainer.yml")
 		return []byte(head + withRunner(inside, p)), err
 	case facts.ContainerDocker, facts.ContainerPodman:
 		head = strings.Replace(head, "    runs-on: ubuntu-latest\n",
@@ -298,18 +299,18 @@ func composeCheck(stack string, p fix.Project) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString(head)
 	if p.Container == "" || p.Container == facts.ContainerNone {
-		if err := writeToolchains(&b, stack, p.Nested); err != nil {
+		if err := t.writeToolchains(&b, stack, p.Nested); err != nil {
 			return nil, err
 		}
 	}
 	if p.Runner == repo.RunnerJust || p.Runner == repo.RunnerTask {
-		setup, err := fragment("check/runner-" + p.Runner + ".yml")
+		setup, err := t.fragment("check/runner-" + p.Runner + ".yml")
 		if err != nil {
 			return nil, err
 		}
 		b.WriteString(setup)
 	}
-	tail, err := fragment("check/tail.yml")
+	tail, err := t.fragment("check/tail.yml")
 	if err != nil {
 		return nil, err
 	}
@@ -319,8 +320,8 @@ func composeCheck(stack string, p fix.Project) ([]byte, error) {
 
 // writeToolchains adds the setup steps of the root stack and of every
 // nested stack that differs from it.
-func writeToolchains(b *strings.Builder, stack string, nested []fix.Nested) error {
-	own, err := fragment("check/" + stack + ".yml")
+func (t Templates) writeToolchains(b *strings.Builder, stack string, nested []fix.Nested) error {
+	own, err := t.fragment("check/" + stack + ".yml")
 	if err != nil {
 		return err
 	}
@@ -331,7 +332,7 @@ func writeToolchains(b *strings.Builder, stack string, nested []fix.Nested) erro
 			continue // one toolchain per stack; the root's wins
 		}
 		seen[n.Stack] = true
-		part, err := fragment("check/" + n.Stack + ".yml")
+		part, err := t.fragment("check/" + n.Stack + ".yml")
 		if err != nil {
 			return err
 		}

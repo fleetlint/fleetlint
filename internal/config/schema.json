@@ -8,6 +8,16 @@
   "required": ["version"],
   "properties": {
     "version": { "const": 1 },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "description": "Use another version of the fleetlint catalog than the one built into the binary, for the fleetlint: presets and the fix templates. It is fetched once with git and cached.",
+      "properties": {
+        "version": { "type": "string", "minLength": 1, "description": "A tag or a full commit SHA of the catalog repository. A commit cannot move; a tag can." },
+        "repo": { "type": "string", "description": "The catalog repository (https or ssh). Default: https://github.com/fleetlint/catalog.git" }
+      }
+    },
     "sources": {
       "type": "string",
       "minLength": 1,

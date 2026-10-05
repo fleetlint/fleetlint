@@ -33,7 +33,7 @@ Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 con
 
 The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it, and `fleetlint --version` and every report say which. What the presets check and why is in `docs/baseline.md`; the tools per stack are in `docs/stacks.md`; `docs/slop.md` is the catalog behind the `slop/*` rules and the add-on preset `fleetlint:slop`.
 
-Organizations: a baseline catalog can mark rules `locked`, set a `min_severity` floor or forbid `exceptions`; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See `docs/writing-rules.md` and `docs/fleet.md`. Hooks, CI and editors: `docs/integrations.md`.
+Organizations: a baseline catalog builds on the presets and adjusts them with `overrides:` (lock a rule, set a `min_severity` floor, forbid `exceptions`, change severity or parameters) without restating them; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See `docs/writing-rules.md` and `docs/fleet.md`. Hooks, CI and editors: `docs/integrations.md`.
 
 ## Configuration
 
@@ -41,6 +41,7 @@ Organizations: a baseline catalog can mark rules `locked`, set a `min_severity` 
 
 ```yaml
 version: 1
+catalog: { version: v0.2.0 }                           # optional: another catalog version than the built-in one
 extends:
   - fleetlint:recommended                              # built-in preset
   - https://example.com/catalog.yaml#sha256-<digest>    # your own catalog, pinned

@@ -132,7 +132,7 @@ func planRule(r *repo.Repo, run *engine.Run, res model.Result) ([]fix.Change, er
 	if id := fix.DetectLicense(r); id != "" {
 		p.Vars["license"] = id
 	}
-	planned, err := fix.PlanFor(scope, p, actions, catalog.EmbeddedTemplates{}, res.Findings)
+	planned, err := fix.PlanFor(scope, p, actions, templatesFor(run), res.Findings)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +142,15 @@ func planRule(r *repo.Repo, run *engine.Run, res model.Result) ([]fix.Change, er
 		}
 	}
 	return planned, nil
+}
+
+// templatesFor returns the templates of the catalog the run used: a pinned
+// version's when the repository pins one, the built-in ones otherwise.
+func templatesFor(run *engine.Run) fix.Templates {
+	if run.Config != nil && run.Config.Source != nil {
+		return run.Config.Source.FixTemplates()
+	}
+	return catalog.EmbeddedTemplates{}
 }
 
 // project describes a scope for the templates: its stack and, for the root,

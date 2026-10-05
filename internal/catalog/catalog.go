@@ -29,27 +29,101 @@ import (
 // APIVersion is the catalog format this binary reads.
 const APIVersion = "fleetlint.org/v1"
 
-// The presets and templates are data from the catalog module; the binary
-// embeds the version go.mod names.
-var (
-	presets   = data.Presets
-	templates = data.Templates
+// EngineLevel counts the changes to what rules can rely on (facts,
+// functions, fix actions) that an older catalog or an older binary would
+// not survive. A catalog states the level it was written for; this binary
+// runs catalogs from MinEngineLevel to EngineLevel.
+const (
+	EngineLevel    = 1
+	MinEngineLevel = 1
 )
 
-// EmbeddedTemplates serves the fix templates shipped with the presets.
-type EmbeddedTemplates struct{}
+// checkEngine refuses a catalog this binary cannot run correctly, with the
+// way out, instead of letting its rules fail one by one.
+func checkEngine(c *Catalog) error {
+	switch e := c.Metadata.Engine; {
+	case e == 0:
+		return nil
+	case e > EngineLevel:
+		return fmt.Errorf("catalog %s %s needs engine level %d and this fleetlint has %d: upgrade fleetlint, or use an older catalog version", c.Metadata.Name, c.Metadata.Version, e, EngineLevel)
+	case e < MinEngineLevel:
+		return fmt.Errorf("catalog %s %s was written for engine level %d and this fleetlint runs %d to %d: use a newer catalog version, or an older fleetlint", c.Metadata.Name, c.Metadata.Version, e, MinEngineLevel, EngineLevel)
+	}
+	return nil
+}
 
-// Template returns the content of an embedded template by name, e.g.
-// "editorconfig" or "go/pre-commit-config.yaml".
-func (e EmbeddedTemplates) Template(name string) ([]byte, error) {
-	if body, ok, err := e.Compose(name, fix.Project{}); ok {
+// Source is one version of the fleetlint catalog: the presets that
+// `fleetlint:<name>` refers to and the templates fixes write. The binary
+// carries one (the module version go.mod names); a repository can pin
+// another, which is fetched once and kept in the user's cache.
+type Source struct {
+	// Presets holds presets/<name>.yaml, Templates holds templates/...
+	Presets, Templates fs.FS
+	// Version is how reports name this source.
+	Version string
+	// Pinned is true when the repository chose the version.
+	Pinned bool
+}
+
+// Builtin returns the catalog the binary was built with.
+func Builtin() *Source {
+	return &Source{Presets: data.Presets, Templates: data.Templates, Version: ModuleVersion()}
+}
+
+// Describe names the source for a report.
+func (s *Source) Describe() string {
+	if s.Pinned {
+		return s.Version + ", pinned in " + ConfigName
+	}
+	return s.Version
+}
+
+// ConfigName is the configuration file a pin lives in.
+const ConfigName = ".fleetlint.yaml"
+
+// FixTemplates serves the source's templates to the fix planner.
+func (s *Source) FixTemplates() Templates { return Templates{fsys: s.Templates} }
+
+// PresetNames lists the presets of the source.
+func (s *Source) PresetNames() []string {
+	entries, _ := fs.ReadDir(s.Presets, "presets")
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, strings.TrimSuffix(e.Name(), ".yaml"))
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Templates resolves template names against one catalog source.
+type Templates struct {
+	fsys fs.FS
+}
+
+// Template returns the content of a template by name, e.g. "editorconfig"
+// or "go/pre-commit-config.yaml".
+func (t Templates) Template(name string) ([]byte, error) {
+	if body, ok, err := t.Compose(name, fix.Project{}); ok {
 		return body, err
 	}
-	b, err := templates.ReadFile("templates/" + name)
+	b, err := fs.ReadFile(t.fsys, "templates/"+name)
 	if err != nil {
-		return nil, fmt.Errorf("no template %q in this binary", name)
+		return nil, fmt.Errorf("no template %q in this catalog", name)
 	}
 	return b, nil
+}
+
+// EmbeddedTemplates serves the templates of the built-in catalog.
+type EmbeddedTemplates struct{}
+
+// Template returns a built-in template by name.
+func (EmbeddedTemplates) Template(name string) ([]byte, error) {
+	return Builtin().FixTemplates().Template(name)
+}
+
+// Compose assembles a built-in template for a project.
+func (EmbeddedTemplates) Compose(name string, p fix.Project) ([]byte, bool, error) {
+	return Builtin().FixTemplates().Compose(name, p)
 }
 
 // Catalog is a versioned set of rules.
@@ -58,6 +132,8 @@ type Catalog struct {
 	Kind       string       `yaml:"kind"`
 	Metadata   Metadata     `yaml:"metadata"`
 	Rules      []model.Rule `yaml:"rules"`
+	// Overrides adjust rules this catalog includes without restating them.
+	Overrides map[string]Override `yaml:"overrides,omitempty"`
 	// Ref is how the catalog was referenced; Digest is its sha256 (hex).
 	Ref    string `yaml:"-"`
 	Digest string `yaml:"-"`
@@ -77,6 +153,21 @@ func isPinnedRef(ref string) bool {
 	return strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, gitPrefix)
 }
 
+// Override changes a rule that came from an included catalog: its severity,
+// parameters and accepted producers, and the policy lower layers are held
+// to. It can tighten policy but not loosen what an earlier catalog locked.
+type Override struct {
+	Enabled  *bool            `yaml:"enabled,omitempty"`
+	Reason   string           `yaml:"reason,omitempty"`
+	Severity string           `yaml:"severity,omitempty"`
+	Params   map[string]any   `yaml:"params,omitempty"`
+	Accept   []map[string]any `yaml:"accept,omitempty"`
+	// Locked, MinSeverity and Exceptions have the meaning they have on a rule.
+	Locked      *bool  `yaml:"locked,omitempty"`
+	MinSeverity string `yaml:"min_severity,omitempty"`
+	Exceptions  *bool  `yaml:"exceptions,omitempty"`
+}
+
 // Metadata identifies a catalog.
 type Metadata struct {
 	Name        string `yaml:"name"`
@@ -84,21 +175,16 @@ type Metadata struct {
 	Description string `yaml:"description,omitempty"`
 	// Includes names catalogs this one builds on; they are loaded first.
 	Includes []string `yaml:"includes,omitempty"`
+	// Engine is the engine level the catalog was written for; 0 means it
+	// does not say. See EngineLevel.
+	Engine int `yaml:"engine,omitempty"`
 }
 
 // ErrDigestRequired is returned for a remote reference without a digest.
 var ErrDigestRequired = errors.New("remote catalogs must be pinned with #sha256-<digest>")
 
-// Presets returns the names of the embedded catalogs.
-func Presets() []string {
-	entries, _ := fs.ReadDir(presets, "presets")
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		names = append(names, strings.TrimSuffix(e.Name(), ".yaml"))
-	}
-	sort.Strings(names)
-	return names
-}
+// Presets returns the names of the built-in presets.
+func Presets() []string { return Builtin().PresetNames() }
 
 // Loader resolves catalog references. Fetch is injected so tests and the
 // offline hook path never touch the network.
@@ -110,11 +196,52 @@ type Loader struct {
 	// FetchGit reads one file from a git repository at a tag or commit; nil
 	// disables git catalogs.
 	FetchGit func(repoURL, rev, path string) ([]byte, error)
+	// FetchCatalog provides a whole catalog repository at a tag or commit as
+	// a directory, with the commit it resolved to; nil disables pinning.
+	FetchCatalog func(repoURL, rev string) (dir, commit string, err error)
+	// Source is the catalog `fleetlint:<preset>` resolves in; nil is the
+	// built-in one.
+	Source *Source
+}
+
+// DefaultRepo is where a pinned catalog version comes from unless the
+// repository names another.
+const DefaultRepo = "https://github.com/fleetlint/catalog.git"
+
+// Pin switches the loader to another version of the catalog and returns it.
+func (l *Loader) Pin(repoURL, version string) (*Source, error) {
+	if repoURL == "" {
+		repoURL = DefaultRepo
+	}
+	if l.FetchCatalog == nil {
+		return nil, fmt.Errorf("catalog %s: pinned catalogs are disabled in this mode", version)
+	}
+	dir, commit, err := l.FetchCatalog(repoURL, version)
+	if err != nil {
+		return nil, fmt.Errorf("catalog %s from %s: %w", version, repoURL, err)
+	}
+	name := version
+	if !commitRe.MatchString(version) && len(commit) >= 12 {
+		name += " (" + commit[:12] + ")"
+	}
+	root := os.DirFS(dir)
+	l.Source = &Source{Presets: root, Templates: root, Version: name, Pinned: true}
+	if len(l.Source.PresetNames()) == 0 {
+		return nil, fmt.Errorf("catalog %s from %s: no presets/ directory", version, repoURL)
+	}
+	return l.Source, nil
+}
+
+func (l Loader) source() *Source {
+	if l.Source != nil {
+		return l.Source
+	}
+	return Builtin()
 }
 
 // RemoteLoader is the Loader for commands that may use the network.
 func RemoteLoader(ctx context.Context) Loader {
-	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx)}
+	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchCatalog: PinFetch(ctx, "")}
 }
 
 // Load resolves one reference: `fleetlint:<preset>`, a local path (file or
@@ -154,7 +281,7 @@ func (l Loader) load(ref string, seen map[string]bool) ([]*Catalog, error) {
 func (l Loader) loadOne(ref string) ([]*Catalog, error) {
 	switch {
 	case strings.HasPrefix(ref, presetPrefix):
-		c, err := loadPreset(strings.TrimPrefix(ref, presetPrefix))
+		c, err := l.loadPreset(strings.TrimPrefix(ref, presetPrefix))
 		if err != nil {
 			return nil, err
 		}
@@ -168,10 +295,11 @@ func (l Loader) loadOne(ref string) ([]*Catalog, error) {
 	}
 }
 
-func loadPreset(name string) (*Catalog, error) {
-	b, err := presets.ReadFile("presets/" + name + ".yaml")
+func (l Loader) loadPreset(name string) (*Catalog, error) {
+	src := l.source()
+	b, err := fs.ReadFile(src.Presets, "presets/"+name+".yaml")
 	if err != nil {
-		return nil, fmt.Errorf("unknown preset %q (available: %s)", name, strings.Join(Presets(), ", "))
+		return nil, fmt.Errorf("unknown preset %q (catalog %s has: %s)", name, src.Version, strings.Join(src.PresetNames(), ", "))
 	}
 	c, err := Parse(b)
 	if err != nil {
@@ -285,11 +413,17 @@ func Parse(b []byte) (*Catalog, error) {
 	if c.Metadata.Name == "" || c.Metadata.Version == "" {
 		return nil, errors.New("metadata.name and metadata.version are required")
 	}
+	if err := checkEngine(&c); err != nil {
+		return nil, err
+	}
 	c.Digest = Digest(b)
 	if err := requireSeverity(b); err != nil {
 		return nil, err
 	}
 	if err := validatePolicy(c.Rules); err != nil {
+		return nil, err
+	}
+	if err := validateOverrides(&c); err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{}
@@ -388,6 +522,28 @@ func validateOutcome(r *model.Rule) error {
 
 // validatePolicy checks the organization fields: a declared floor must parse
 // and the rule's own severity must not sit below it.
+// validateOverrides checks what can be checked without the included rules.
+func validateOverrides(c *Catalog) error {
+	own := map[string]bool{}
+	for _, r := range c.Rules {
+		own[r.ID] = true
+	}
+	for id, ov := range c.Overrides {
+		if own[id] {
+			return fmt.Errorf("overrides.%s: the rule is defined in this catalog; change the rule itself", id)
+		}
+		for name, sev := range map[string]string{"severity": ov.Severity, "min_severity": ov.MinSeverity} {
+			if sev == "" {
+				continue
+			}
+			if _, err := model.ParseSeverity(sev); err != nil {
+				return fmt.Errorf("overrides.%s: %s: %w", id, name, err)
+			}
+		}
+	}
+	return nil
+}
+
 func validatePolicy(rules []model.Rule) error {
 	for _, r := range rules {
 		if r.MinSeverity == "" {

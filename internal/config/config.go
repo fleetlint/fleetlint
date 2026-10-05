@@ -34,6 +34,9 @@ var DefaultExtends = []string{"fleetlint:recommended"}
 // File is the on-disk shape of .fleetlint.yaml.
 type File struct {
 	Version int `yaml:"version"`
+	// Catalog pins the version of the fleetlint catalog that `fleetlint:`
+	// presets and fix templates come from, instead of the built-in one.
+	Catalog *CatalogPin `yaml:"catalog,omitempty"`
 	// Sources names a sources file; its catalog names become usable in Extends.
 	Sources string        `yaml:"sources,omitempty"`
 	Extends []string      `yaml:"extends,omitempty"`
@@ -43,6 +46,15 @@ type File struct {
 	Rules      map[string]RuleConf `yaml:"rules,omitempty"`
 	Exceptions []model.Exception   `yaml:"exceptions,omitempty"`
 	Baseline   string              `yaml:"baseline,omitempty"`
+}
+
+// CatalogPin selects a version of the fleetlint catalog.
+type CatalogPin struct {
+	// Version is a tag or a full commit SHA of the catalog repository.
+	Version string `yaml:"version"`
+	// Repo is the catalog repository (https or ssh); default: the fleetlint
+	// project's.
+	Repo string `yaml:"repo,omitempty"`
 }
 
 // FactOverrides pins discovered facts.
@@ -102,9 +114,12 @@ type Disabled struct {
 
 // Effective is the resolved configuration for one repository.
 type Effective struct {
-	Path       string
-	Exists     bool
-	File       File
+	Path   string
+	Exists bool
+	File   File
+	// Source is the catalog version presets and templates come from: the
+	// built-in one unless the file pins another.
+	Source     *catalog.Source
 	Catalogs   []*catalog.Catalog
 	Rules      []model.Rule
 	Disabled   []Disabled
@@ -152,6 +167,12 @@ func Load(root string, opts Options) (*Effective, error) {
 		eff.File.Extends = DefaultExtends
 	}
 	opts.Loader.BaseDir = root
+	eff.Source = catalog.Builtin()
+	if pin := eff.File.Catalog; pin != nil {
+		if eff.Source, err = opts.Loader.Pin(pin.Repo, pin.Version); err != nil {
+			return nil, fmt.Errorf("%s: %w", FileName, err)
+		}
+	}
 	if err := eff.resolve(opts); err != nil {
 		return nil, err
 	}
@@ -188,13 +209,8 @@ func validateFile(f *File) error {
 	if f.Facts.Tier < 0 || f.Facts.Tier > 3 {
 		return fmt.Errorf("facts.tier must be 1, 2 or 3")
 	}
-	switch f.Facts.Container {
-	case "", facts.ContainerNone, facts.ContainerDevcontainer, facts.ContainerDocker, facts.ContainerPodman:
-	default:
-		return fmt.Errorf("facts.container must be none, devcontainer, docker or podman (got %q)", f.Facts.Container)
-	}
-	if f.Facts.TaskRunner != "" && !slices.Contains(repo.RunnerKinds(), f.Facts.TaskRunner) {
-		return fmt.Errorf("facts.taskrunner must be one of %s (got %q)", strings.Join(repo.RunnerKinds(), ", "), f.Facts.TaskRunner)
+	if err := validateChoices(f); err != nil {
+		return err
 	}
 	switch f.Facts.Visibility {
 	case "", "public", "private":
@@ -211,6 +227,27 @@ func validateFile(f *File) error {
 		if s.Path == "" || strings.HasPrefix(s.Path, "..") || filepath.IsAbs(s.Path) {
 			return fmt.Errorf("scopes: path %q must be a relative path inside the repository", s.Path)
 		}
+	}
+	return nil
+}
+
+// validateChoices checks the settings that name a tool or a version.
+func validateChoices(f *File) error {
+	if pin := f.Catalog; pin != nil {
+		if pin.Version == "" {
+			return errors.New("catalog.version is required: a tag or a full commit SHA")
+		}
+		if pin.Repo != "" && !strings.HasPrefix(pin.Repo, "https://") && !strings.HasPrefix(pin.Repo, "ssh://") && !strings.HasPrefix(pin.Repo, "git@") {
+			return fmt.Errorf("catalog.repo %q must be an https or ssh git URL", pin.Repo)
+		}
+	}
+	switch f.Facts.Container {
+	case "", facts.ContainerNone, facts.ContainerDevcontainer, facts.ContainerDocker, facts.ContainerPodman:
+	default:
+		return fmt.Errorf("facts.container must be none, devcontainer, docker or podman (got %q)", f.Facts.Container)
+	}
+	if f.Facts.TaskRunner != "" && !slices.Contains(repo.RunnerKinds(), f.Facts.TaskRunner) {
+		return fmt.Errorf("facts.taskrunner must be one of %s (got %q)", strings.Join(repo.RunnerKinds(), ", "), f.Facts.TaskRunner)
 	}
 	return nil
 }
@@ -441,6 +478,90 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 		}
 		byID[r.ID] = &r
 	}
+	return e.applyCatalogOverrides(c, byID)
+}
+
+// applyCatalogOverrides applies a catalog's `overrides:` to the rules its
+// includes brought in. A catalog is held to the policy of the catalogs
+// before it, like a repository is, and may tighten that policy further.
+func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*model.Rule) error {
+	ids := make([]string, 0, len(c.Overrides))
+	for id := range c.Overrides {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	where := "catalog " + c.Ref + " (overrides)"
+	by := c.Metadata.Name + "@" + c.Metadata.Version
+	for _, id := range ids {
+		ov := c.Overrides[id]
+		r, ok := byID[id]
+		if !ok {
+			return fmt.Errorf("%s: rules.%s: no such rule in the catalogs loaded before this one", where, id)
+		}
+		rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
+		if err := e.overrideAs(r, rc, where, c.Layer, byID); err != nil {
+			return err
+		}
+		if _, still := byID[id]; !still {
+			continue
+		}
+		if err := tightenPolicy(r, ov, where, by); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// tightenPolicy sets lock, floor and the exceptions switch from a catalog
+// override. Each can only become stricter.
+func tightenPolicy(r *model.Rule, ov catalog.Override, where, by string) error {
+	if err := tightenLock(r, ov, where, by); err != nil {
+		return err
+	}
+	if err := tightenFloor(r, ov, where, by); err != nil {
+		return err
+	}
+	if ov.Exceptions == nil {
+		return nil
+	}
+	if *ov.Exceptions && !r.ExceptionsAllowed() {
+		return fmt.Errorf("%s: rules.%s: %s forbids exceptions; they cannot be allowed again", where, r.ID, r.PolicySource())
+	}
+	if !*ov.Exceptions {
+		no := false
+		r.AllowExceptions, r.PolicyBy = &no, by
+	}
+	return nil
+}
+
+func tightenLock(r *model.Rule, ov catalog.Override, where, by string) error {
+	if ov.Locked == nil {
+		return nil
+	}
+	if !*ov.Locked && r.Locked {
+		return fmt.Errorf("%s: rules.%s: rule is locked by %s and cannot be unlocked", where, r.ID, r.PolicySource())
+	}
+	if *ov.Locked && !r.Locked {
+		r.Locked, r.PolicyBy = true, by
+	}
+	return nil
+}
+
+func tightenFloor(r *model.Rule, ov catalog.Override, where, by string) error {
+	if ov.MinSeverity == "" {
+		return nil
+	}
+	floor, err := model.ParseSeverity(ov.MinSeverity)
+	if err != nil {
+		return fmt.Errorf("%s: rules.%s: min_severity: %w", where, r.ID, err)
+	}
+	if floor < r.Floor() {
+		return fmt.Errorf("%s: rules.%s: min_severity %s is below the floor %s set by %s", where, r.ID, floor, r.Floor(), r.PolicySource())
+	}
+	if r.Severity < floor {
+		return fmt.Errorf("%s: rules.%s: severity %s is below the min_severity %s set here", where, r.ID, r.Severity, floor)
+	}
+	r.MinSeverity, r.PolicyBy = ov.MinSeverity, by
 	return nil
 }
 
@@ -449,11 +570,11 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 // a later layer lowering an earlier layer's severity is recorded.
 func (e *Effective) redefine(c *catalog.Catalog, prev, r *model.Rule) error {
 	if prev.Locked {
-		return fmt.Errorf("catalog %s: rule %s is locked by %s and cannot be redefined", c.Ref, r.ID, prev.Source)
+		return fmt.Errorf("catalog %s: rule %s is locked by %s and cannot be redefined", c.Ref, r.ID, prev.PolicySource())
 	}
 	if prev.MinSeverity != "" {
 		if floor := prev.Floor(); r.Severity < floor || (r.MinSeverity != "" && r.Floor() < floor) {
-			return fmt.Errorf("catalog %s: rule %s: severity is below the floor %s set by %s", c.Ref, r.ID, floor, prev.Source)
+			return fmt.Errorf("catalog %s: rule %s: severity is below the floor %s set by %s", c.Ref, r.ID, floor, prev.PolicySource())
 		}
 		if r.MinSeverity == "" {
 			r.MinSeverity = prev.MinSeverity
@@ -476,7 +597,7 @@ func (e *Effective) resolveExceptions(byID map[string]*model.Rule, now time.Time
 			return fmt.Errorf("%s: exceptions: rule %q is not loaded", FileName, e.Exceptions[i].Rule)
 		}
 		if known && !r.ExceptionsAllowed() {
-			return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", FileName, r.ID, r.Source)
+			return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", FileName, r.ID, r.PolicySource())
 		}
 		e.Exceptions[i].Expired = expired(e.Exceptions[i].Until, now)
 	}
@@ -489,7 +610,7 @@ func (e *Effective) CheckExceptions(where string, exs []model.Exception) error {
 	for _, ex := range exs {
 		for i := range e.Rules {
 			if e.Rules[i].ID == ex.Rule && !e.Rules[i].ExceptionsAllowed() {
-				return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", where, ex.Rule, e.Rules[i].Source)
+				return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", where, ex.Rule, e.Rules[i].PolicySource())
 			}
 		}
 	}
@@ -568,19 +689,24 @@ func (e *Effective) applyRuleConf(byID map[string]*model.Rule, order *[]string, 
 }
 
 func (e *Effective) override(r *model.Rule, rc RuleConf, where string, byID map[string]*model.Rule) error {
+	return e.overrideAs(r, rc, where, catalog.LayerRepo, byID)
+}
+
+// overrideAs applies an override made by the given layer.
+func (e *Effective) overrideAs(r *model.Rule, rc RuleConf, where, layer string, byID map[string]*model.Rule) error {
 	if rc.Enabled != nil && !*rc.Enabled {
 		if r.Locked {
-			return fmt.Errorf("%s: rules.%s: rule is locked by %s and cannot be disabled", where, r.ID, r.Source)
+			return fmt.Errorf("%s: rules.%s: rule is locked by %s and cannot be disabled", where, r.ID, r.PolicySource())
 		}
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: disabling a rule requires a reason", where, r.ID)
 		}
-		e.Disabled = append(e.Disabled, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: catalog.LayerRepo})
+		e.Disabled = append(e.Disabled, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: layer})
 		delete(byID, r.ID)
 		return nil
 	}
 	if rc.Severity != "" {
-		if err := e.applySeverity(r, rc, where); err != nil {
+		if err := e.applySeverity(r, rc, where, layer); err != nil {
 			return err
 		}
 	}
@@ -596,19 +722,19 @@ func (e *Effective) override(r *model.Rule, rc RuleConf, where string, byID map[
 	return nil
 }
 
-func (e *Effective) applySeverity(r *model.Rule, rc RuleConf, where string) error {
+func (e *Effective) applySeverity(r *model.Rule, rc RuleConf, where, layer string) error {
 	sev, err := model.ParseSeverity(rc.Severity)
 	if err != nil {
 		return fmt.Errorf("%s: rules.%s: %w", where, r.ID, err)
 	}
 	if sev < r.Severity {
 		if floor := r.Floor(); sev < floor {
-			return fmt.Errorf("%s: rules.%s: severity %s is below the floor %s set by %s", where, r.ID, sev, floor, r.Source)
+			return fmt.Errorf("%s: rules.%s: severity %s is below the floor %s set by %s", where, r.ID, sev, floor, r.PolicySource())
 		}
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: lowering severity requires a reason", where, r.ID)
 		}
-		e.Weakened = append(e.Weakened, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: catalog.LayerRepo})
+		e.Weakened = append(e.Weakened, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: layer})
 	}
 	r.Severity = sev
 	return nil

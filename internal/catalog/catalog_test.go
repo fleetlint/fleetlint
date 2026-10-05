@@ -81,3 +81,28 @@ func TestRemoteDigestVerified(t *testing.T) {
 		t.Fatal("wrong digest must be rejected")
 	}
 }
+
+func TestEngineLevel(t *testing.T) {
+	t.Parallel()
+	body := func(engine string) []byte {
+		return []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: a, version: 1.0.0" + engine + "}\nrules: []\n")
+	}
+	for _, ok := range []string{"", ", engine: 1"} {
+		if _, err := catalog.Parse(body(ok)); err != nil {
+			t.Errorf("engine %q must load: %v", ok, err)
+		}
+	}
+	if _, err := catalog.Parse(body(", engine: 99")); err == nil || !strings.Contains(err.Error(), "upgrade fleetlint") {
+		t.Errorf("a catalog from the future must say what to do: %v", err)
+	}
+	// Every built-in preset states its level, so a mismatch is caught for them too.
+	for _, name := range catalog.Presets() {
+		cats, err := catalog.Loader{}.Load("fleetlint:" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cats[len(cats)-1].Metadata.Engine; got != catalog.EngineLevel {
+			t.Errorf("preset %s states engine level %d, this binary is %d", name, got, catalog.EngineLevel)
+		}
+	}
+}

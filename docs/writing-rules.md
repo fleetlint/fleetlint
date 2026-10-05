@@ -2,7 +2,7 @@
 
 ## Where rules live
 
-- **Presets** ship in the binary and are referenced as `fleetlint:<name>`. Their source is the catalog repository, [fleetlint/catalog](https://github.com/fleetlint/catalog) (`presets/*.yaml`), of which every binary embeds one version (`fleetlint --version` and every report name it); another version of a preset can be referenced like any catalog in a git repository, `git+https://github.com/fleetlint/catalog.git//presets/recommended.yaml@<commit>`, and then takes its fix templates from the binary.
+- **Presets** ship in the binary and are referenced as `fleetlint:<name>`. Their source is the catalog repository, [fleetlint/catalog](https://github.com/fleetlint/catalog) (`presets/*.yaml`), of which every binary embeds one version (`fleetlint --version` and every report name it); a repository uses another version with `catalog: {version: …}` (see below).
 - **Your catalog** is a YAML file with the same format, hosted anywhere over https and referenced with its digest: `https://…/catalog.yaml#sha256-<hex>`. Get the digest with `fleetlint catalog digest catalog.yaml`. Fetches are https only, follow redirects only within the same host, time out after 20 seconds and refuse bodies over 2 MiB; the digest, not the transport, is what makes the content trusted. Every rule and partial must state its `severity`.
 - **A catalog in a git repository** is referenced as `git+<url>//<path>@<revision>`, for example `git+https://git.example.com/platform/standards.git//teams/mobile/catalog.yaml@v3.2.0#sha256-<hex>`. The URL is https or ssh and is fetched with the credentials git already has (credential helper, ssh agent), so private repositories work. The revision is a tag or a full commit SHA, never a branch. A commit SHA needs no digest; a tag can be moved, so it must carry `#sha256-<hex>` and a moved tag fails the digest check. Files over 2 MiB are refused and the fetch times out after two minutes. Like https catalogs, git catalogs are untrusted: they cannot declare `command` rules, and may include only presets, https catalogs and other git catalogs.
 - **Inline rules** go under `rules:` in `.fleetlint.yaml` with a `kind`.
@@ -136,6 +136,43 @@ rules:
 Violations are configuration errors at load time (exit 2), not weaker checks at run time, and they name the catalog that set the constraint. Raising severity, adding `params` and `accept`, and reasoned exceptions on locked rules remain possible; the report shows every one.
 
 Locks only hold for catalogs that are actually loaded. A repository could drop the baseline from `extends`, so enforcement belongs where the check runs: the organization's CI template and fleet runner pass `--require acme-baseline` (a catalog name, a ref, or `ref#sha256-<digest>` to pin the exact version). A repository whose effective configuration lacks that catalog fails with exit 2 before any rule runs, and in fleet mode becomes an error row. The flag is persistent, so `fix`, `explain` and `baseline` refuse under a weaker configuration too.
+
+## Overrides in a catalog
+
+A catalog that builds on another does not restate a rule to change it. Next to `rules:` it lists `overrides:` for rules its `includes` brought in:
+
+```yaml
+metadata: {name: acme-baseline, version: 1.0.0, includes: ["fleetlint:recommended"]}
+rules: []
+overrides:
+  repo/no-tracked-env:    {locked: true, exceptions: false}
+  ci/actions-pinned:      {severity: error, min_severity: warning}
+  taskrunner/targets:     {params: {required: [lint, test, check]}}
+  deps/vulnerability-scan: {accept: [{name: our-scanner, expr: 'text(taskrunner.file).contains("acme-scan")'}]}
+  docs/adr-directory:     {enabled: false, reason: "decisions are kept in the wiki"}
+```
+
+- `severity`, `params`, `accept` and `enabled` work as in a repository's `rules:` block, including the need for a `reason` when a rule is disabled or its severity lowered. Such changes appear in every report with the catalog's layer.
+- `locked`, `min_severity` and `exceptions` set the policy for everything loaded afterwards, and only ever tighten it: a rule an earlier catalog locked cannot be unlocked, disabled or lowered, a floor cannot be lowered, and exceptions that were forbidden cannot be allowed again.
+- The rule keeps the catalog it came from as its source, and follows that catalog's later improvements; `explain` and the reports name the catalog that set the policy.
+- An override for a rule that no earlier catalog defines is an error, as is one for a rule the same catalog defines.
+
+## Using another version of the built-in catalog
+
+Every binary carries one version of the catalog; `fleetlint --version` names it. A repository can use another:
+
+```yaml
+version: 1
+catalog:
+  version: v0.2.0          # a tag or a full commit SHA of the catalog repository
+  # repo: git@github.com:acme/fleetlint-catalog.git   # a fork; default is the fleetlint project's
+extends: [fleetlint:recommended]
+```
+
+- `fleetlint:<preset>` and the fix templates then come from that version, for this repository only. Every report says `catalog v0.2.0 (<commit>), pinned in .fleetlint.yaml`.
+- The version is fetched once with git, using the credentials git already has, and kept in the user's cache directory (`FLEETLINT_CACHE_DIR` overrides the location, for CI). Later runs, hooks included, read the cache and need no network.
+- A commit SHA cannot move. A tag can; the report shows the commit a tag resolved to when it was fetched.
+- A catalog states the engine level it was written for (`metadata.engine`). A version this binary cannot run is refused with one message that says whether to upgrade fleetlint or choose another catalog version, instead of rules failing one by one.
 
 ## Layers: organization, teams, repository
 

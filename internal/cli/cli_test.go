@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/cli"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
@@ -511,5 +512,39 @@ func TestVersionNamesTheCatalog(t *testing.T) {
 	dir := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"}).Root
 	if _, out, _ := runCLI(t, dir, "check"); !strings.Contains(out, ", catalog ") {
 		t.Errorf("check must end with the versions:\n%s", out)
+	}
+}
+
+// A repository that pins a catalog version is checked and fixed with that
+// version's rules and templates, straight from the cache, and every output
+// says so.
+func TestPinnedCatalogFromTheCache(t *testing.T) {
+	cache := t.TempDir()
+	t.Setenv(catalog.CacheEnv, cache)
+	entry := catalog.CachePath(filepath.Join(cache, "catalogs"), catalog.DefaultRepo, "v9.9.9")
+	testutil.WriteFiles(t, entry, map[string]string{
+		"presets/recommended.yaml": "apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: pinned, version: 9.9.9}\nrules:\n  - {id: v9/only, title: t, kind: expr, severity: warning, expr: 'file(\".editorconfig\")', message: m, requirement: r, fix: {human: h, actions: [{template: editorconfig, to: .editorconfig}]}}\n",
+		"templates/editorconfig":   "# from v9\n",
+		"COMMIT":                   strings.Repeat("cd", 20) + "\n",
+	})
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n",
+		".fleetlint.yaml": "version: 1\ncatalog: {version: v9.9.9}\nextends: [fleetlint:recommended]\n",
+	}).Root
+	_, out, errOut := runCLI(t, dir, "check")
+	if !strings.Contains(out, "v9/only *") || strings.Contains(out, "repo/") {
+		t.Fatalf("only the pinned catalog's rule applies:\n%s\n%s", out, errOut)
+	}
+	if !strings.Contains(out, "catalog v9.9.9 (cdcdcdcdcdcd), pinned in .fleetlint.yaml") {
+		t.Errorf("the report must name the pinned version:\n%s", out)
+	}
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("fix: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, ".editorconfig")); string(b) != "# from v9\n" {
+		t.Errorf("the fix must write the pinned catalog's template, got %q", b)
+	}
+	if _, js, _ := runCLI(t, dir, "check", "--format", "json"); !strings.Contains(js, `"catalog": "v9.9.9 (cdcdcdcdcdcd), pinned in .fleetlint.yaml"`) {
+		t.Errorf("json must name the pinned version:\n%s", js)
 	}
 }

@@ -202,9 +202,9 @@ func writeRule(w io.Writer, r model.Rule) error {
 func policyLine(r model.Rule) string {
 	var parts []string
 	if r.Locked {
-		parts = append(parts, "locked by "+r.Source+": cannot be disabled or lowered below "+r.Floor().String())
+		parts = append(parts, "locked by "+r.PolicySource()+": cannot be disabled or lowered below "+r.Floor().String())
 	} else if r.MinSeverity != "" {
-		parts = append(parts, "severity floor "+r.MinSeverity+" set by "+r.Source)
+		parts = append(parts, "severity floor "+r.MinSeverity+" set by "+r.PolicySource())
 	}
 	if !r.ExceptionsAllowed() {
 		parts = append(parts, "exceptions are not permitted")
