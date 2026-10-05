@@ -87,4 +87,6 @@ Requires Go 1.26 or newer (the build uses the toolchain named in `go.mod` and do
 
 ## License
 
-MIT
+MIT, see `LICENSE`.
+
+Files that fleetlint writes into your repository (`.fleetlint.yaml`, hook configuration, workflows, Makefile, linter configuration, dev container and the other templates) belong to that repository. Use, change and distribute them under whatever terms you like; no attribution or license notice is required for them.
