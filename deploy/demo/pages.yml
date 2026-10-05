@@ -1,0 +1,39 @@
+# Publishes the fleet report of the fleetlint repositories to GitHub Pages
+# (demo.fleetlint.org via a CNAME on the Pages site). Nightly and on demand.
+# UNVERIFIED on a real runner: see docs/ROADMAP.md before relying on it.
+name: demo
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - run: go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
+      - name: Check the fleet
+        run: |
+          fleetlint fleet --fleet fleet.yaml --out public/demo --update --deep || true
+          echo "demo.fleetlint.org" > public/demo/CNAME
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: public/demo
+      - id: deploy
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,20 @@
+  - repo: local
+    hooks:
+      - id: golangci-fmt
+        name: golangci-lint fmt
+        entry: golangci-lint fmt
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: golangci-lint
+        name: golangci-lint (new issues only)
+        entry: golangci-lint run --new-from-rev=HEAD --fix
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: go-mod-tidy
+        name: go mod tidy is clean
+        entry: go mod tidy -diff
+        language: system
+        files: ^go\.(mod|sum)$
+        pass_filenames: false

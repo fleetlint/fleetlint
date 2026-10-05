@@ -1,0 +1,13 @@
+# Hook definitions for prek / pre-commit. In a repository:
+#   - repo: https://github.com/fleetlint/fleetlint
+#     rev: v0.1.0
+#     hooks:
+#       - id: fleetlint
+- id: fleetlint
+  name: fleetlint (repository setup policy)
+  description: Checks the repository's setup against its .fleetlint.yaml; fails on error-severity findings.
+  entry: fleetlint check --fail-on error --color=false
+  language: golang
+  additional_dependencies: ["./cmd/fleetlint"]
+  pass_filenames: false
+  always_run: true

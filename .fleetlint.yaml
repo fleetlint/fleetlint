@@ -1,0 +1,16 @@
+# .fleetlint.yaml: fleetlint checks itself with its own strictest preset and the slop heuristics.
+version: 1
+extends:
+  - fleetlint:recommended
+  - fleetlint:slop
+facts:
+  tier: 1
+  visibility: public
+rules:
+  slop/escape-hatches:
+    enabled: false
+    reason: "nolintlint already requires a specific linter and an explanation on every suppression"
+exceptions:
+  - rule: slop/huge-commits
+    match: "re:initial public commit"
+    reason: "the initial import"

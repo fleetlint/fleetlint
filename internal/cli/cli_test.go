@@ -1,0 +1,389 @@
+package cli_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/fleetlint/fleetlint/internal/cli"
+	"github.com/fleetlint/fleetlint/internal/testutil"
+)
+
+func runCLI(t *testing.T, dir string, args ...string) (int, string, string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	code, err := cli.Run(context.Background(), append([]string{"-C", dir, "--color=false"}, args...), &out, &errOut)
+	if err != nil {
+		errOut.WriteString(err.Error())
+	}
+	return code, out.String(), errOut.String()
+}
+
+func messyRepo(t *testing.T) string {
+	t.Helper()
+	r := testutil.GitFixture(t, map[string]string{
+		"go.mod":    "module x\nrequire a.b/c v1\n",
+		".DS_Store": "x",
+		"README.md": "# x\n",
+	})
+	return r.Root
+}
+
+func TestCheckExitCodesAndFormats(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, _ := runCLI(t, dir, "check")
+	if code != cli.ExitFindings || !strings.Contains(out, "repo/no-tracked-junk") {
+		t.Fatalf("code=%d out=%s", code, out)
+	}
+	code, _, _ = runCLI(t, dir, "check", "--fail-on", "never")
+	if code != cli.ExitOK {
+		t.Fatalf("--fail-on never should exit 0, got %d", code)
+	}
+	code, out, _ = runCLI(t, dir, "check", "-f", "json")
+	var doc map[string]any
+	if code != cli.ExitFindings || json.Unmarshal([]byte(out), &doc) != nil || doc["repo"] == nil {
+		t.Fatalf("json output invalid: code=%d %s", code, out[:min(len(out), 200)])
+	}
+	_, out, _ = runCLI(t, dir, "check", "-f", "sarif", "--fail-on", "never")
+	if !strings.Contains(out, `"version": "2.1.0"`) {
+		t.Fatalf("sarif missing version: %s", out[:min(len(out), 200)])
+	}
+	_, out, _ = runCLI(t, dir, "check", "-f", "markdown", "--fail-on", "never")
+	if !strings.Contains(out, "| FAIL | `repo/no-tracked-junk`") {
+		t.Fatalf("markdown table missing: %s", out)
+	}
+	_, out, _ = runCLI(t, dir, "check", "-f", "agent", "--fail-on", "never")
+	if !strings.Contains(out, "## 1.") || !strings.Contains(out, "Instruction:") {
+		t.Fatalf("agent output missing sections: %s", out)
+	}
+	code, _, errOut := runCLI(t, dir, "check", "-f", "nope")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "unknown format") {
+		t.Fatalf("bad format: code=%d err=%s", code, errOut)
+	}
+}
+
+func TestDefaultCommandIsCheck(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, _ := runCLI(t, dir)
+	if code != cli.ExitFindings || !strings.Contains(out, "passed") {
+		t.Fatalf("bare invocation should run check: code=%d out=%s", code, out)
+	}
+}
+
+func TestInitWritesConfigAndRefusesOverwrite(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, errOut := runCLI(t, dir, "init", "--tier", "2")
+	if code != cli.ExitOK || !strings.Contains(out, "wrote .fleetlint.yaml") {
+		t.Fatalf("init: code=%d out=%s err=%s", code, out, errOut)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, ".fleetlint.yaml"))
+	if err != nil || !strings.Contains(string(b), "tier: 2") || !strings.Contains(string(b), "# discovered:") {
+		t.Fatalf("config content: %s %v", b, err)
+	}
+	code, _, errOut = runCLI(t, dir, "init")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "already exists") {
+		t.Fatalf("second init must refuse: code=%d err=%s", code, errOut)
+	}
+}
+
+func TestConfigErrorsExitTwo(t *testing.T) {
+	t.Parallel()
+	r := testutil.Fixture(t, map[string]string{".fleetlint.yaml": "version: 1\nrules:\n  hooks/config-present: {enabled: false}\n"})
+	code, _, errOut := runCLI(t, r.Root, "check")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "requires a reason") {
+		t.Fatalf("code=%d err=%s", code, errOut)
+	}
+}
+
+func TestExplainFactsSchemaPresets(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, _ := runCLI(t, dir, "explain", "repo/no-tracked-junk")
+	if code != cli.ExitOK || !strings.Contains(out, "Requirement") || !strings.Contains(out, "Fix") {
+		t.Fatalf("explain: %d %s", code, out)
+	}
+	code, _, errOut := runCLI(t, dir, "explain", "nope/nope")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "not in the loaded catalogs") {
+		t.Fatalf("explain unknown: %d %s", code, errOut)
+	}
+	_, out, _ = runCLI(t, dir, "facts")
+	if !strings.Contains(out, "stacks") || !strings.Contains(out, "go") {
+		t.Fatalf("facts: %s", out)
+	}
+	_, out, _ = runCLI(t, dir, "facts", "--json")
+	if !strings.Contains(out, `"stacks"`) {
+		t.Fatalf("facts json: %s", out)
+	}
+	_, out, _ = runCLI(t, dir, "schema")
+	if !strings.Contains(out, `"title": ".fleetlint.yaml"`) {
+		t.Fatalf("schema: %s", out[:min(len(out), 100)])
+	}
+	_, out, _ = runCLI(t, dir, "catalog", "presets")
+	if !strings.Contains(out, "fleetlint:minimal") || !strings.Contains(out, "fleetlint:recommended") {
+		t.Fatalf("presets: %s", out)
+	}
+}
+
+func TestFixDryRunThenApply(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, _ := runCLI(t, dir, "fix", "repo/no-tracked-junk", "repo/editorconfig")
+	if code != cli.ExitOK || !strings.Contains(out, "- tracked: .DS_Store") || !strings.Contains(out, "+++ .editorconfig") {
+		t.Fatalf("dry run: %d %s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".editorconfig")); err == nil {
+		t.Fatal("dry run must not write")
+	}
+	code, out, _ = runCLI(t, dir, "fix", "--apply", "repo/no-tracked-junk", "repo/editorconfig")
+	if code != cli.ExitOK || !strings.Contains(out, "applied") {
+		t.Fatalf("apply: %d %s", code, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".editorconfig")); err != nil {
+		t.Fatal("apply must create the file")
+	}
+	_, out, _ = runCLI(t, dir, "check", "--fail-on", "never", "-v")
+	if !strings.Contains(out, "ok    repo/editorconfig") || !strings.Contains(out, "ok    repo/no-tracked-junk") {
+		t.Fatalf("rules should pass after fix: %s", out)
+	}
+}
+
+func TestDocsCheckDetectsDrift(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	code, _, _ := runCLI(t, dir, "docs", "--out", filepath.Join(dir, "docs"))
+	if code != cli.ExitOK {
+		t.Fatalf("docs: %d", code)
+	}
+	code, _, _ = runCLI(t, dir, "docs", "--out", filepath.Join(dir, "docs"), "--check")
+	if code != cli.ExitOK {
+		t.Fatalf("freshly generated docs must pass --check, got %d", code)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "docs", "cel-reference.md"), []byte("edited"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runCLI(t, dir, "docs", "--out", filepath.Join(dir, "docs"), "--check")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "stale") {
+		t.Fatalf("drift must fail: %d %s", code, errOut)
+	}
+}
+
+func TestBaselineCommandRatchets(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, errOut := runCLI(t, dir, "baseline")
+	if code != cli.ExitOK || !strings.Contains(out, "entries") {
+		t.Fatalf("baseline: %d %s %s", code, out, errOut)
+	}
+	code, out, _ = runCLI(t, dir, "check", "--fail-on", "error")
+	if code != cli.ExitOK || !strings.Contains(out, "baselined") {
+		t.Fatalf("after baseline the repo must pass with baselined findings: %d\n%s", code, out)
+	}
+	// a new junk file is a new finding: not covered
+	if err := os.WriteFile(filepath.Join(dir, "fresh.log"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gitAdd(t, dir, "fresh.log")
+	code, out, _ = runCLI(t, dir, "check", "--fail-on", "error")
+	if code != cli.ExitFindings || !strings.Contains(out, "fresh.log") {
+		t.Fatalf("new finding must fail: %d\n%s", code, out)
+	}
+	_, out, _ = runCLI(t, dir, "baseline")
+	if !strings.Contains(out, "0 added") {
+		t.Fatalf("re-baselining must not add the new finding: %s", out)
+	}
+}
+
+func gitAdd(t *testing.T, dir, file string) {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", "-C", dir, "add", file)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v %s", err, out)
+	}
+}
+
+func TestFixAppliesInsideScopes(t *testing.T) {
+	t.Parallel()
+	r := testutil.GitFixture(t, map[string]string{
+		"go.work":         "go 1.24\nuse (\n\t./api\n)\n",
+		"api/go.mod":      "module a\n",
+		"api/.DS_Store":   "x",
+		".gitignore":      "bin/\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n",
+	})
+	code, out, errOut := runCLI(t, r.Root, "fix", "--apply", "repo/no-tracked-junk")
+	if code != cli.ExitOK || !strings.Contains(out, "applied") {
+		t.Fatalf("apply in scope: %d %s %s", code, out, errOut)
+	}
+	tracked, _ := r.Git("ls-files")
+	if strings.Contains(tracked, "api/.DS_Store") {
+		t.Fatalf("junk inside the api scope must be untracked by its repo-relative path:\n%s", tracked)
+	}
+	if _, err := os.Stat(filepath.Join(r.Root, "api", ".DS_Store")); err != nil {
+		t.Fatal("untrack keeps the file on disk")
+	}
+}
+
+func TestBaselineDoesNotRegrowAtZero(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n",
+		".DS_Store":       "x",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\nbaseline: .fleetlint-baseline.json\n",
+	}).Root
+	if code, out, errOut := runCLI(t, dir, "baseline"); code != cli.ExitOK {
+		t.Fatalf("first baseline: %d %s %s", code, out, errOut)
+	}
+	if code, _, _ := runCLI(t, dir, "fix", "--apply", "repo/no-tracked-junk"); code != cli.ExitOK {
+		t.Fatal("fix should apply")
+	}
+	if code, out, errOut := runCLI(t, dir, "baseline"); code != cli.ExitOK || !strings.Contains(out, "removed") {
+		t.Fatalf("second baseline should shrink: %d %s %s", code, out, errOut)
+	}
+	// re-introduce the junk: a baseline at zero entries must refuse it without --reset
+	testutil.WriteFiles(t, dir, map[string]string{"again.log": "x"})
+	if _, err := repoGit(dir, "add", "again.log"); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := runCLI(t, dir, "baseline")
+	if strings.Contains(out, "1 added") {
+		t.Fatalf("an empty baseline must not grow again:\n%s", out)
+	}
+	code, _, _ := runCLI(t, dir, "check")
+	if code != cli.ExitFindings {
+		t.Fatal("the new finding must fail the check")
+	}
+}
+
+func repoGit(dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func TestRequireFlag(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"}).Root
+	if code, _, _ := runCLI(t, dir, "check", "--require", "fleetlint:minimal", "--fail-on", "never"); code != cli.ExitOK {
+		t.Fatalf("satisfied requirement: exit %d", code)
+	}
+	code, _, errOut := runCLI(t, dir, "check", "--require", "fleetlint:minimal", "--require", "acme-baseline")
+	if code != cli.ExitConfig || !strings.Contains(errOut, "acme-baseline") {
+		t.Fatalf("missing requirement must be a config error naming the catalog: %d %s", code, errOut)
+	}
+	// --require is persistent: fix and explain refuse too, so a repo cannot be fixed under a weaker config.
+	if code, _, _ := runCLI(t, dir, "explain", "repo/no-tracked-junk", "--require", "acme-baseline"); code != cli.ExitConfig {
+		t.Fatalf("explain should honour --require: %d", code)
+	}
+}
+
+// A finding is starred only when fix can repair it in this repository: a
+// tracked junk file can be untracked, a Makefile that exists is not replaced.
+func TestCheckMarksFixableFindings(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod": "module x\n", ".DS_Store": "x", "Makefile": "build:\n\tgo build ./...\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1}\n",
+	}).Root
+	_, out, _ := runCLI(t, dir, "check")
+	for _, want := range []string{"repo/no-tracked-junk *", "repo/editorconfig *", "can be fixed mechanically"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "taskrunner/targets *") {
+		t.Errorf("an existing Makefile is not replaced, so the rule is not fixable:\n%s", out)
+	}
+	_, js, _ := runCLI(t, dir, "check", "--format", "json")
+	if !strings.Contains(js, `"fixable": true`) {
+		t.Error("json results carry the fixable flag")
+	}
+}
+
+// A Go repository with a Node project in frontend/ gets one hook file and
+// one workflow covering both, and they satisfy the rules that asked for them.
+func TestFixCoversNestedProjects(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod": "module x\n\ngo 1.24.0\n", "frontend/package.json": "{}",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1}\n",
+	}).Root
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	hooks, _ := os.ReadFile(filepath.Join(dir, ".pre-commit-config.yaml"))
+	workflow, _ := os.ReadFile(filepath.Join(dir, ".github/workflows/check.yml"))
+	if !strings.Contains(string(hooks), "id: golangci-lint") || !strings.Contains(string(hooks), "id: eslint-frontend") {
+		t.Errorf("hooks must cover both stacks:\n%s", hooks)
+	}
+	if !strings.Contains(string(workflow), "actions/setup-go") || !strings.Contains(string(workflow), "node-version-file: frontend/.nvmrc") {
+		t.Errorf("workflow must set up both toolchains:\n%s", workflow)
+	}
+	_, out, _ := runCLI(t, dir, "check")
+	for _, id := range []string{"hooks/config-present", "hooks/shared-hygiene", "hooks/pre-push-check", "ci/check-workflow"} {
+		if strings.Contains(out, id) {
+			t.Errorf("%s still reported after fix:\n%s", id, out)
+		}
+	}
+}
+
+// With the dev container flag set and nothing there yet, fix writes the
+// container, a Makefile that runs inside it and a workflow that does too.
+func TestFixFollowsTheDevcontainerFlag(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n\ngo 1.26.0\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, devcontainer: true}\n",
+	}).Root
+	_, before, _ := runCLI(t, dir, "check")
+	if !strings.Contains(before, "repo/dev-environment *") {
+		t.Fatalf("the flag asks for a container that is not there yet:\n%s", before)
+	}
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	read := func(name string) string {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	if !strings.Contains(read(".devcontainer/devcontainer.json"), `"IN_DEVCONTAINER": "1"`) {
+		t.Error("the container must mark itself for the Makefile")
+	}
+	if !strings.Contains(read("Makefile"), "devcontainer exec --workspace-folder . make $@") {
+		t.Error("the Makefile must forward into the container")
+	}
+	if !strings.Contains(read(".github/workflows/check.yml"), "devcontainers/ci@") {
+		t.Error("the workflow must run the check in the container")
+	}
+	_, after, _ := runCLI(t, dir, "check")
+	for _, id := range []string{"repo/dev-environment", "taskrunner/devcontainer"} {
+		if strings.Contains(after, id) {
+			t.Errorf("%s still reported after fix:\n%s", id, after)
+		}
+	}
+	// The same repository without the flag stays on the machine.
+	bare := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n\ngo 1.26.0\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1}\n",
+	}).Root
+	runCLI(t, bare, "fix", "--apply")
+	if b, _ := os.ReadFile(filepath.Join(bare, "Makefile")); strings.Contains(string(b), "devcontainer") {
+		t.Errorf("without the flag the Makefile runs on the machine:\n%s", b)
+	}
+	if _, err := os.Stat(filepath.Join(bare, ".devcontainer")); err == nil {
+		t.Error("without the flag fix must not introduce a dev container")
+	}
+	if _, out, _ := runCLI(t, bare, "check"); strings.Contains(out, "taskrunner/devcontainer") || strings.Contains(out, "repo/dev-environment *") {
+		t.Errorf("on the machine the container rule does not apply and the tools are the user's choice:\n%s", out)
+	}
+}

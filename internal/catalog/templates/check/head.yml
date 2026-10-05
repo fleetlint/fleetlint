@@ -1,0 +1,28 @@
+# One file for GitHub and Gitea:
+# Gitea Actions reads .github/workflows/ too, and both forges set github.server_url.
+# Actions are pinned to commit SHAs; `pinact run -u` updates them
+# (Renovate keeps the pins current via renovate.json).
+name: check
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"   # weekly: catches new vulnerabilities in unchanged code
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # diff-cover and gitleaks need history
+          persist-credentials: false

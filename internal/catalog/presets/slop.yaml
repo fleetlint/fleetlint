@@ -1,0 +1,412 @@
+apiVersion: fleetlint.org/v1
+kind: Catalog
+metadata:
+  name: fleetlint-slop
+  version: 0.1.0
+  description: >
+    Heuristics for the traces careless or generated code leaves behind:
+    narration comments, placeholders, swallowed errors, suppressions, skipped
+    tests, vague commits. Add it next to another preset; the findings are a
+    review list, not a verdict.
+
+rules:
+  - id: slop/narration-comments
+    title: Comments do not narrate the change
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'(//|#|/\*)\s*(Now (we|it|uses|handles|correctly|properly)\b|Updated? to\b|Changed (to|from)\b|Fix(ed)? for\b|(NEW|FIX|FIXED|CHANGED|UPDATED):|New:|Fix:|Previously\b|As requested\b|Per (your|the) request\b|This is the (key|main|critical|important) (fix|change|part)\b)')
+    expr: >
+      false
+    message: "comment narrates a change instead of explaining the code"
+    requirement: "Comments say why the code is the way it is, not what was changed or asked for (\"Now uses…\", \"Fixed:\", \"As requested\")."
+    rationale: "The history records what changed; a comment that repeats it is wrong after the next edit."
+    fix:
+      human: "Delete the comment, or rewrite it to state the constraint the code satisfies."
+      agent: "Delete narration comments; keep a comment only if it explains a constraint, and rewrite it to say that."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/placeholder-comments
+    title: No placeholder implementations
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'(?i)(//|#|/\*)\s*.*\b(in a real (app|implementation|world|project|scenario)|for simplicity|simplified (version|implementation|logic)|placeholder (implementation|logic|for now)|mock (data|implementation) for now|not (yet )?implemented|implement (this|later|me)|dummy (data|value|implementation)|you (would|should|could|might) (want|need) to)')
+    expr: >
+      false
+    message: "comment marks a placeholder or simplified implementation"
+    requirement: "No code is marked as a stand-in (\"in a real app\", \"for simplicity\", \"not implemented\", \"mock data for now\")."
+    rationale: "The comment admits the code does not do what its name says."
+    fix:
+      human: "Implement it, or remove the code and track the gap in an issue."
+      agent: "Report each placeholder; implement it only when the intended behaviour is clear from the callers, otherwise ask."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/banner-comments
+    title: No banner or divider comments
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'^\s*(//|#)\s*[─━═=\-*#~]{4,}')
+    expr: >
+      false
+    message: "banner or divider comment"
+    requirement: "No comment lines made of repeated symbols."
+    rationale: "A file that needs dividers needs splitting."
+    fix:
+      human: "Delete the banner; split the file if the sections are separate concerns."
+      agent: "Delete banner comments; do not restructure the file in the same change."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/todo-without-issue
+    title: TODOs reference an issue
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'(//|#|/\*).*\b(TODO|FIXME|XXX|HACK)\b')
+    expr: >
+      item.text.matches(r'\b(TODO|FIXME|XXX|HACK)\b\s*\((#|[A-Z][A-Z0-9]+-)\d+\)')
+    message: "TODO without an issue reference"
+    requirement: "Every TODO, FIXME, XXX or HACK comment names an issue: `TODO(#123)` or `TODO(ABC-123)`."
+    rationale: "An untracked TODO is a wish; a tracked one has an owner and can be closed."
+    fix:
+      human: "Open an issue and reference it, or do the work, or delete the note."
+      agent: "Report each note; do not invent issue numbers."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/emoji-in-code
+    title: No emoji in source code
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}\x{2B50}]')
+    expr: >
+      false
+    message: "emoji in source code"
+    requirement: "Source code, log messages and comments contain no emoji or decorative symbols."
+    rationale: "They render inconsistently in terminals and logs and carry no information a word would not."
+    fix:
+      human: "Replace the symbol with a word or remove it."
+      agent: "Replace each symbol with plain text; keep symbols that are test data."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/typographic-chars
+    title: No typographic characters in source code
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'[—–“”‘’…→←⇒]')
+    expr: >
+      false
+    message: "typographic character in source code"
+    requirement: "Source code uses ASCII quotes, hyphens and three dots, not curly quotes, long dashes, ellipsis characters or arrows."
+    rationale: "They are invisible in review, break grep and are a trace of pasted prose."
+    fix:
+      human: "Replace with the ASCII equivalent."
+      agent: "Replace with ASCII equivalents; keep characters that are user-facing text or test data."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/commented-out-code
+    title: No commented-out code
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'^\s*(//|#)\s*(if|for|while|return|await|const|let|var|final|val|def|func|fn|import|from)\b.*([;{)(]|:)\s*$')
+    expr: >
+      false
+    message: "commented-out code"
+    requirement: "No code is kept in comments."
+    rationale: "Version control keeps old code; commented-out code is never updated and nobody dares delete it."
+    fix:
+      human: "Delete it."
+      agent: "Delete commented-out code."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/debug-output
+    title: No debug prints outside tests
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("nontest", r'(^|[^.\w])print\(|\bconsole\.(log|debug|info)\(|(^|[^.\w])println!?\(|\bfmt\.Print|\bdebugPrint\(|\bdbg!\(')
+    expr: >
+      false
+    message: "raw print call outside tests"
+    requirement: "Non-test code writes through the logger or the program's output layer, not through raw print calls."
+    rationale: "Raw prints cannot be levelled, redacted or switched off, and they leak into the output of anything that embeds the code."
+    fix:
+      human: "Use the logger; for a CLI, the output stream the command was given."
+      agent: "Replace with the project's logger or output writer; delete prints that are debugging leftovers."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/arbitrary-delays
+    title: No sleeps outside tests
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("nontest", r'\b(sleep|Thread\.sleep|time\.Sleep|Future\.delayed|setTimeout|delay)\s*\(')
+    expr: >
+      false
+    message: "sleep or fixed delay outside tests"
+    requirement: "Non-test code does not wait a fixed time for something to happen."
+    rationale: "A delay that papers over an ordering problem fails on a slower machine and wastes time on a faster one."
+    fix:
+      human: "Wait for the event or condition itself; keep real backoff and rate limiting with a comment saying so."
+      agent: "Report each delay; replace it with waiting on the actual condition where that is evident, and leave deliberate backoff alone."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/variant-names
+    title: No names with version or quality suffixes
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'\b(func|fun|def|fn|function|class|struct|interface|type|void|const|final|let|var|val)\s+\w+?(V[2-9]|_v[2-9]|Improved|Enhanced|Old|New|Fixed|Temp|Simple|Robust|Better)\b')
+    expr: >
+      false
+    message: "declaration name carries a variant suffix"
+    requirement: "No declaration is named as a variant of another (`parseV2`, `handlerNew`, `ClientImproved`, `syncOld`)."
+    rationale: "It means two implementations exist and callers must know which one is right."
+    fix:
+      human: "Change the original and update its callers; delete the other."
+      agent: "Report the pair; merge into the original name only when the callers and tests make the intended behaviour clear."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/variant-files
+    title: No files named as copies or variants
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      tracked().filter(p, p.matches(r'(_|-)(v[2-9]|old|new|backup|copy|fixed|improved|enhanced)\.[a-z]+$|( copy|\([0-9]+\))\.[a-z]+$'))
+    expr: >
+      false
+    message: "file is named as a copy or variant"
+    requirement: "No file is named as a variant of another (`client_v2.py`, `handler-old.ts`, `config copy.json`)."
+    rationale: "The history keeps old versions; a second file means nobody decided which one is current."
+    fix:
+      human: "Keep one file under the original name and delete the other."
+      agent: "Report the pair; do not delete either without confirming which is in use."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/swallowed-errors
+    title: Errors are not swallowed
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("nontest", r'catch\s*(\([^)]*\))?\s*\{\s*\}|except[^:]*:\s*pass\b|\b_\s*=\s*err\b|\.catch\(\s*\(\)\s*=>\s*(\{\s*\}|null|undefined)\s*\)|catch \(_\)')
+    expr: >
+      false
+    message: "error is caught or assigned and then ignored"
+    requirement: "No empty catch blocks, no `except: pass`, no `_ = err`. Only single-line forms are detected; the stack's linter covers the rest."
+    rationale: "A swallowed error turns a failure with a cause into a wrong result without one."
+    fix:
+      human: "Handle the error, wrap and return it, or log it where it is handled."
+      agent: "Propagate the error with context unless the surrounding code shows it is safe to ignore; then say why in a comment."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/escape-hatches
+    title: Lint and type suppressions are reviewed
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("nontest", r'@ts-ignore|@ts-nocheck|\bas any\b|:\s*any\s*([,;)=\]>]|$)|# type:\s*ignore|eslint-disable|//\s*nolint|#\s*noqa|@Suppress(Warnings)?\(|//\s*ignore(_for_file)?:|#!?\[allow\(|\.unwrap\(\)|\.expect\(\x22|\w!!')
+    expr: >
+      false
+    message: "lint or type-check suppression"
+    requirement: "Suppressions (`nolint`, `noqa`, `@ts-ignore`, `as any`, `@Suppress`, `unwrap()`, `!!`) are rare and each has a reason next to it. This rule lists them for review; it cannot tell a justified one from an unjustified one."
+    rationale: "Each suppression switches a check off for good; a list of them is the fastest audit of where the checks do not apply."
+    fix:
+      human: "Fix the code instead of suppressing, or state the reason on the same line."
+      agent: "For each suppression, try the fix first; if it stays, add the specific rule name and a one-line reason."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/vague-errors
+    title: Error messages say what failed
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("code", r'(?i)\x22(something went wrong|an error (has )?occurred|unknown error|oops)\x22')
+    expr: >
+      false
+    message: "error message says nothing"
+    requirement: "No error message is just \"something went wrong\", \"an error occurred\" or \"unknown error\"."
+    rationale: "The person reading it cannot act on it and the person debugging it cannot find it."
+    fix:
+      human: "Say what failed and with which input."
+      agent: "Rewrite the message to name the operation and the offending input; do not include secrets."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/placeholder-values
+    title: No placeholder values outside tests
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("nontest", r'(?i)lorem ipsum|your[-_ ]?(api[-_ ]?key|token|secret|password)|\bchange[-_]?me\b|\breplace[-_]?me\b|example\.(com|org)\b')
+    expr: >
+      false
+    message: "placeholder value outside tests"
+    requirement: "Non-test code contains no `lorem ipsum`, `your-api-key`, `changeme` or `example.com` values."
+    rationale: "A placeholder that ships is a broken feature or a default credential."
+    fix:
+      human: "Read the value from configuration and fail at startup when it is missing."
+      agent: "Replace with a configuration lookup validated at startup; ask where the real value comes from if that is unclear."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/insecure-patterns
+    title: No disabled TLS verification or similar shortcuts
+    kind: expr
+    severity: warning
+    scope: root
+    foreach: >
+      codegrep("nontest", r'badCertificateCallback|InsecureSkipVerify:\s*true|verify\s*=\s*False|rejectUnauthorized:\s*false|NODE_TLS_REJECT_UNAUTHORIZED|danger_accept_invalid_certs|\beval\(|chmod\s+(-R\s+)?777|Allow-Origin[\x22\x27]?\s*[:,]\s*[\x22\x27]\*')
+    expr: >
+      false
+    message: "insecure shortcut"
+    requirement: "No globally disabled certificate verification, `eval(`, `chmod 777` or wildcard CORS origin in non-test code."
+    rationale: "Each one was added to make something work once and removes a protection for every user afterwards."
+    fix:
+      human: "Scope the exception to one host or one path with explicit opt-in, or remove it."
+      agent: "Report each occurrence with what it disables; replace only when the secure equivalent is evident."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/skipped-tests
+    title: No skipped tests are committed
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("test", r'\.skip\(|\bxit\(|\bxdescribe\(|@Ignore\b|@Disabled\b|t\.Skip\(|#\[ignore\]|@pytest\.mark\.skip|@unittest\.skip|\bskip:\s*(true|[\x22\x27])')
+    expr: >
+      false
+    message: "skipped test"
+    requirement: "Tests are not skipped; a quarantined flaky test references an issue."
+    rationale: "A skipped test is coverage that the numbers still count and the suite no longer provides."
+    fix:
+      human: "Fix or delete the test; if it must be quarantined, reference the issue."
+      agent: "Report each skipped test with its reason; do not un-skip tests that then fail without fixing the cause."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/trivial-asserts
+    title: No assertions that cannot fail
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      codegrep("test", r'expect\((true|1)\)\.(toBe|toEqual)\((true|1)\)|assert\s+True\b|assertTrue\(true\)|assert!\(true\)|expect\(true,\s*(isTrue|true)\)')
+    expr: >
+      false
+    message: "assertion that cannot fail"
+    requirement: "No test asserts a constant (`expect(true).toBe(true)`, `assert True`)."
+    rationale: "It raises coverage and tests nothing."
+    fix:
+      human: "Assert the behaviour, or delete the test."
+      agent: "Replace with an assertion on the observable outcome; delete the test if there is none."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/emoji-headings
+    title: No emoji in documentation headings
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      grep("**/*.md", r'^#{1,6}\s.*[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]')
+    expr: >
+      item.path.endsWith("CHANGELOG.md")
+    message: "emoji in a heading"
+    requirement: "Headings in Markdown documentation contain no emoji."
+    rationale: "They break anchors and search and mark the text as unedited generator output."
+    fix:
+      human: "Remove the emoji from the heading."
+      agent: "Remove emoji from headings and update links to the changed anchors."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/dumping-ground-files
+    title: No utils or helpers dumping grounds
+    kind: expr
+    severity: info
+    scope: root
+    foreach: >
+      tracked().filter(p, p.matches(r'(^|/)(utils?|helpers?|common|misc|stuff|shared_utils)\.[a-z]+$'))
+    expr: >
+      false
+    message: "file is a dumping ground by name"
+    requirement: "No source file is named `utils`, `helpers`, `common` or `misc`; a function lives in the module that owns its concept."
+    rationale: "A file named after nothing collects everything, and everything then depends on it."
+    fix:
+      human: "Move each function to the module it belongs to."
+      agent: "Report the file with its functions grouped by concept; move them only as a separate, behaviour-neutral change."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/vague-commit-messages
+    title: Commit subjects say what changed
+    kind: expr
+    severity: info
+    scope: root
+    when: repo.has_git
+    params:
+      commits: 200
+    foreach: >
+      commits(params.commits)
+    expr: >
+      !item.subject.matches(r'(?i)^(fix(es)?|update[sd]?|wip|changes?|misc|stuff|tmp|test|minor|cleanup|\.)\.?$')
+    message: "commit subject says nothing"
+    requirement: "No commit in the recent history (`params.commits`, default 200) has a subject that is only `fix`, `update`, `wip`, `changes`, `misc` or `cleanup`."
+    rationale: "The history is the record of why the code changed; a one-word subject records nothing."
+    fix:
+      human: "Write the subject from the diff; squash work-in-progress commits before merging."
+      agent: "Write subjects from the diff. Do not rewrite pushed history without the user's decision."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/non-conventional-commits
+    title: Commit subjects follow Conventional Commits
+    kind: expr
+    severity: info
+    scope: root
+    when: repo.has_git
+    params:
+      commits: 200
+    foreach: >
+      commits(params.commits)
+    expr: >
+      item.subject.matches(r'^(feat|fix|refactor|perf|test|docs|build|chore|revert|ci|style)(\([^)]+\))?!?: ') || item.subject.startsWith("Merge ")
+    message: "commit subject is not a Conventional Commit"
+    requirement: "Commit subjects in the recent history (`params.commits`, default 200) have the form `type(scope): subject`; merge commits are exempt."
+    rationale: "The changelog and the next version number are computed from the subjects."
+    fix:
+      human: "Install the commit-msg hook so new commits are checked."
+      agent: "Use Conventional Commits for new commits. Do not rewrite pushed history without the user's decision."
+    refs: ["docs/baseline.md#slop"]
+
+  - id: slop/huge-commits
+    title: Commits are reviewable
+    kind: expr
+    severity: info
+    scope: root
+    when: repo.has_git
+    params:
+      commits: 200
+      max_lines: 1500
+    foreach: >
+      commits(params.commits)
+    expr: >
+      item.lines <= params.max_lines
+    message: "commit changes more lines than the limit"
+    requirement: "No commit in the recent history (`params.commits`, default 200) changes more than `params.max_lines` lines (default 1500)."
+    rationale: "A commit that large was not reviewed line by line, and cannot be reverted without taking unrelated changes with it."
+    fix:
+      human: "Split work into commits of one concern each."
+      agent: "Commit one concern at a time. Do not rewrite pushed history without the user's decision."
+    refs: ["docs/baseline.md#slop"]

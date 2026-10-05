@@ -1,0 +1,13 @@
+  - repo: local
+    hooks:
+      - id: dart-format
+        name: dart format
+        entry: dart format
+        language: system
+        types: [dart]
+      - id: flutter-analyze
+        name: flutter analyze
+        entry: flutter analyze --fatal-infos
+        language: system
+        types: [dart]
+        pass_filenames: false

@@ -1,0 +1,76 @@
+# GoReleaser v2. Builds, checksums, SBOMs (syft) and signs (cosign) the release
+# on whichever forge runs release.yml. Signing: keyless via OIDC on GitHub,
+# key-based (COSIGN_PRIVATE_KEY) on Gitea; the workflow sets the env.
+# UNVERIFIED on a real runner until the first tag: see docs/ROADMAP.md.
+version: 2
+project_name: fleetlint
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/fleetlint
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X github.com/fleetlint/fleetlint/internal/cli.Version={{ .Version }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md, CHANGELOG.md]
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - artifacts: archive
+    documents: ["{{ .ArtifactName }}.spdx.json"]
+    cmd: syft
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
+signs:
+  - cmd: ./scripts/sign.sh   # keyless on GitHub, --key when COSIGN_PRIVATE_KEY is set (Gitea)
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: ["${artifact}"]
+
+changelog:
+  use: git
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^feat(\(.*\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^fix(\(.*\))?!?:'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude: ['^chore', '^docs', '^test', '^ci', '^style', '^refactor']
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    Verify the checksums signature (keyless, GitHub-built releases):
+
+        cosign verify-blob --bundle checksums.txt.sigstore.json \
+          --certificate-identity-regexp 'https://github.com/fleetlint/fleetlint/.github/workflows/release.yml@refs/tags/v' \
+          --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+          checksums.txt
+
+gitea_urls:
+  # release.yml exports these on Gitea; on GitHub they are empty and unused.
+  api: '{{ envOrDefault "GITEA_API_URL" "" }}'
+  download: '{{ envOrDefault "GITEA_DOWNLOAD_URL" "" }}'
+  skip_tls_verify: false

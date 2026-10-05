@@ -1,0 +1,194 @@
+{
+  "slop/focused-tests": {
+    "pass": {
+      "a.test.ts": "it('adds', () => {})\n"
+    },
+    "fail": {
+      "a.test.ts": "it.only('adds', () => {})\n"
+    }
+  },
+  "slop/conflict-markers": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> other\n"
+    }
+  },
+  "slop/scratch-scripts": {
+    "pass": {
+      "scripts/fix_imports.py": "x = 1\n"
+    },
+    "fail": {
+      "fix_imports.py": "x = 1\n"
+    }
+  },
+  "slop/report-documents": {
+    "pass": {
+      "docs/usage.md": "# Usage\n"
+    },
+    "fail": {
+      "FIX_SUMMARY.md": "# Done\n"
+    }
+  },
+  "slop/narration-comments": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "// Now uses the cache\n"
+    }
+  },
+  "slop/placeholder-comments": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.py": "# In a real app this would call the API\n"
+    }
+  },
+  "slop/banner-comments": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "// ==========\n"
+    }
+  },
+  "slop/todo-without-issue": {
+    "pass": {
+      "a.go": "// TODO(#12): drop after the migration\n"
+    },
+    "fail": {
+      "a.go": "// TODO: later\n"
+    }
+  },
+  "slop/emoji-in-code": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "// done \u2705\n"
+    }
+  },
+  "slop/typographic-chars": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "// a \u2014 b\n"
+    }
+  },
+  "slop/commented-out-code": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "// return x;\n"
+    }
+  },
+  "slop/debug-output": {
+    "pass": {
+      "a_test.go": "fmt.Println(1)\n"
+    },
+    "fail": {
+      "a.py": "print(x)\n"
+    }
+  },
+  "slop/arbitrary-delays": {
+    "pass": {
+      "a_test.go": "time.Sleep(1)\n"
+    },
+    "fail": {
+      "a.go": "time.Sleep(time.Second)\n"
+    }
+  },
+  "slop/variant-names": {
+    "pass": {
+      "a.go": "func New() {}\n"
+    },
+    "fail": {
+      "a.go": "func parseV2() {}\n"
+    }
+  },
+  "slop/variant-files": {
+    "pass": {
+      "client.py": "x = 1\n"
+    },
+    "fail": {
+      "client_v2.py": "x = 1\n"
+    }
+  },
+  "slop/swallowed-errors": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "_ = err\n"
+    }
+  },
+  "slop/escape-hatches": {
+    "pass": {
+      "a.ts": "const many = 1\n"
+    },
+    "fail": {
+      "a.ts": "const x = y as any\n"
+    }
+  },
+  "slop/vague-errors": {
+    "pass": {
+      "a.go": "return errors.New(\"read config: missing key\")\n"
+    },
+    "fail": {
+      "a.go": "return errors.New(\"something went wrong\")\n"
+    }
+  },
+  "slop/placeholder-values": {
+    "pass": {
+      "a_test.go": "const host = \"example.com\"\n"
+    },
+    "fail": {
+      "a.go": "const host = \"example.com\"\n"
+    }
+  },
+  "slop/insecure-patterns": {
+    "pass": {
+      "a.go": "package a\n\n// Limit is the page size the upstream API accepts.\nconst Limit = 50\n"
+    },
+    "fail": {
+      "a.go": "InsecureSkipVerify: true,\n"
+    }
+  },
+  "slop/skipped-tests": {
+    "pass": {
+      "a_test.go": "func TestA(t *testing.T) {}\n"
+    },
+    "fail": {
+      "a_test.go": "t.Skip(\"later\")\n"
+    }
+  },
+  "slop/trivial-asserts": {
+    "pass": {
+      "a.test.ts": "expect(sum(1, 2)).toBe(3)\n"
+    },
+    "fail": {
+      "a.test.ts": "expect(true).toBe(true)\n"
+    }
+  },
+  "slop/emoji-headings": {
+    "pass": {
+      "docs/x.md": "# Start\n"
+    },
+    "fail": {
+      "docs/x.md": "# \ud83d\ude80 Start\n"
+    }
+  },
+  "slop/dumping-ground-files": {
+    "pass": {
+      "pkg/dates.go": "package pkg\n"
+    },
+    "fail": {
+      "pkg/utils.go": "package pkg\n"
+    }
+  }
+}

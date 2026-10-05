@@ -1,0 +1,75 @@
+# .pre-commit-config.yaml
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  # Hygiene (prek built-ins, offline)
+  - repo: builtin
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: fix-byte-order-marker
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-illegal-windows-names
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-symlinks
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+
+  # Secrets
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1              # `prek update` bumps this
+    hooks:
+      - id: gitleaks
+
+  # Conventional commit messages
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        args: [--strict, feat, fix, refactor, perf, test, docs, build, chore, revert]
+
+  # Shell scripts (drop if the repo has none)
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.14.1-1
+    hooks:
+      - id: shfmt
+        args: [-w, -i, "2", -ci]
+
+  # Repository setup policy: the rules in .fleetlint.yaml, on every commit
+  - repo: local
+    hooks:
+      - id: fleetlint
+        name: fleetlint (repository setup)
+        entry: fleetlint check --fail-on error --color=false
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Full gate before push (calls the task runner's `check` target)
+  - repo: local
+    hooks:
+      - id: check
+        name: full check (lint, tests, coverage, audit, build)
+        entry: make check          # or: npm run check / ./gradlew check
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

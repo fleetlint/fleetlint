@@ -1,0 +1,120 @@
+package facts_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/testutil"
+)
+
+func TestWorkspaceMembers(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		files map[string]string
+		want  []string
+	}{
+		"go.work": {map[string]string{
+			"go.work": "go 1.24\n\nuse (\n\t./api\n\n\t// retired: ./old\n\t./worker\n)\n", "api/go.mod": "module a\n", "worker/go.mod": "module w\n", "docs/readme.md": "x",
+		}, []string{"api", "worker"}},
+		"pnpm": {map[string]string{
+			"pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - '!packages/skip'\n", "packages/ui/package.json": "{}", "packages/core/package.json": "{}", "packages/notes/README.md": "x",
+		}, []string{"packages/core", "packages/ui"}},
+		"package.json workspaces": {map[string]string{
+			"package.json": `{"workspaces":["apps/*"]}`, "apps/web/package.json": "{}",
+		}, []string{"apps/web"}},
+		"cargo": {map[string]string{
+			"Cargo.toml": "[workspace]\nmembers = [\"crates/*\"]\n", "crates/a/Cargo.toml": "[package]\n", "crates/b/Cargo.toml": "[package]\n",
+		}, []string{"crates/a", "crates/b"}},
+		"gradle": {map[string]string{
+			"settings.gradle.kts": `include(":app", ":core:data")` + "\n", "app/build.gradle.kts": "", "core/data/build.gradle.kts": "",
+		}, []string{"app", "core/data"}},
+		"single": {map[string]string{"go.mod": "module x\n"}, nil},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			r := testutil.Fixture(t, tc.files)
+			f := facts.Discover(r, facts.Overrides{})
+			if !reflect.DeepEqual(f.Members, tc.want) {
+				t.Fatalf("members = %v, want %v", f.Members, tc.want)
+			}
+			wantLayout := "single"
+			if len(tc.want) > 0 {
+				wantLayout = "workspace"
+			}
+			if f.Layout != wantLayout {
+				t.Fatalf("layout = %s, want %s", f.Layout, wantLayout)
+			}
+		})
+	}
+}
+
+func TestStacksAndTaskRunner(t *testing.T) {
+	t.Parallel()
+	r := testutil.Fixture(t, map[string]string{
+		"package.json":   `{"scripts":{"lint":"eslint .","test":"vitest","check":"npm run lint && npm test"}}`,
+		"pyproject.toml": "[project]\nname='x'\n",
+	})
+	f := facts.Discover(r, facts.Overrides{})
+	if !reflect.DeepEqual(f.Stacks, []string{"node", "python"}) {
+		t.Fatalf("stacks = %v", f.Stacks)
+	}
+	if f.TaskRunner.Kind != "npm-scripts" || !reflect.DeepEqual(f.TaskRunner.Targets, []string{"check", "lint", "test"}) {
+		t.Fatalf("taskrunner = %+v", f.TaskRunner)
+	}
+	if f.Tier != 3 || f.Sources["tier"] != facts.SourceDefault {
+		t.Fatalf("plain repo defaults to tier 3, got %d", f.Tier)
+	}
+	pinned := facts.Discover(r, facts.Overrides{Tier: 1, Visibility: facts.VisibilityPublic})
+	if pinned.Tier != 1 || !pinned.Public() || pinned.Sources["tier"] != facts.SourceConfigured {
+		t.Fatalf("overrides not applied: %+v", pinned)
+	}
+}
+
+func TestNestedProjectsWithoutWorkspaceFile(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{
+		"go.mod":                     "module x\n",
+		"frontend/package.json":      "{}",
+		"frontend/src/package.json":  "{}",
+		"samples/demo/package.json":  "{}",
+		"samples/package.json":       "{}",
+		"docs/requirements.txt":      "mkdocs\n",
+		".github/tools/package.json": "{}",
+		"worker/pyproject.toml":      "[project]\nname = \"w\"\n",
+	}
+	f := facts.Discover(testutil.GitFixture(t, files), facts.Overrides{})
+	if f.Layout != "nested" || !reflect.DeepEqual(f.Members, []string{"frontend", "worker"}) {
+		t.Fatalf("layout=%s members=%v, want nested [frontend worker]", f.Layout, f.Members)
+	}
+	// Without git there is no way to tell a project from an installed dependency.
+	if f := facts.Discover(testutil.Fixture(t, files), facts.Overrides{}); f.Layout != "single" {
+		t.Fatalf("untracked tree: layout=%s members=%v", f.Layout, f.Members)
+	}
+}
+
+func TestDevcontainerFlag(t *testing.T) {
+	t.Parallel()
+	yes, no := true, false
+	with := map[string]string{"go.mod": "module x\n", ".devcontainer/devcontainer.json": "{}"}
+	without := map[string]string{"go.mod": "module x\n"}
+	cases := map[string]struct {
+		files map[string]string
+		pin   *bool
+		want  bool
+		src   facts.Source
+	}{
+		"present":             {with, nil, true, facts.SourceDetected},
+		"absent":              {without, nil, false, facts.SourceDetected},
+		"wanted, not there":   {without, &yes, true, facts.SourceConfigured},
+		"there, not used":     {with, &no, false, facts.SourceConfigured},
+		"named configuration": {map[string]string{".devcontainer/api/devcontainer.json": "{}"}, nil, true, facts.SourceDetected},
+	}
+	for name, tc := range cases {
+		f := facts.Discover(testutil.Fixture(t, tc.files), facts.Overrides{Devcontainer: tc.pin})
+		if f.Devcontainer != tc.want || f.Sources["devcontainer"] != tc.src {
+			t.Errorf("%s: devcontainer=%v (%s), want %v (%s)", name, f.Devcontainer, f.Sources["devcontainer"], tc.want, tc.src)
+		}
+	}
+}

@@ -1,0 +1,40 @@
+name: fleetlint
+description: "Check a repository's setup (hooks, task runner, lint config, CI, release) against its .fleetlint.yaml."
+author: fleetlint
+branding:
+  icon: shield
+  color: blue
+inputs:
+  version:
+    description: "fleetlint version to install (a tag, or \"latest\")."
+    default: latest
+  fail-on:
+    description: "Lowest severity that fails the step: error, warning, info, never."
+    default: error
+  format:
+    description: "Output format for the log: table, json, agent, sarif, markdown."
+    default: table
+  sarif-file:
+    description: "If set, also write a SARIF report to this path (upload it with github/codeql-action/upload-sarif)."
+    default: ""
+  path:
+    description: "Repository root to check."
+    default: .
+runs:
+  using: composite
+  steps:
+    - name: Install fleetlint
+      shell: bash
+      run: |
+        set -euo pipefail
+        go install "github.com/fleetlint/fleetlint/cmd/fleetlint@${{ inputs.version }}"
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+    - name: Check
+      shell: bash
+      run: |
+        set -euo pipefail
+        fleetlint -C "${{ inputs.path }}" check --fail-on "${{ inputs.fail-on }}" --format "${{ inputs.format }}" --color=false
+    - name: SARIF
+      if: inputs.sarif-file != ''
+      shell: bash
+      run: fleetlint -C "${{ inputs.path }}" check --fail-on never --format sarif > "${{ inputs.sarif-file }}"

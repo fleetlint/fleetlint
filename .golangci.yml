@@ -1,0 +1,70 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+formatters:
+  enable: [gofumpt, goimports]
+  settings:
+    goimports:
+      local-prefixes: [github.com/fleetlint/fleetlint]
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - errorlint
+    - nilerr
+    - bodyclose
+    - noctx
+    - contextcheck
+    - gosec
+    - revive
+    - gocognit
+    - funlen
+    - forbidigo
+    - exhaustive
+    - unparam
+    - misspell
+    - godox
+    - dupl
+    - prealloc
+    - unconvert
+    - wastedassign
+    - nolintlint
+  settings:
+    gocognit:
+      min-complexity: 15
+    funlen:
+      lines: 60
+      statements: 40
+    forbidigo:
+      forbid:
+        - pattern: ^fmt\.Print.*$
+          msg: use the report writer or the command's output stream
+        - pattern: ^log\.Print.*$
+          msg: use slog
+    godox:
+      keywords: [TODO, FIXME, HACK]
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+    dupl:
+      threshold: 120
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [funlen, gocognit, dupl, gosec, forbidigo]
+      - path: internal/report/
+        linters: [forbidigo]   # the reporter writes to the stream it is given, via fmt.Fprint*
+      - path: internal/cli/
+        linters: [forbidigo]

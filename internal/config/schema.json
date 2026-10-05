@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fleetlint/fleetlint/schema/fleetlint.json",
+  "title": ".fleetlint.yaml",
+  "description": "Repository policy for fleetlint. Everything is optional; the whole policy lives in this one file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "sources": {
+      "type": "string",
+      "minLength": 1,
+      "description": "A sources file mapping the names `org` and `team/<name>` to catalog references: a local path, https://…#sha256-<digest> or git+<url>//<path>@<tag or commit>. With it, extends resolves in the fixed order presets, org, teams, repository."
+    },
+    "extends": {
+      "type": "array",
+      "description": "Catalogs in order; later entries override earlier ones field by field. Presets: fleetlint:minimal, fleetlint:recommended, and the add-on fleetlint:slop. Remote: https://…#sha256-<digest> or git+<url>//<path>@<tag or commit>. Local: a file or directory path. Names from the sources file: org, team/<name>.",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "facts": { "$ref": "#/$defs/factOverrides" },
+    "scopes": {
+      "type": "array",
+      "description": "Sub-directories evaluated as their own repository. Omit to discover workspace members; [] disables scopes.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "facts": { "$ref": "#/$defs/factOverrides" },
+          "rules": { "$ref": "#/$defs/rules" }
+        }
+      }
+    },
+    "rules": { "$ref": "#/$defs/rules" },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule", "reason"],
+        "properties": {
+          "rule": { "type": "string" },
+          "match": { "type": "string", "description": "Glob against the finding's path, or re:<regex> against its message. Omit to cover every finding of the rule." },
+          "reason": { "type": "string", "minLength": 1 },
+          "until": { "type": "string", "format": "date", "description": "YYYY-MM-DD; after this date the finding returns at full severity." }
+        }
+      }
+    },
+    "baseline": { "type": "string", "description": "Path of the baseline file (default .fleetlint-baseline.json). Findings listed there report as baselined; the file only shrinks." }
+  },
+  "$defs": {
+    "factOverrides": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tier": { "type": "integer", "minimum": 1, "maximum": 3, "description": "1 production/public, 2 personal tool, 3 experiment." },
+        "visibility": { "enum": ["public", "private"] },
+        "stacks": { "type": "array", "items": { "enum": ["go", "python", "rust", "node", "kotlin", "flutter"] } },
+        "forge": { "enum": ["github", "gitea", "gitlab", "unknown"] },
+        "devcontainer": { "type": "boolean", "description": "true: the repository works in a dev container and the task runner runs its targets there (fix writes the container and a forwarding Makefile). false: targets run on the machine even if a dev container exists. Unset: true when a devcontainer.json is present." }
+      }
+    },
+    "severity": { "enum": ["error", "warning", "info"] },
+    "rules": {
+      "type": "object",
+      "description": "Keyed by rule id. For a catalog rule: enabled, reason, severity, params, accept. For an inline rule: kind plus its definition.",
+      "propertyNames": { "pattern": "^[a-z0-9-]+/[a-z0-9-]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "reason": { "type": "string", "description": "Required when disabling a rule or lowering its severity." },
+          "severity": { "$ref": "#/$defs/severity" },
+          "params": { "type": "object" },
+          "accept": { "type": "array", "items": { "type": "object" } },
+          "kind": { "enum": ["expr", "command"] },
+          "title": { "type": "string" },
+          "when": { "type": "string" },
+          "foreach": { "type": "string" },
+          "expr": { "type": "string" },
+          "run": { "type": "string" },
+          "message": { "type": "string" },
+          "requirement": { "type": "string" },
+          "rationale": { "type": "string" },
+          "fix": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "human": { "type": "string" },
+              "agent": { "type": "string" },
+              "actions": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": {
+                "template": { "type": "string" }, "to": { "type": "string" }, "untrack": { "type": "string" },
+                "gitignore": { "type": "array", "items": { "type": "string" } } } } }
+            }
+          },
+          "tiers": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 3 } },
+          "stacks": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
