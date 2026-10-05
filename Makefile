@@ -10,9 +10,15 @@ VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 LDFLAGS     := -s -w -X github.com/fleetlint/fleetlint/internal/cli.Version=$(VERSION)
 PKGS        := ./...
 LICENSES    ?= MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0
-GO_LICENSES := go run github.com/google/go-licenses/v2@v2.0.1
+# Each pin carries a `# renovate:` comment so Renovate bumps it (customManagers:makefileVersions).
+# renovate: datasource=go depName=github.com/google/go-licenses/v2
+GO_LICENSES_VERSION ?= v2.0.1
+GO_LICENSES := go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
+# renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
 GOLANGCI_VERSION    ?= v2.14.0
+# renovate: datasource=go depName=golang.org/x/vuln
 GOVULNCHECK_VERSION ?= v1.8.0
+# renovate: datasource=go depName=github.com/boumenot/gocover-cobertura
 GOCOVER_VERSION     ?= v1.5.0
 # Tools are built with this module's toolchain: golangci-lint refuses code that targets a newer Go than it was built with.
 TOOLCHAIN   := $(shell go env GOVERSION)

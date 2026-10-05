@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,5 +175,34 @@ func TestCheckWorkflowUsesTheDevcontainer(t *testing.T) {
 	s := string(body)
 	if !strings.Contains(s, "devcontainers/ci@") || !strings.Contains(s, "runCmd: make check") || strings.Contains(s, "actions/setup-go") {
 		t.Errorf("the workflow must build the container and run the check in it, without its own toolchain:\n%s", s)
+	}
+}
+
+// Renovate gets only the settings the repository's stacks call for.
+func TestComposeRenovate(t *testing.T) {
+	t.Parallel()
+	read := func(p fix.Project) map[string]any {
+		t.Helper()
+		body, ok, err := catalog.EmbeddedTemplates{}.Compose(p.Stack+"/renovate.json", p)
+		if err != nil || !ok {
+			t.Fatalf("ok=%v err=%v", ok, err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(body, &doc); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, body)
+		}
+		return doc
+	}
+	goOnly := read(fix.Project{Stack: "go"})
+	if goOnly["postUpdateOptions"] == nil || goOnly["lockFileMaintenance"] != nil {
+		t.Errorf("a Go module tidies but has no lockfile to maintain: %v", goOnly)
+	}
+	none := read(fix.Project{})
+	if none["postUpdateOptions"] != nil || none["lockFileMaintenance"] != nil || none["pre-commit"] == nil {
+		t.Errorf("a repository without a stack gets neither: %v", none)
+	}
+	mixed := read(fix.Project{Stack: "go", Nested: []fix.Nested{{Path: "frontend", Stack: "node"}}})
+	if mixed["postUpdateOptions"] == nil || mixed["lockFileMaintenance"] == nil {
+		t.Errorf("go plus node gets both: %v", mixed)
 	}
 }

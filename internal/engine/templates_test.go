@@ -19,7 +19,7 @@ import (
 func TestTemplatesSatisfyTheRules(t *testing.T) {
 	t.Parallel()
 	manifests := map[string]map[string]string{
-		"go":      {"go.mod": "module x\n\ngo 1.24.0\n", ".goreleaser.yaml": "builds: [{main: .}]\nsboms: [{artifacts: archive}]\nsigns: [{cmd: cosign}]\n"},
+		"go":      {"go.mod": "module x\n\ngo 1.24.0\n", "renovate.json": "{}", ".goreleaser.yaml": "builds: [{main: .}]\nsboms: [{artifacts: archive}]\nsigns: [{cmd: cosign}]\n"},
 		"rust":    {"Cargo.toml": "[package]\nname = \"x\"\n", ".goreleaser.yaml": "builds: [{builder: rust}]\nsboms: [{artifacts: archive}]\nsigns: [{cmd: cosign}]\n"},
 		"python":  {"pyproject.toml": "[project]\nname = \"x\"\n"},
 		"node":    {"package.json": "{}"},
@@ -30,7 +30,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 		"hooks/config-present", "hooks/shared-hygiene", "hooks/secret-scan", "hooks/conventional-commits", "hooks/pre-push-check",
 		"ci/check-workflow", "ci/least-privilege", "ci/job-timeouts", "ci/concurrency-cancel", "ci/actions-pinned",
 		"release/tag-triggered", "release/sbom", "release/signing", "release/provenance", "release/checksums",
-		"changelog/generator-configured", "quality/policy-enforced",
+		"changelog/generator-configured", "quality/policy-enforced", "deps/update-automation",
 	}
 	for stack, files := range manifests {
 		t.Run(stack, func(t *testing.T) {
@@ -41,6 +41,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 				stack + "/release.yml":            ".github/workflows/release.yml",
 				"Makefile":                        "Makefile",
 				"cliff.toml":                      "cliff.toml",
+				"renovate.json":                   "renovate.json",
 			} {
 				b, err := catalog.EmbeddedTemplates{}.Template(name)
 				if err != nil {

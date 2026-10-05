@@ -1,6 +1,22 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests", ":semanticCommits"],
-  "postUpdateOptions": ["gomodTidy"],
-  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] }
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommits",
+    "customManagers:makefileVersions",
+    "customManagers:githubActionsVersions"
+  ],
+  "pre-commit": {
+    "enabled": true
+  },
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  }
 }

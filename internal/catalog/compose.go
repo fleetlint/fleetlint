@@ -23,7 +23,7 @@ const (
 // composed splits "<stack>/<file>" for the assembled templates.
 func composed(name string) (stack, file string, ok bool) {
 	stack, file, found := strings.Cut(name, "/")
-	return stack, file, found && (file == hooksTemplate || file == checkTemplate || file == devcontainerTemplate)
+	return stack, file, found && (file == hooksTemplate || file == checkTemplate || file == devcontainerTemplate || file == renovateTemplate)
 }
 
 // Compose returns a template assembled for the project: its stacks, its
@@ -43,6 +43,8 @@ func (t Templates) Compose(name string, p fix.Project) (body []byte, ok bool, er
 		body, err = t.composeHooks(stack, p)
 	case file == checkTemplate:
 		body, err = t.composeCheck(stack, p)
+	case file == renovateTemplate:
+		body, err = composeRenovate(stack, p)
 	case p.Container == facts.ContainerDevcontainer:
 		body, err = composeDevcontainer(stack, p)
 	default:
