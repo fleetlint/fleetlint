@@ -1,5 +1,4 @@
 # One file for GitHub and Gitea.
-# UNVERIFIED on a real runner until the first tag: see docs/ROADMAP.md.
 # Gitea Actions reads .github/workflows/ too, and both forges set github.server_url.
 # Actions are pinned to commit SHAs with `pinact run`
 # (Renovate keeps the pins current via renovate.json).
