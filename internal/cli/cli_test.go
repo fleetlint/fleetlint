@@ -448,3 +448,55 @@ func TestFixWritesForTheConfiguredTools(t *testing.T) {
 		t.Errorf("workflow must install and call task:\n%s", w)
 	}
 }
+
+// init reports everything it will act on without being told: stacks, the
+// nested project, the task runner (and that there are two), the container.
+// Nothing of it needs pinning for check and fix to use it.
+func TestInitPicksUpTheSetup(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod": "module x\n\ngo 1.26.0\n", "frontend/package.json": "{}",
+		"justfile": "lint:\n    go vet ./...\n", "Taskfile.yml": "version: '3'\ntasks:\n  lint: go vet ./...\n",
+		".devcontainer/devcontainer.json": "{}",
+	}).Root
+	// --tier 1 because a repository without a remote counts as an experiment,
+	// and experiments are not asked for hooks or CI.
+	code, out, errOut := runCLI(t, dir, "init", "--tier", "1")
+	if code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	for _, want := range []string{
+		"stacks=[go]", "layout=nested", "taskrunner=just", "container=devcontainer",
+		"# scopes (each checked as its own project): frontend.",
+		"# task runners found: just, task. just is used; set `facts.taskrunner` to choose another.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("init output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "taskrunner: ") || strings.Contains(out, "container: ") || strings.Contains(out, "scopes:\n") {
+		t.Errorf("detected facts are not pinned:\n%s", out)
+	}
+	_, facts, _ := runCLI(t, dir, "facts")
+	for _, want := range []string{"container    devcontainer", "taskrunner   just (lint)", "scope        frontend stacks=node"} {
+		if !strings.Contains(facts, want) {
+			t.Errorf("facts lack %q:\n%s", want, facts)
+		}
+	}
+	// fix then writes for what was detected: no Makefile next to the justfile,
+	// hooks that call just, a workflow that uses the dev container.
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("fix: exit %d\n%s\n%s", code, out, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil {
+		t.Error("fix must not add a second task runner")
+	}
+	hooks, _ := os.ReadFile(filepath.Join(dir, ".pre-commit-config.yaml"))
+	workflow, _ := os.ReadFile(filepath.Join(dir, ".github/workflows/check.yml"))
+	if !strings.Contains(string(hooks), "entry: just check") || !strings.Contains(string(hooks), "eslint-frontend") {
+		t.Errorf("hooks must call just and cover the nested project:\n%s", hooks)
+	}
+	if !strings.Contains(string(workflow), "devcontainers/ci@") || !strings.Contains(string(workflow), "runCmd: just check") {
+		t.Errorf("the workflow must run just check in the dev container:\n%s", workflow)
+	}
+}

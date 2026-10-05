@@ -180,18 +180,38 @@ func (e *Env) grep(pattern, re string) ([]any, error) {
 		if !ok {
 			continue
 		}
-		inFence := false
-		for i, line := range strings.Split(text, "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "```") || strings.HasPrefix(strings.TrimSpace(line), "~~~") {
-				inFence = !inFence // fenced code is not prose
-				continue
-			}
-			if !inFence && rx.MatchString(line) {
-				out = append(out, map[string]any{"path": path, "line": int64(i + 1), "text": excerpt(line)})
-			}
-		}
+		out = append(out, grepText(rx, path, text)...)
 	}
 	return out, nil
+}
+
+// grepText returns the matches in one file, leaving out fenced code blocks:
+// in documentation they are examples, not prose.
+func grepText(rx *regexp.Regexp, path, text string) []any {
+	var out []any
+	inFence := false
+	for i, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") || strings.HasPrefix(strings.TrimSpace(line), "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if m := rx.FindStringSubmatch(line); m != nil {
+			out = append(out, map[string]any{"path": path, "line": int64(i + 1), "text": excerpt(line), "match": captured(m)})
+		}
+	}
+	return out
+}
+
+// captured is what a rule gets as `item.match`: the first capture group
+// when the pattern has one, else the whole match, never shortened.
+func captured(m []string) string {
+	if len(m) > 1 {
+		return m[1]
+	}
+	return m[0]
 }
 
 // excerpt keeps a matched line short enough to read in a finding.

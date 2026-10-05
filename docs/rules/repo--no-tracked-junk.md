@@ -8,16 +8,28 @@ No editor, OS or backup files are tracked
 | Tiers | all |
 | Stacks | any |
 | Scope | each |
-| Kind | go |
+| Kind | expr |
 | Source | fleetlint-minimal@0.1.0 |
 
 ## Requirement
 
-Files such as .DS_Store, Thumbs.db, *.bak, *.orig, *.swp, *.log and nohup.out are never committed.
+Files such as .DS_Store, Thumbs.db, *.bak, *.orig, *.swp, *.log, nohup.out, Python bytecode, dependency directories and personal IDE state are never committed.
 
 ## Why
 
 They are noise at best and leak local paths or data at worst.
+
+## Check
+
+For each `item` in:
+
+```cel
+tracked().filter(p, p.matches(r'(^|/)(\.DS_Store|Thumbs\.db|desktop\.ini|nohup\.out)$|\.(bak|orig|rej|swp|swo|log|pyc)$|~$|(^|/)(__pycache__|node_modules|\.venv|venv)/|(^|/)\.idea/workspace\.xml$|(^|/)\.vscode/settings\.json$'))
+```
+
+```cel
+false
+```
 
 ## Fix
 

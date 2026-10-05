@@ -47,8 +47,8 @@ var Accessors = []Accessor{
 	{"triggers(path: string) -> list<string>", "Event names a workflow reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape."},
 	{"tags() -> list<string>", "Git tags, newest version first."},
 	{"commits(n: int) -> list<map>", "Newest n commits as `{hash, author, email, subject, body, trailers, lines}`; `lines` is insertions plus deletions; empty without git."},
-	{"grep(glob: string, regex: string) -> list<map>", "`{path, line, text}` for every line matching the regex (case-insensitive) in files matching the glob; skips fenced code blocks; pairs with `foreach` to flag every match."},
-	{"codegrep(kind: string, regex: string) -> list<map>", "`{path, line, text}` for every matching line of tracked source code; kind is `code`, `test` or `nontest`. Case-sensitive unless the pattern starts with `(?i)`; vendored, generated and build paths are skipped."},
+	{"grep(glob: string, regex: string) -> list<map>", "`{path, line, text, match}` for every line matching the regex (case-insensitive) in files matching the glob; `match` is the first capture group, or the whole match, unshortened; skips fenced code blocks; pairs with `foreach` to flag every match."},
+	{"codegrep(kind: string, regex: string) -> list<map>", "`{path, line, text, match}` for every matching line of tracked source code; kind is `code`, `test` or `nontest`. Case-sensitive unless the pattern starts with `(?i)`; vendored, generated and build paths are skipped."},
 	{"filesize(path: string) -> int", "Size in bytes of a tracked or untracked file; 0 when absent."},
 	{"globmatch(pattern: string, path: string) -> bool", "True if the path matches the glob (`**` supported)."},
 }

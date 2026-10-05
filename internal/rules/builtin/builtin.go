@@ -1,6 +1,7 @@
-// Package builtin holds the Go-implemented rules shipped with fleetlint.
-// Importing it registers them. Each rule lives in its own file with its
-// tests; the catalog carries the metadata under the same id.
+// Package builtin holds the rules that have to be code: those that execute
+// something in the repository. Importing it registers them; the catalog
+// carries their metadata under the same id. Every other rule is data in the
+// catalog.
 package builtin
 
 import (
@@ -8,8 +9,5 @@ import (
 )
 
 func init() {
-	rules.Register(trackedJunk{})
-	rules.Register(lockfileCommitted{})
-	rules.Register(actionsPinned{})
 	rules.Register(checkPasses{})
 }

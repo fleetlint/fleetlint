@@ -31,7 +31,7 @@ Dependencies point inward: `cli → engine → {config, facts, celenv, rules} �
 | `catalog` | catalog format, presets and templates embedded from the module `github.com/fleetlint/catalog`, local, https and git loading, digest verification, includes | https catalogs require a digest, git catalogs a digest or a commit SHA; untrusted catalogs cannot declare `command` rules |
 | `forge` | read-only GitHub and Gitea REST client: an owner's repositories, one repository's visibility | used only by `fleet --from` and `init`; `check` never contacts a forge; tokens come from the environment and go to their own forge only |
 | `config` | `.fleetlint.yaml`: validation, merge with catalogs, overrides, exceptions | unknown keys, unknown ids, disables without reason are errors |
-| `rules`, `rules/builtin` | Go-implemented rules and their registry | the catalog carries metadata; Go carries only detection logic |
+| `rules`, `rules/builtin` | the registry for rules that have to be code, and the one that is: `quality/check-passes`, which runs the repository's check | every other rule is data in the catalog; a rule is code only when it executes something |
 | `engine` | applicability, evaluation, exceptions, scopes | a rule that cannot run is `error`, never `pass` |
 | `fix` | declarative fix actions: template, untrack, gitignore | dry run unless applied; never overwrites an existing file |
 | `report` | rendering | reads results; never recomputes |

@@ -73,6 +73,20 @@ func RunnerCmd(kind string) string {
 	return "make"
 }
 
+// RunnersFound lists the kinds whose file is present, in detection order.
+func (r *Repo) RunnersFound() []string {
+	var found []string
+	for _, s := range runnerSpecs {
+		for _, f := range s.files {
+			if r.Has(f) {
+				found = append(found, s.kind)
+				break
+			}
+		}
+	}
+	return found
+}
+
 // Runner reads the scope's task runner. want names a kind to use even when
 // another runner's file is present; "" takes the first one found.
 func (r *Repo) Runner(want string) Runner {

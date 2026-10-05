@@ -79,7 +79,7 @@ expr: 'glob(".github/workflows/*.yml").all(w, has(yaml(w).permissions))'
 
 ## Go rules
 
-Implement `rules.Checker` in `internal/rules/builtin`, register it in `builtin.go`, declare the id in a catalog with `kind: go`, and add a passing and a failing fixture test. Return one `Finding` per concrete problem with `Path` and `Line` where known; set `Outcome.Evidence` to explain a pass.
+Rules are data. The one exception in the presets is `quality/check-passes`, which runs the repository's check and so has to be code. A new rule of that kind implements `rules.Checker` in `internal/rules/builtin`, is registered in `builtin.go`, declared in the catalog with `kind: go`, and gets a passing and a failing fixture test. If a rule only needs to read something the accessors do not offer yet, add the accessor instead. Return one `Finding` per concrete problem with `Path` and `Line` where known; set `Outcome.Evidence` to explain a pass.
 
 ## Outcome rules: satisfiers without Go
 

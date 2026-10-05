@@ -64,7 +64,7 @@ func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visi
 	return facts.VisibilityPrivate
 }
 
-func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibility) string {
+func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibility, runners []string) string {
 	f := run.Facts
 	var b strings.Builder
 	b.WriteString("# .fleetlint.yaml: https://github.com/fleetlint/fleetlint\n")
@@ -80,8 +80,11 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 	if looked != "" {
 		fmt.Fprintf(&b, "  visibility: %s   # as the forge reported it at init; update it if the repository changes hands\n", looked)
 	}
-	fmt.Fprintf(&b, "# discovered: stacks=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s\n",
-		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.Sources["tier"], f.Layout, yesNo(f.Release.Exists))
+	fmt.Fprintf(&b, "# discovered: stacks=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
+		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.Sources["tier"], f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
+	if len(runners) > 1 {
+		fmt.Fprintf(&b, "# task runners found: %s. %s is used; set `facts.taskrunner` to choose another.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
+	}
 	if len(f.Members) > 0 {
 		fmt.Fprintf(&b, "# scopes (each checked as its own project): %s. List them under `scopes:` to change that.\n", strings.Join(f.Members, ", "))
 	}
@@ -106,8 +109,12 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), string(f.Sources["taskrunner"])},
 		{"hooks", orNone(strings.Join(f.Hooks, ", ")), "detected"},
 	}...)
+	scopeSource := "detected"
+	if run.Config != nil && run.Config.File.Scopes != nil {
+		scopeSource = "configured"
+	}
 	for _, s := range run.Scopes[1:] {
-		rows = append(rows, [3]string{"scope", s.Path + " stacks=" + strings.Join(s.Facts.Stacks, ","), "configured"})
+		rows = append(rows, [3]string{"scope", s.Path + " stacks=" + strings.Join(s.Facts.Stacks, ","), scopeSource})
 	}
 	for _, r := range rows {
 		if _, err := fmt.Fprintf(w, "%-12s %-40s %s\n", r[0], r[1], r[2]); err != nil {
@@ -248,7 +255,7 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	looked := forgeVisibility(cmd, r, facts.Discover(r, facts.Overrides{}))
 	// The header describes the facts as they will be under the file written.
 	run.Facts = facts.Discover(r, facts.Overrides{Visibility: looked, Tier: o.tier})
-	content := renderInit(run, o.preset, o.tier, looked)
+	content := renderInit(run, o.preset, o.tier, looked, r.RunnersFound())
 	target := filepath.Join(r.Root, config.FileName)
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec // a config file must be readable by other tools
 		return err

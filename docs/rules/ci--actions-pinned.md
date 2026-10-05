@@ -8,16 +8,34 @@ Actions are pinned to commit SHAs
 | Tiers | 1 |
 | Stacks | any |
 | Scope | root |
-| Kind | go |
+| Kind | expr |
 | Source | fleetlint-recommended@0.1.0 |
 
 ## Requirement
 
-Every `uses:` reference in a workflow is pinned to a full 40-character commit SHA with a version comment.
+Every `uses:` reference in a workflow is pinned to a full 40-character commit SHA with a version comment. Local actions (`./path`) and `docker://` references are exempt.
 
 ## Why
 
 A tag can be moved; a SHA cannot. Pinning is what makes a workflow reproducible and tamper-evident.
+
+## Applies when
+
+```cel
+workflows().size() > 0
+```
+
+## Check
+
+For each `item` in:
+
+```cel
+grep(".github/workflows/*.y*ml", r'^\s*-?\s*uses:\s*["\x27]?([^\s"\x27#]+)') + grep(".gitea/workflows/*.y*ml", r'^\s*-?\s*uses:\s*["\x27]?([^\s"\x27#]+)')
+```
+
+```cel
+item.match.startsWith("./") || item.match.startsWith("docker://") || item.match.matches("@[0-9a-f]{40}$")
+```
 
 ## Fix
 

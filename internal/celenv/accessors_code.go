@@ -68,8 +68,8 @@ func (e *Env) codegrep(kind, re string) ([]any, error) {
 			continue
 		}
 		for i, line := range strings.Split(text, "\n") {
-			if rx.MatchString(line) {
-				out = append(out, map[string]any{"path": p, "line": int64(i + 1), "text": clip(line)})
+			if m := rx.FindStringSubmatch(line); m != nil {
+				out = append(out, map[string]any{"path": p, "line": int64(i + 1), "text": clip(line), "match": captured(m)})
 			}
 		}
 	}
