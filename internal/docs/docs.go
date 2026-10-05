@@ -52,6 +52,17 @@ func Generate(opts Options) ([]Page, error) {
 	return pages, nil
 }
 
+// prose makes catalog text safe as Markdown prose: outside code spans, an
+// angle bracket is text (`<digest>`, `<name>`), not the start of an HTML tag
+// that a renderer would drop.
+func prose(text string) string {
+	parts := strings.Split(text, "`")
+	for i := 0; i < len(parts); i += 2 {
+		parts[i] = strings.NewReplacer("<", "&lt;", ">", "&gt;").Replace(parts[i])
+	}
+	return strings.Join(parts, "`")
+}
+
 // refLinks writes URLs so that Markdown renders them as links.
 func refLinks(refs []string) []string {
 	links := make([]string, 0, len(refs))
@@ -105,16 +116,16 @@ func rulesIndex(rules []model.Rule, byPreset map[string][]string) []byte {
 
 func rulePage(r model.Rule) []byte {
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "# %s\n\n%s\n\n", r.ID, r.Title)
+	fmt.Fprintf(&b, "# %s\n\n%s\n\n", r.ID, prose(r.Title))
 	fmt.Fprintf(&b, "| | |\n|---|---|\n| Severity | %s |\n| Tiers | %s |\n| Stacks | %s |\n| Scope | %s |\n| Kind | %s |\n| Source | %s |\n",
 		r.Severity, tiers(r), stacks(r), scope(r), r.Kind, r.Source)
 	if r.Locked || r.MinSeverity != "" || !r.ExceptionsAllowed() {
 		fmt.Fprintf(&b, "| Policy | locked: %t, floor: %s, exceptions: %t |\n", r.Locked, r.Floor(), r.ExceptionsAllowed())
 	}
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "## Requirement\n\n%s\n\n", strings.TrimSpace(r.Requirement))
+	fmt.Fprintf(&b, "## Requirement\n\n%s\n\n", prose(strings.TrimSpace(r.Requirement)))
 	if r.Rationale != "" {
-		fmt.Fprintf(&b, "## Why\n\n%s\n\n", strings.TrimSpace(r.Rationale))
+		fmt.Fprintf(&b, "## Why\n\n%s\n\n", prose(strings.TrimSpace(r.Rationale)))
 	}
 	if r.When != "" {
 		fmt.Fprintf(&b, "## Applies when\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.When))
@@ -138,9 +149,9 @@ func rulePage(r model.Rule) []byte {
 		}
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "## Fix\n\n%s\n\n", r.Fix.Human)
+	fmt.Fprintf(&b, "## Fix\n\n%s\n\n", prose(r.Fix.Human))
 	if r.Fix.Agent != "" {
-		fmt.Fprintf(&b, "Agent instruction: %s\n\n", r.Fix.Agent)
+		fmt.Fprintf(&b, "Agent instruction: %s\n\n", prose(r.Fix.Agent))
 	}
 	if len(r.Fix.Actions) > 0 {
 		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
