@@ -31,21 +31,23 @@ const (
 type Options struct {
 	Color   bool
 	Verbose bool // show passes and n/a
-	// Version names the binary in machine-readable outputs (SARIF).
+	// Version names the binary and Catalog the catalog module it was built
+	// against; every format states both, so a report says which rules made it.
 	Version string
+	Catalog string
 }
 
 // Write renders a run in the chosen format.
 func Write(w io.Writer, run *engine.Run, format Format, opts Options) error {
 	switch format {
 	case FormatJSON:
-		return writeJSON(w, run)
+		return writeJSON(w, run, opts)
 	case FormatAgent:
-		return writeAgent(w, run)
+		return writeAgent(w, run, opts)
 	case FormatSARIF:
-		return writeSARIF(w, run, opts.Version)
+		return writeSARIF(w, run, opts)
 	case FormatMarkdown:
-		return writeMarkdown(w, run)
+		return writeMarkdown(w, run, opts)
 	case FormatTable, "":
 		return writeTable(w, run, opts)
 	}
@@ -54,6 +56,7 @@ func Write(w io.Writer, run *engine.Run, format Format, opts Options) error {
 
 type jsonOut struct {
 	Version  int               `json:"version"`
+	Tool     toolOut           `json:"tool"`
 	Repo     string            `json:"repo"`
 	Facts    any               `json:"facts"`
 	Scopes   []engine.ScopeRun `json:"scopes,omitempty"`
@@ -64,6 +67,26 @@ type jsonOut struct {
 	Catalogs []catalogOut      `json:"catalogs"`
 }
 
+// toolOut identifies what produced a report.
+type toolOut struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Catalog is the version of the catalog module built into the binary.
+	Catalog string `json:"catalog"`
+}
+
+// builtWith is the one-line form of the same for text formats.
+func builtWith(opts Options) string {
+	return "fleetlint " + orUnknown(opts.Version) + ", catalog " + orUnknown(opts.Catalog)
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
 type disabledOut struct {
 	ID, Reason, Where, Layer string
 }
@@ -72,9 +95,9 @@ type catalogOut struct {
 	Ref, Name, Version, Digest, Layer, Alias string
 }
 
-func writeJSON(w io.Writer, run *engine.Run) error {
+func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 	out := jsonOut{
-		Version: 1, Repo: run.Facts.Name, Facts: run.Facts, Scopes: run.Scopes,
+		Version: 1, Tool: toolOut{Name: "fleetlint", Version: orUnknown(opts.Version), Catalog: orUnknown(opts.Catalog)}, Repo: run.Facts.Name, Facts: run.Facts, Scopes: run.Scopes,
 		Summary: model.Summarize(run.Results), Results: run.Results,
 	}
 	for _, d := range run.Config.Disabled {
@@ -151,6 +174,8 @@ func writeTable(w io.Writer, run *engine.Run, opts Options) error {
 		return err
 	}
 	writeFooter(ew, run, paint)
+	ew.line()
+	ew.line(paint(dim, builtWith(opts)))
 	return ew.err
 }
 
@@ -255,8 +280,12 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 	}
 }
 
-func writeAgent(w io.Writer, run *engine.Run) error {
-	return WriteActions(w, run.Facts.Name, run.Results)
+func writeAgent(w io.Writer, run *engine.Run, opts Options) error {
+	if err := WriteActions(w, run.Facts.Name, run.Results); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, "\nProduced by %s.\n", builtWith(opts))
+	return err
 }
 
 // WriteActions renders the ordered task list for a coding agent. Findings are

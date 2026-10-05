@@ -115,7 +115,7 @@ func leadMessage(r model.Result) string {
 
 func renderMarkdown(rep *Report) []byte {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Fleet report\n\nGenerated %s · %d repositories · %d rules\n\n", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules))
+	fmt.Fprintf(&b, "# Fleet report\n\nGenerated %s · %d repositories · %d rules · fleetlint %s, catalog %s\n\n", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules), orUnknown(rep.Tool), orUnknown(rep.Catalog))
 	b.WriteString("## Repositories\n\n| Repository | Team | Stacks | Tier | Compliance | Errors | Warnings | Excepted | Disabled |\n|---|---|---|---|---|---|---|---|---|\n")
 	for _, r := range rep.Repos {
 		if r.Err != "" {
@@ -237,7 +237,7 @@ th{position:sticky;top:0;background:var(--bg)}td.c{text-align:center}
 .wrap{overflow-x:auto}abbr{text-decoration:none;cursor:help}
 th.rot{height:170px;vertical-align:bottom;padding:4px 2px}th.rot div{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:normal;font-size:12px}
 </style></head><body>`)
-	fmt.Fprintf(&b, "<h1>Fleet report</h1><p class=muted>Generated %s · %d repositories · %d rules</p>", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules))
+	fmt.Fprintf(&b, "<h1>Fleet report</h1><p class=muted>Generated %s · %d repositories · %d rules · fleetlint %s, catalog %s</p>", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules), html.EscapeString(orUnknown(rep.Tool)), html.EscapeString(orUnknown(rep.Catalog)))
 	b.WriteString("<h2>Repositories</h2><div class=wrap><table><tr><th>Repository</th><th>Team</th><th>Stacks</th><th>Tier</th><th>Compliance</th><th>Errors</th><th>Warnings</th><th>Excepted</th><th>Disabled</th></tr>")
 	for _, r := range rep.Repos {
 		if r.Err != "" {
@@ -291,4 +291,11 @@ func markClass(mark string) string {
 		return "err"
 	}
 	return "na"
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }

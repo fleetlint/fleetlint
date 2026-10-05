@@ -59,6 +59,9 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 		}
 	}
 	md, _ := os.ReadFile(filepath.Join(out, "fleet.md"))
+	if !strings.Contains(string(md), ", catalog ") {
+		t.Errorf("the fleet report names the catalog version:\n%s", md)
+	}
 	if !strings.Contains(string(md), "## Teams") || !strings.Contains(string(md), "| b | 1 | 0 |") {
 		t.Errorf("markdown lacks the team summary:\n%s", md)
 	}

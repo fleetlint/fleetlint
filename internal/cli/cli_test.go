@@ -500,3 +500,16 @@ func TestInitPicksUpTheSetup(t *testing.T) {
 		t.Errorf("the workflow must run just check in the dev container:\n%s", workflow)
 	}
 }
+
+// The binary says which catalog it carries, on its own and in what it prints.
+func TestVersionNamesTheCatalog(t *testing.T) {
+	t.Parallel()
+	_, out, _ := runCLI(t, t.TempDir(), "--version")
+	if !strings.Contains(out, "fleetlint version ") || !strings.Contains(out, "\ncatalog ") || !strings.Contains(out, "github.com/fleetlint/catalog") {
+		t.Errorf("--version must name the tool and the catalog:\n%s", out)
+	}
+	dir := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"}).Root
+	if _, out, _ := runCLI(t, dir, "check"); !strings.Contains(out, ", catalog ") {
+		t.Errorf("check must end with the versions:\n%s", out)
+	}
+}

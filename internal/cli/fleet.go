@@ -34,7 +34,7 @@ GITEA_TOKEN from the environment, if set) and clones them with git's credentials
 			if err != nil {
 				return &configError{err}
 			}
-			rep, err := fleet.Run(cmd.Context(), spec, fleet.Options{Deep: g.deep, Update: update, Cache: cache, Require: g.require})
+			rep, err := fleet.Run(cmd.Context(), spec, fleet.Options{Deep: g.deep, Update: update, Cache: cache, Require: g.require, Version: Version})
 			if err != nil {
 				return err
 			}

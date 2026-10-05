@@ -51,7 +51,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, err
 		Long:          "fleetlint checks how a repository is set up (hooks, task runner, lint config, CI, release) against a catalog of rules, and tells you how to fix the gaps.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       Version,
+		Version:       Version + "\ncatalog " + catalog.ModuleVersion() + " (" + catalog.ModulePath + ")",
 	}
 	root.Flags().Bool("version", false, "print the version") // explicit so cobra does not claim -v
 	root.PersistentFlags().StringVarP(&g.path, "path", "C", ".", "repository root")
@@ -112,7 +112,7 @@ func checkCmd(g *globals, code *int) *cobra.Command {
 				return err
 			}
 			markFixable(r, run)
-			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version}); err != nil {
+			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version, Catalog: catalog.ModuleVersion()}); err != nil {
 				return &configError{err}
 			}
 			*code = exitFor(run, g.failOn)

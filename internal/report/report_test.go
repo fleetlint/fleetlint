@@ -138,3 +138,26 @@ func TestUnknownFormat(t *testing.T) {
 		t.Fatal("unknown format must error")
 	}
 }
+
+// Every format says which fleetlint and which catalog produced it.
+func TestReportsNameToolAndCatalog(t *testing.T) {
+	t.Parallel()
+	opts := report.Options{Version: "1.2.3", Catalog: "v0.4.0"}
+	for _, f := range []report.Format{report.FormatTable, report.FormatMarkdown, report.FormatAgent} {
+		if out := render(t, f, opts); !strings.Contains(out, "fleetlint 1.2.3, catalog v0.4.0") {
+			t.Errorf("%s output lacks the versions:\n%s", f, out)
+		}
+	}
+	var doc struct {
+		Tool struct{ Name, Version, Catalog string } `json:"tool"`
+	}
+	if err := json.Unmarshal([]byte(render(t, report.FormatJSON, opts)), &doc); err != nil || doc.Tool.Version != "1.2.3" || doc.Tool.Catalog != "v0.4.0" {
+		t.Errorf("json tool: %+v err=%v", doc.Tool, err)
+	}
+	if out := render(t, report.FormatSARIF, opts); !strings.Contains(out, `"catalog": "v0.4.0"`) {
+		t.Errorf("sarif lacks the catalog version:\n%s", out)
+	}
+	if out := render(t, report.FormatTable, report.Options{}); !strings.Contains(out, "fleetlint unknown, catalog unknown") {
+		t.Errorf("missing versions are stated, not left out:\n%s", out)
+	}
+}

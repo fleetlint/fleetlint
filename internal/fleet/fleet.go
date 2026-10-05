@@ -108,6 +108,8 @@ type Options struct {
 	Update  bool // git fetch/pull cached clones
 	Now     time.Time
 	Cache   string
+	// Version names the binary in the report.
+	Version string
 }
 
 // RepoReport is one repository's outcome.
@@ -136,8 +138,12 @@ func (r RepoReport) Compliance() float64 {
 
 // Report is the whole fleet.
 type Report struct {
-	GeneratedAt time.Time    `json:"generated_at"`
-	Repos       []RepoReport `json:"repos"`
+	GeneratedAt time.Time `json:"generated_at"`
+	// Tool and Catalog are the fleetlint version and the catalog version
+	// built into it: which rules produced this report.
+	Tool    string       `json:"tool,omitempty"`
+	Catalog string       `json:"catalog,omitempty"`
+	Repos   []RepoReport `json:"repos"`
 	// Rules is the union of rule ids seen, sorted, for the matrix columns.
 	Rules []string `json:"rules"`
 	// Teams summarizes the repositories per team; empty when no entry names one.
@@ -149,7 +155,7 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 	if opts.Now.IsZero() {
 		opts.Now = time.Now()
 	}
-	rep := &Report{GeneratedAt: opts.Now}
+	rep := &Report{GeneratedAt: opts.Now, Tool: opts.Version, Catalog: catalog.ModuleVersion()}
 	seen := map[string]bool{}
 	for _, e := range spec.Repos {
 		if ctx.Err() != nil {

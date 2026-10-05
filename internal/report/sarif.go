@@ -29,6 +29,8 @@ type sarifDriver struct {
 	Version        string      `json:"version,omitempty"`
 	InformationURI string      `json:"informationUri"`
 	Rules          []sarifRule `json:"rules"`
+	// Properties carries the catalog version the binary was built against.
+	Properties map[string]any `json:"properties,omitempty"`
 }
 
 type sarifRule struct {
@@ -73,12 +75,12 @@ type sarifRegion struct {
 	StartLine int `json:"startLine"`
 }
 
-func writeSARIF(w io.Writer, run *engine.Run, version string) error {
+func writeSARIF(w io.Writer, run *engine.Run, opts Options) error {
 	log := sarifLog{
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
 	}
-	driver := sarifDriver{Name: "fleetlint", Version: version, InformationURI: "https://github.com/fleetlint/fleetlint"}
+	driver := sarifDriver{Name: "fleetlint", Version: opts.Version, InformationURI: "https://github.com/fleetlint/fleetlint", Properties: map[string]any{"catalog": orUnknown(opts.Catalog)}}
 	seen := map[string]bool{}
 	var results []sarifResult
 	for _, r := range run.Results {

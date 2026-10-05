@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -49,7 +50,7 @@ func openOnboardingPR(cmd *cobra.Command, r *repo.Repo, run *engine.Run) error {
 		}
 	}
 	var body bytes.Buffer
-	if err := report.Write(&body, run, report.FormatMarkdown, report.Options{}); err != nil {
+	if err := report.Write(&body, run, report.FormatMarkdown, report.Options{Version: Version, Catalog: catalog.ModuleVersion()}); err != nil {
 		return err
 	}
 	body.WriteString("\n---\nOpened by `fleetlint init --pr`. Merge to adopt the configuration; findings are informational until the hook or CI enforces them.\n")

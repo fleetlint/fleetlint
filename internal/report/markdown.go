@@ -11,13 +11,14 @@ import (
 
 // writeMarkdown renders a pull-request comment: a summary line, one table
 // row per failing rule, and a collapsed section with the agent instructions.
-func writeMarkdown(w io.Writer, run *engine.Run) error {
+func writeMarkdown(w io.Writer, run *engine.Run, opts Options) error {
 	var b strings.Builder
 	c := model.Summarize(run.Results)
 	f := run.Facts
 	fmt.Fprintf(&b, "### fleetlint: %s\n\n", f.Name)
 	fmt.Fprintf(&b, "%d passed · %d warnings · %d errors · %d excepted · stacks: %s · tier %d\n\n",
 		c.Pass, c.Warnings, c.Errors, c.Excepted, orNone(strings.Join(f.Stacks, ", ")), f.Tier)
+	fmt.Fprintf(&b, "Checked with %s.\n\n", builtWith(opts))
 	fails := failing(run.Results)
 	if len(fails) == 0 {
 		b.WriteString("No findings.\n")
