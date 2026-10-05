@@ -27,8 +27,10 @@ var lockfileStacks = map[string]bool{"node": true, "python": true, "rust": true,
 // composeRenovate writes renovate.json for the project's stacks.
 func composeRenovate(stack string, p fix.Project) ([]byte, error) {
 	cfg := renovateConfig{
-		Schema:  "https://docs.renovatebot.com/renovate-schema.json",
-		Extends: []string{"config:recommended", "helpers:pinGitHubActionDigests", ":semanticCommits"},
+		Schema: "https://docs.renovatebot.com/renovate-schema.json",
+		// The two customManagers presets update versions in Makefiles and in
+		// workflow run steps that carry a `# renovate:` comment.
+		Extends: []string{"config:recommended", "helpers:pinGitHubActionDigests", ":semanticCommits", "customManagers:makefileVersions", "customManagers:githubActionsVersions"},
 		// The hook revisions fix writes are kept current too.
 		PreCommit: map[string]bool{"enabled": true},
 	}

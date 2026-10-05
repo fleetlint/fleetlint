@@ -41,7 +41,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 				stack + "/release.yml":            ".github/workflows/release.yml",
 				"Makefile":                        "Makefile",
 				"cliff.toml":                      "cliff.toml",
-				"renovate.json":                   "renovate.json",
+				stack + "/renovate.json":          "renovate.json",
 			} {
 				b, err := catalog.EmbeddedTemplates{}.Template(name)
 				if err != nil {
