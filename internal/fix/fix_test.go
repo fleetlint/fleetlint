@@ -44,12 +44,14 @@ func TestTemplateNeverOverwrites(t *testing.T) {
 	}
 }
 
-func TestStackTemplateWithoutStackIsAnError(t *testing.T) {
+// A template that exists only per stack has nothing for a repository without
+// one: no change is planned, and nothing fails.
+func TestStackTemplateWithoutStack(t *testing.T) {
 	t.Parallel()
-	r := testutil.Fixture(t, nil)
-	_, err := fix.Plan(r, "", []fix.Action{{Template: "{stack}/x", To: "x"}}, fakeTemplates{}, nil)
-	if err == nil {
-		t.Fatal("expected an error")
+	r := testutil.Fixture(t, map[string]string{})
+	changes, err := fix.Plan(r, "", []fix.Action{{Template: "{stack}/x", To: "x"}}, fakeTemplates{}, nil)
+	if err != nil || len(changes) != 0 {
+		t.Fatalf("changes=%v err=%v", changes, err)
 	}
 }
 

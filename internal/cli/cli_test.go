@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/goccy/go-yaml"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/cli"
 	"github.com/fleetlint/fleetlint/internal/testutil"
@@ -546,5 +548,32 @@ func TestPinnedCatalogFromTheCache(t *testing.T) {
 	}
 	if _, js, _ := runCLI(t, dir, "check", "--format", "json"); !strings.Contains(js, `"catalog": "v9.9.9 (cdcdcdcdcdcd), pinned in .fleetlint.yaml"`) {
 		t.Errorf("json must name the pinned version:\n%s", js)
+	}
+}
+
+// A repository with no programming-language stack (documentation, for one)
+// still gets the shared hooks and a check workflow, without toolchain steps.
+func TestFixWithoutAStack(t *testing.T) {
+	t.Parallel()
+	dir := testutil.GitFixture(t, map[string]string{
+		"README.md":       "# notes\n\n## Install\n\nnothing\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1}\n",
+	}).Root
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	hooks, _ := os.ReadFile(filepath.Join(dir, ".pre-commit-config.yaml"))
+	workflow, _ := os.ReadFile(filepath.Join(dir, ".github/workflows/check.yml"))
+	if !strings.Contains(string(hooks), "gitleaks") || strings.Contains(string(hooks), "golangci") {
+		t.Errorf("the shared hooks only:\n%s", hooks)
+	}
+	if !strings.Contains(string(workflow), "run: make check") || strings.Contains(string(workflow), "setup-go") {
+		t.Errorf("a workflow without a toolchain step:\n%s", workflow)
+	}
+	var doc any
+	for name, body := range map[string][]byte{"hooks": hooks, "workflow": workflow} {
+		if err := yaml.Unmarshal(body, &doc); err != nil {
+			t.Errorf("%s is not valid YAML: %v", name, err)
+		}
 	}
 }

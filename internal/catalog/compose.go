@@ -205,13 +205,15 @@ func (t Templates) composeHooks(stack string, p fix.Project) ([]byte, error) {
 		return nil, err
 	}
 	head = withRunner(head, p)
-	own, err := t.fragment("pre-commit/" + stack + ".yaml")
-	if err != nil {
-		return nil, err
-	}
 	var b strings.Builder
-	b.WriteString(head)
-	fmt.Fprintf(&b, "  # %s hooks\n%s", stack, own)
+	b.WriteString(strings.TrimRight(head, "\n") + "\n")
+	if stack != "" {
+		own, err := t.fragment("pre-commit/" + stack + ".yaml")
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&b, "\n  # %s hooks\n%s", stack, own)
+	}
 	for _, n := range nested {
 		block, err := t.fragment("pre-commit/" + n.Stack + ".yaml")
 		if err != nil {
@@ -321,12 +323,14 @@ func (t Templates) composeCheck(stack string, p fix.Project) ([]byte, error) {
 // writeToolchains adds the setup steps of the root stack and of every
 // nested stack that differs from it.
 func (t Templates) writeToolchains(b *strings.Builder, stack string, nested []fix.Nested) error {
-	own, err := t.fragment("check/" + stack + ".yml")
-	if err != nil {
-		return err
-	}
-	b.WriteString(own)
 	seen := map[string]bool{stack: true}
+	if stack != "" {
+		own, err := t.fragment("check/" + stack + ".yml")
+		if err != nil {
+			return err
+		}
+		b.WriteString(own)
+	}
 	for _, n := range nested {
 		if seen[n.Stack] {
 			continue // one toolchain per stack; the root's wins

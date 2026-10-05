@@ -31,9 +31,9 @@ fleetlint baseline        # grandfather today's findings; from now on only new o
 
 Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 configuration error, 3 internal error.
 
-The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it, and `fleetlint --version` and every report say which. What the presets check and why is in `docs/baseline.md`; the tools per stack are in `docs/stacks.md`; `docs/slop.md` is the catalog behind the `slop/*` rules and the add-on preset `fleetlint:slop`.
+Documentation: **[fleetlint.org](https://fleetlint.org/)** (source: [fleetlint/docs](https://github.com/fleetlint/docs)). The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it, and `fleetlint --version` and every report say which. What the presets check and why is in [the baseline](https://fleetlint.org/baseline/), the tools per stack in [the stack profiles](https://fleetlint.org/stacks/), and the catalog behind the `slop/*` rules in [the slop catalog](https://fleetlint.org/slop/).
 
-Organizations: a baseline catalog builds on the presets and adjusts them with `overrides:` (lock a rule, set a `min_severity` floor, forbid `exceptions`, change severity or parameters) without restating them; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See `docs/writing-rules.md` and `docs/fleet.md`. Hooks, CI and editors: `docs/integrations.md`.
+Organizations: a baseline catalog builds on the presets and adjusts them with `overrides:` (lock a rule, set a `min_severity` floor, forbid `exceptions`, change severity or parameters) without restating them; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See [organisations](https://fleetlint.org/organisations/) and [fleet mode](https://fleetlint.org/fleet/). Hooks, CI and editors: [integrations](https://fleetlint.org/integrations/).
 
 ## Configuration
 
@@ -69,7 +69,7 @@ exceptions:
     until: 2027-03-31
 ```
 
-Disabling a rule or lowering its severity requires a `reason`; both appear in the report. Exceptions cover individual findings, keep the rule running, and expire. Rule predicates are [CEL](https://cel.dev) over discovered facts and file accessors; see `docs/writing-rules.md`.
+Disabling a rule or lowering its severity requires a `reason`; both appear in the report. Exceptions cover individual findings, keep the rule running, and expire. Rule predicates are [CEL](https://cel.dev) over discovered facts and file accessors; see [writing rules](https://fleetlint.org/writing-rules/). The full reference for this file is [configuration](https://fleetlint.org/configuration/).
 
 ## Development
 

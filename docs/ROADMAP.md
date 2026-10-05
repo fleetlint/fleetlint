@@ -1,6 +1,6 @@
 # Roadmap
 
-This file tracks what is next and what is blocked. The practices the presets check are in [baseline.md](baseline.md).
+This file tracks what is next and what is blocked. User documentation is at [fleetlint.org](https://fleetlint.org/), from the fleetlint/docs repository.
 
 ## Blocked: needs a real runner
 

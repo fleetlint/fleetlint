@@ -25,13 +25,13 @@ func schemaCmd() *cobra.Command {
 }
 
 func docsCmd() *cobra.Command {
-	var out string
+	var out, indexFile string
 	var check bool
 	cmd := &cobra.Command{
 		Use:   "docs",
 		Short: "Generate the rule and CEL reference pages (or verify they are current with --check)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			pages, err := docs.Generate()
+			pages, err := docs.Generate(docs.Options{IndexFile: indexFile})
 			if err != nil {
 				return err
 			}
@@ -46,6 +46,7 @@ func docsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&out, "out", "docs", "directory to write into")
+	cmd.Flags().StringVar(&indexFile, "index-file", "README.md", "name of the rule index inside rules/ (_index.md for a Hugo section)")
 	cmd.Flags().BoolVar(&check, "check", false, "exit 2 if the committed pages differ from what would be generated")
 	return cmd
 }

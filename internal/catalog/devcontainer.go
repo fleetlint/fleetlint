@@ -66,6 +66,9 @@ func composeDevcontainer(stack string, p fix.Project) ([]byte, error) {
 		stacks = append(stacks, n.Stack)
 	}
 	for _, s := range stacks {
+		if s == "" {
+			continue // no stack: the base image is enough
+		}
 		switch feature, ok := devcontainerFeatures[s]; {
 		case ok && s == "kotlin":
 			dc.Features[feature] = map[string]any{"installGradle": true}

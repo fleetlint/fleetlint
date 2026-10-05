@@ -17,13 +17,13 @@ Two ways to run the gates: on your machine (the default), or inside the dev cont
 ## Making a change
 
 - One concern per pull request. Open an issue first for a new rule family or a format change; the catalog and config formats are frozen at 1.0 and changes need a compatibility note.
-- Every new catalog version taken here ships with a passing and a failing fixture in `internal/engine/` for each changed rule and a regenerated `docs/` (`make docs`; CI runs `fleetlint docs --check`).
+- Every new catalog version taken here ships with a passing and a failing fixture in `internal/engine/` for each changed rule. The generated rule pages live in fleetlint/docs, whose check fails when they are out of date.
 - Commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`); the changelog is generated from them. No AI tool as author or co-author in commit messages, which `public/no-ai-attribution` enforces on this repository.
 - Run `fleetlint check` on the repository itself before pushing; it should stay at zero errors.
 
 ## Adding a rule
 
-Rules are YAML in the catalog repository, [fleetlint/catalog](https://github.com/fleetlint/catalog), under `presets/`; the templates fixes write are under `templates/` there. This repository embeds one version of it (`github.com/fleetlint/catalog` in `go.mod`). A rule change is made there, then taken here with `go get github.com/fleetlint/catalog@<version>`, a passing and a failing fixture, and `make docs`. Read `docs/writing-rules.md`, then: declare `severity`, give it a `requirement` someone could verify by hand and a `fix.human` that fits on one line, and prefer an outcome rule with satisfiers when several tools can meet the requirement. If a new accessor is needed, add it to `internal/celenv/` with a test in `celenv_test.go`.
+Rules are YAML in the catalog repository, [fleetlint/catalog](https://github.com/fleetlint/catalog), under `presets/`; the templates fixes write are under `templates/` there. This repository embeds one version of it (`github.com/fleetlint/catalog` in `go.mod`). A rule change is made there, then taken here with `go get github.com/fleetlint/catalog@<version>`, a passing and a failing fixture; the rule pages are regenerated in [fleetlint/docs](https://github.com/fleetlint/docs) (`make gen` there). Read [writing rules](https://fleetlint.org/writing-rules/), then: declare `severity`, give it a `requirement` someone could verify by hand and a `fix.human` that fits on one line, and prefer an outcome rule with satisfiers when several tools can meet the requirement. If a new accessor is needed, add it to `internal/celenv/` with a test in `celenv_test.go`.
 
 ## Reporting a vulnerability
 

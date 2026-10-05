@@ -191,12 +191,12 @@ func render(tpl Templates, name string, p Project) ([]byte, error) {
 }
 
 func planTemplate(r *repo.Repo, p Project, a Action, tpl Templates) (*Change, error) {
-	stack := p.Stack
-	name := strings.ReplaceAll(a.Template, "{stack}", stack)
+	name := strings.ReplaceAll(a.Template, "{stack}", p.Stack)
 	name = strings.ReplaceAll(name, "{taskrunner}", repo.RunnerFile(p.Runner))
-	if strings.Contains(a.Template, "{stack}") && stack == "" {
-		return nil, fmt.Errorf("template %s needs a stack, but none was detected", a.Template)
-	}
+	// A repository without a stack (documentation, configuration) still gets
+	// the templates that are assembled, in their stack-less form; a template
+	// that exists only per stack has nothing to offer it.
+	perStackOnly := strings.Contains(a.Template, "{stack}") && p.Stack == ""
 	dest := a.To
 	if dest == "" {
 		dest = filepath.Base(name)
@@ -205,6 +205,9 @@ func planTemplate(r *repo.Repo, p Project, a Action, tpl Templates) (*Change, er
 		return nil, nil // never overwrite
 	}
 	body, err := render(tpl, name, p)
+	if perStackOnly && err != nil {
+		return nil, nil //nolint:nilerr // no stack-less form of this template: the rule is then not mechanically fixable
+	}
 	if err != nil || body == nil {
 		return nil, err
 	}

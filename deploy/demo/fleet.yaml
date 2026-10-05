@@ -1,5 +1,5 @@
 # The public demo at demo.fleetlint.org: fleetlint checking its own repositories.
-# Copy this file and deploy/demo/pages.yml into the `site` repository.
+# Copy this file and deploy/demo/pages.yml into the repository that publishes the demo.
 version: 1
 cache: .fleet-cache
 repos:
@@ -8,6 +8,4 @@ repos:
   - url: https://github.com/fleetlint/catalog.git
     team: core
   - url: https://github.com/fleetlint/docs.git
-    team: docs
-  - url: https://github.com/fleetlint/site.git
     team: docs

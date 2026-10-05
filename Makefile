@@ -1,4 +1,4 @@
-# Task-runner contract (docs/baseline.md). `make check` is the definition of green.
+# Task-runner contract (https://fleetlint.org/baseline/#task-runner-contract). `make check` is the definition of green.
 SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
@@ -21,7 +21,7 @@ BIN         := bin/fleetlint
 # CONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
 # the default, CONTAINER=0, runs it on this machine. Inside the container targets always run directly.
 CONTAINER ?= 0
-TARGETS := help tools fmt lint test cover audit bench build dist check-fast check release docs
+TARGETS := help tools fmt lint test cover audit bench build dist check-fast check release
 .PHONY: $(TARGETS)
 
 ifeq ($(CONTAINER)$(IN_CONTAINER),1)
@@ -81,10 +81,6 @@ check-fast: ## before every commit (< 30 s)
 
 check: lint test cover audit build ## definition of green (< 10 min)
 	$(BIN) check --fail-on error
-	$(BIN) docs --check
-
-docs: build ## regenerate the rule and CEL reference pages
-	$(BIN) docs
 
 release: ## refuse dirty/non-main -> check -> tag; pushing the tag triggers the release workflow
 	@test -z "$$(git status --porcelain)" || { echo "dirty tree"; exit 1; }
