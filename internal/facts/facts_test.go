@@ -94,27 +94,60 @@ func TestNestedProjectsWithoutWorkspaceFile(t *testing.T) {
 	}
 }
 
-func TestDevcontainerFlag(t *testing.T) {
+func TestContainerFact(t *testing.T) {
 	t.Parallel()
-	yes, no := true, false
 	with := map[string]string{"go.mod": "module x\n", ".devcontainer/devcontainer.json": "{}"}
 	without := map[string]string{"go.mod": "module x\n"}
 	cases := map[string]struct {
 		files map[string]string
-		pin   *bool
-		want  bool
+		pin   string
+		want  string
 		src   facts.Source
 	}{
-		"present":             {with, nil, true, facts.SourceDetected},
-		"absent":              {without, nil, false, facts.SourceDetected},
-		"wanted, not there":   {without, &yes, true, facts.SourceConfigured},
-		"there, not used":     {with, &no, false, facts.SourceConfigured},
-		"named configuration": {map[string]string{".devcontainer/api/devcontainer.json": "{}"}, nil, true, facts.SourceDetected},
+		"dev container present": {with, "", facts.ContainerDevcontainer, facts.SourceDetected},
+		"nothing":               {without, "", facts.ContainerNone, facts.SourceDetected},
+		"wanted, not there":     {without, facts.ContainerDevcontainer, facts.ContainerDevcontainer, facts.SourceConfigured},
+		"there, not used":       {with, facts.ContainerNone, facts.ContainerNone, facts.SourceConfigured},
+		"podman":                {without, facts.ContainerPodman, facts.ContainerPodman, facts.SourceConfigured},
+		"named configuration":   {map[string]string{".devcontainer/api/devcontainer.json": "{}"}, "", facts.ContainerDevcontainer, facts.SourceDetected},
 	}
 	for name, tc := range cases {
-		f := facts.Discover(testutil.Fixture(t, tc.files), facts.Overrides{Devcontainer: tc.pin})
-		if f.Devcontainer != tc.want || f.Sources["devcontainer"] != tc.src {
-			t.Errorf("%s: devcontainer=%v (%s), want %v (%s)", name, f.Devcontainer, f.Sources["devcontainer"], tc.want, tc.src)
+		f := facts.Discover(testutil.Fixture(t, tc.files), facts.Overrides{Container: tc.pin})
+		if f.Container != tc.want || f.Sources["container"] != tc.src {
+			t.Errorf("%s: container=%s (%s), want %s (%s)", name, f.Container, f.Sources["container"], tc.want, tc.src)
+		}
+	}
+}
+
+func TestTaskRunnerKinds(t *testing.T) {
+	t.Parallel()
+	justfile := "set shell := [\"bash\", \"-c\"]\nimage := \"x\"\n\n# lint it\nlint:\n    golangci-lint run\n\n@test *args: lint\n    go test {{args}} ./...\n\ncheck: lint (test \"-race\") && build\n\nbuild:\n    go build ./...\n"
+	taskfile := "version: '3'\ntasks:\n  lint:\n    cmds: [golangci-lint run]\n  test:\n    deps: [lint]\n    cmds:\n      - cmd: go test ./...\n  check:\n    cmds:\n      - task: lint\n      - task: test\n      - fleetlint check\n  build: go build ./...\n"
+	cases := map[string]struct {
+		files      map[string]string
+		want       string
+		kind, cmd  string
+		targets    []string
+		checkDeps  []string
+		lintRecipe string
+	}{
+		"make":           {map[string]string{"Makefile": "lint:\n\tgolangci-lint run\ncheck: lint test\ntest:\n\tgo test ./...\n"}, "", "make", "make", []string{"check", "lint", "test"}, []string{"lint", "test"}, "golangci-lint run"},
+		"just":           {map[string]string{"justfile": justfile}, "", "just", "just", []string{"build", "check", "lint", "test"}, []string{"lint", "test", "build"}, "golangci-lint run"},
+		"task":           {map[string]string{"Taskfile.yml": taskfile}, "", "task", "task", []string{"build", "check", "lint", "test"}, []string{"lint", "test"}, "golangci-lint run"},
+		"configured":     {map[string]string{"Makefile": "x:\n\ttrue\n", "justfile": justfile}, "just", "just", "just", []string{"build", "check", "lint", "test"}, []string{"lint", "test", "build"}, "golangci-lint run"},
+		"wanted, absent": {map[string]string{"go.mod": "module x\n"}, "task", "task", "task", nil, nil, ""},
+		"none":           {map[string]string{"go.mod": "module x\n"}, "", "none", "make", nil, nil, ""},
+	}
+	for name, tc := range cases {
+		tr := facts.Discover(testutil.Fixture(t, tc.files), facts.Overrides{TaskRunner: tc.want}).TaskRunner
+		if tr.Kind != tc.kind || tr.Cmd != tc.cmd || !reflect.DeepEqual(tr.Targets, tc.targets) {
+			t.Errorf("%s: kind=%s cmd=%s targets=%v", name, tr.Kind, tr.Cmd, tr.Targets)
+		}
+		if !reflect.DeepEqual(tr.Deps["check"], tc.checkDeps) {
+			t.Errorf("%s: check depends on %v, want %v", name, tr.Deps["check"], tc.checkDeps)
+		}
+		if tc.lintRecipe != "" && (len(tr.Recipes["lint"]) != 1 || tr.Recipes["lint"][0] != tc.lintRecipe) {
+			t.Errorf("%s: lint recipe %v", name, tr.Recipes["lint"])
 		}
 	}
 }

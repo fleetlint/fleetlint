@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fleetlint/fleetlint/internal/model"
+	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/rules"
 )
 
@@ -90,11 +91,11 @@ func (t *tailBuffer) Write(p []byte) (int, error) {
 
 func checkCommand(kind string) ([]string, bool) {
 	switch kind {
-	case "make":
-		return []string{"make", "check"}, true
-	case "npm-scripts":
+	case repo.RunnerMake, repo.RunnerJust, repo.RunnerTask:
+		return []string{repo.RunnerCmd(kind), "check"}, true
+	case repo.RunnerNPM:
 		return []string{"npm", "run", "check"}, true
-	case "gradle":
+	case repo.RunnerGradle:
 		return []string{"./gradlew", "check", "--quiet"}, true
 	}
 	return nil, false

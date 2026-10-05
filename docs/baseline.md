@@ -36,7 +36,7 @@ Checked by: `slop/focused-tests`, `slop/conflict-markers`, `slop/scratch-scripts
 
 ## Task-runner contract
 
-One entry point, the same on every machine and in CI: a Makefile at the root, or the stack's native runner where that is the convention (Gradle, `npm run`).
+One entry point, the same on every machine and in CI: a Makefile, a justfile or a Taskfile at the root, or the stack's native runner where that is the convention (Gradle, `npm run`).
 
 | Target | Does |
 |---|---|
@@ -54,14 +54,21 @@ One entry point, the same on every machine and in CI: a Makefile at the root, or
 - Ratchet, do not big-bang: existing violations go into a baseline that may only shrink, so new code is clean from the first day. `fleetlint baseline` does this for fleetlint's own findings; each linter has its equivalent.
 - Size and complexity limits are enforced by the linter where the stack has the rules: files up to 400 lines (800 hard), functions up to 50 (80 hard), cognitive complexity up to 15. Tests and generated code are exempt from length limits.
 
-The task runner is the contract; where it runs is a flag with two values.
+The contract is the set of targets, not the tool. Two things are a choice, and both are facts fleetlint detects and `.fleetlint.yaml` can pin:
 
-- **On the machine** (the default). The tools have to be reproducible from the repository: a `tools` target that installs pinned versions, a version-manager file (`mise.toml`, `.tool-versions`), or a Nix flake or devenv.
-- **In a dev container.** The flag is set when a `devcontainer.json` exists, or when `.fleetlint.yaml` says `facts.devcontainer: true` because the repository wants one. `make <target>` called outside the container then runs the target inside it, and the check workflow builds the container and runs `make check` in it, so every result comes from the same environment. `make <target> DEVCONTAINER=0` still runs on the machine; `facts.devcontainer: false` turns the flag off for a repository that has a container but does not want its gates in it.
+- **The task runner** (`facts.taskrunner`): `make`, `just`, `task`, package.json scripts or Gradle. The first one found is used; pin it when a repository has several, or to say which one `fix` should write. Rules read targets, dependencies and commands through the same model for every kind.
+- **Where the targets run** (`facts.container`):
+  - `none`: on the machine. The tools then have to be reproducible from the repository: a `tools` target that installs pinned versions, a version-manager file (`mise.toml`, `.tool-versions`), or a Nix flake or devenv.
+  - `devcontainer`: in the repository's dev container. This is the default once a `devcontainer.json` exists.
+  - `docker` or `podman`: in an image run with that engine, without a dev container definition.
 
-`fleetlint fix` writes for the mode the flag selects: with it the container, a Makefile with the switch and a workflow that uses the container; without it the plain Makefile and a workflow that installs the toolchain. It never introduces a container on its own. Dev containers are easy to adopt and need Docker; Nix is the most reproducible and the steepest to learn, and is accepted but not generated.
+In a container mode, a target called outside the container runs inside it, and the check workflow uses the same environment, so every result comes from one place. `CONTAINER=0` on the command line stays on the machine; `facts.container: none` does so for the whole repository.
 
-Checked by: `repo/dev-environment`, `taskrunner/devcontainer`, `taskrunner/targets`, `taskrunner/check-composition`, `quality/check-passes` (with `--deep`), `quality/coverage-threshold`, `quality/policy-enforced`.
+`fleetlint fix` writes for the combination chosen: a Makefile, justfile or Taskfile, with the container switch when there is a container; hooks and a check workflow that call that runner; and for `devcontainer` the container itself. It never introduces a container or changes the runner on its own.
+
+The rules about tools accept alternatives the same way: each lists the known ways of meeting it (other scanners, another linter setup, `docker compose exec` instead of the devcontainer CLI), and a repository adds its own with `accept:`. A generated file belongs to the repository; editing it is expected, and tests in this project keep reasonable edits passing.
+
+Checked by: `repo/dev-environment`, `taskrunner/container`, `taskrunner/targets`, `taskrunner/check-composition`, `quality/check-passes` (with `--deep`), `quality/coverage-threshold`, `quality/policy-enforced`.
 
 ## Git hooks
 

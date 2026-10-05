@@ -5,7 +5,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fix"
+	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
 // The hook configuration and the check workflow are assembled from a shared
@@ -17,23 +19,18 @@ const (
 	checkTemplate = "check.yml"
 )
 
-const makefileTemplate = "Makefile"
-
 // composed splits "<stack>/<file>" for the assembled templates.
 func composed(name string) (stack, file string, ok bool) {
 	stack, file, found := strings.Cut(name, "/")
 	return stack, file, found && (file == hooksTemplate || file == checkTemplate || file == devcontainerTemplate)
 }
 
-// Compose returns a template assembled for the project: the root stack
-// named in name, its nested projects and its dev container flag. ok is false
-// for templates that are plain files.
+// Compose returns a template assembled for the project: its stacks, its
+// task runner and where its targets run. ok is false for templates that are
+// plain files; a nil body with ok means the project does not get the file.
 func (EmbeddedTemplates) Compose(name string, p fix.Project) (body []byte, ok bool, err error) {
-	if name == makefileTemplate {
-		if !p.Devcontainer {
-			return nil, false, nil
-		}
-		body, err = composeMakefile()
+	if name == repo.RunnerFile(repo.RunnerMake) || name == repo.RunnerFile(repo.RunnerJust) || name == repo.RunnerFile(repo.RunnerTask) {
+		body, err = composeRunner(name, p)
 		return body, true, err
 	}
 	stack, file, ok := composed(name)
@@ -42,50 +39,154 @@ func (EmbeddedTemplates) Compose(name string, p fix.Project) (body []byte, ok bo
 	}
 	switch {
 	case file == hooksTemplate:
-		body, err = composeHooks(stack, p.Nested)
+		body, err = composeHooks(stack, p)
 	case file == checkTemplate:
 		body, err = composeCheck(stack, p)
-	case p.Devcontainer:
-		body, err = composeDevcontainer(stack, p.Nested)
+	case p.Container == facts.ContainerDevcontainer:
+		body, err = composeDevcontainer(stack, p)
 	default:
-		// No flag, no container: the repository runs on the machine.
+		// Only the dev container mode has a devcontainer.json.
 		return nil, true, nil
 	}
 	return body, true, err
 }
 
-var phonyRe = regexp.MustCompile(`(?m)^\.PHONY: (.*)$`)
+// runnerCmd is how the project invokes a target.
+func runnerCmd(p fix.Project) string {
+	if p.Runner == "" {
+		return repo.RunnerCmd(repo.RunnerMake)
+	}
+	return repo.RunnerCmd(p.Runner)
+}
 
-// devcontainerSwitch is the head of a Makefile whose targets run inside the
-// dev container. Outside the container every target is forwarded into it;
-// inside (the container sets IN_DEVCONTAINER) and with DEVCONTAINER=0 the
-// recipes below run directly.
-const devcontainerSwitch = `# DEVCONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
-# DEVCONTAINER=0 runs it on this machine. Inside the container targets always run directly.
-DEVCONTAINER ?= 1
-TARGETS := %s
+// withRunner rewrites the `make <target>` invocations of a shared fragment
+// for the project's task runner.
+func withRunner(text string, p fix.Project) string {
+	cmd := runnerCmd(p)
+	if cmd == "make" {
+		return text
+	}
+	for _, target := range []string{"check-fast", "check", "tools"} {
+		text = strings.ReplaceAll(text, "make "+target, cmd+" "+target)
+	}
+	return text
+}
 
-ifeq ($(DEVCONTAINER)$(IN_DEVCONTAINER),1)
-.PHONY: $(TARGETS)
-$(TARGETS):
-	@devcontainer up --workspace-folder . >/dev/null
-	devcontainer exec --workspace-folder . make $@ $(filter-out DEVCONTAINER=%%,$(MAKEOVERRIDES)) DEVCONTAINER=0
-else
-`
+// devImages are the images targets run in with `container: docker|podman`.
+var devImages = map[string]string{
+	"go":      "mcr.microsoft.com/devcontainers/go:1",
+	"python":  "mcr.microsoft.com/devcontainers/python:3",
+	"rust":    "mcr.microsoft.com/devcontainers/rust:1",
+	"node":    "mcr.microsoft.com/devcontainers/javascript-node:22",
+	"kotlin":  "mcr.microsoft.com/devcontainers/java:21",
+	"flutter": devcontainerFlutter,
+}
 
-// composeMakefile wraps the Makefile template's targets in the dev
-// container switch.
-func composeMakefile() ([]byte, error) {
-	plain, err := fragment(makefileTemplate)
+func devImage(stack string) string {
+	if img, ok := devImages[stack]; ok {
+		return img
+	}
+	return devcontainerBase
+}
+
+// containerPrefix is the shell text that runs the command following it
+// inside the project's container; pwd is how the runner file spells the
+// working directory.
+func containerPrefix(p fix.Project, pwd, image string) string {
+	switch p.Container {
+	case facts.ContainerDevcontainer:
+		return "devcontainer up --workspace-folder . >/dev/null && devcontainer exec --workspace-folder . "
+	case facts.ContainerDocker, facts.ContainerPodman:
+		return fmt.Sprintf(`%s run --rm -v "%s":/work -w /work -e IN_CONTAINER=1 %s `, p.Container, pwd, image)
+	}
+	return ""
+}
+
+const switchComment = `# CONTAINER=1 runs every target in the container (%s); CONTAINER=0 runs it on this machine.
+# Inside the container targets always run directly.`
+
+func containerNeeds(p fix.Project) string {
+	if p.Container == facts.ContainerDevcontainer {
+		return "the dev container; needs Docker and the devcontainer CLI"
+	}
+	return "an image run with " + p.Container
+}
+
+// composeRunner returns the runner file for the project's kind, with the
+// container switch when targets run in a container.
+func composeRunner(file string, p fix.Project) ([]byte, error) {
+	plain, err := fragment(file)
 	if err != nil {
 		return nil, err
 	}
+	inContainer := p.Container != "" && p.Container != facts.ContainerNone
+	switch file {
+	case repo.RunnerFile(repo.RunnerJust):
+		return []byte(composeJustfile(plain, p, inContainer)), nil
+	case repo.RunnerFile(repo.RunnerTask):
+		return []byte(composeTaskfile(plain, p, inContainer)), nil
+	}
+	if !inContainer {
+		return []byte(plain), nil
+	}
+	return composeMakefile(plain, p)
+}
+
+var phonyRe = regexp.MustCompile(`(?m)^\.PHONY: (.*)$`)
+
+// composeMakefile wraps the Makefile template's targets in the container
+// switch: outside the container every target is forwarded into it.
+func composeMakefile(plain string, p fix.Project) ([]byte, error) {
 	m := phonyRe.FindStringSubmatchIndex(plain)
 	if m == nil {
 		return nil, fmt.Errorf("the Makefile template has no .PHONY line to take the targets from")
 	}
-	head, rest := plain[:m[0]], plain[m[0]:]
-	return []byte(head + fmt.Sprintf(devcontainerSwitch, plain[m[2]:m[3]]) + strings.TrimRight(rest, "\n") + "\nendif\n"), nil
+	var b strings.Builder
+	b.WriteString(plain[:m[0]])
+	fmt.Fprintf(&b, switchComment+"\nCONTAINER ?= 1\n", containerNeeds(p))
+	if p.Container != facts.ContainerDevcontainer {
+		fmt.Fprintf(&b, "DEV_IMAGE ?= %s\n", devImage(p.Stack))
+	}
+	fmt.Fprintf(&b, "TARGETS := %s\n\nifeq ($(CONTAINER)$(IN_CONTAINER),1)\n.PHONY: $(TARGETS)\n$(TARGETS):\n", plain[m[2]:m[3]])
+	forward := "make $@ $(filter-out CONTAINER=%,$(MAKEOVERRIDES)) CONTAINER=0"
+	if p.Container == facts.ContainerDevcontainer {
+		b.WriteString("\t@devcontainer up --workspace-folder . >/dev/null\n\tdevcontainer exec --workspace-folder . " + forward + "\n")
+	} else {
+		b.WriteString("\t" + containerPrefix(p, "$(CURDIR)", "$(DEV_IMAGE)") + forward + "\n")
+	}
+	b.WriteString("else\n" + strings.TrimRight(plain[m[0]:], "\n") + "\nendif\n")
+	return []byte(b.String()), nil
+}
+
+// composeJustfile fills the justfile template: without a container the
+// recipes run their commands directly, with one each command is prefixed.
+func composeJustfile(plain string, p fix.Project, inContainer bool) string {
+	if !inContainer {
+		return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", ""), "%RUN%", "")
+	}
+	sw := fmt.Sprintf(switchComment, containerNeeds(p)) + "\n"
+	// just does not interpolate inside string literals: the image is concatenated.
+	prefix := "'" + containerPrefix(p, "$PWD", "' + dev_image + '") + "'"
+	if p.Container != facts.ContainerDevcontainer {
+		sw += fmt.Sprintf("dev_image := env_var_or_default(\"DEV_IMAGE\", \"%s\")\n", devImage(p.Stack))
+	}
+	sw += fmt.Sprintf("run := if env_var_or_default(\"IN_CONTAINER\", \"\") == \"1\" { \"\" } else if env_var_or_default(\"CONTAINER\", \"1\") == \"0\" { \"\" } else { %s }\n", prefix)
+	return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", sw), "%RUN%", "{{run}}")
+}
+
+// composeTaskfile does the same for a Taskfile.
+func composeTaskfile(plain string, p fix.Project, inContainer bool) string {
+	if !inContainer {
+		return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", ""), "%RUN%", "")
+	}
+	sw := fmt.Sprintf(switchComment, containerNeeds(p)) + "\nvars:\n"
+	image := "{{.DEV_IMAGE}}"
+	if p.Container != facts.ContainerDevcontainer {
+		sw += fmt.Sprintf("  DEV_IMAGE: '{{.DEV_IMAGE | default \"%s\"}}'\n", devImage(p.Stack))
+	}
+	sw += fmt.Sprintf("  RUN: '{{if or (eq (.IN_CONTAINER | default \"\") \"1\") (eq (.CONTAINER | default \"1\") \"0\")}}{{else}}%s{{end}}'\n",
+		strings.ReplaceAll(containerPrefix(p, "$PWD", image), "'", "''"))
+	return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", sw), "%RUN%", "{{.RUN}}")
 }
 
 func fragment(name string) (string, error) {
@@ -96,11 +197,13 @@ func fragment(name string) (string, error) {
 	return string(b), nil
 }
 
-func composeHooks(stack string, nested []fix.Nested) ([]byte, error) {
+func composeHooks(stack string, p fix.Project) ([]byte, error) {
+	nested := p.Nested
 	head, err := fragment("pre-commit/head.yaml")
 	if err != nil {
 		return nil, err
 	}
+	head = withRunner(head, p)
 	own, err := fragment("pre-commit/" + stack + ".yaml")
 	if err != nil {
 		return nil, err
@@ -176,24 +279,52 @@ func scopeHooks(block, dir string) string {
 
 var versionFileRe = regexp.MustCompile(`(-version-file:\s*)(\S+)`)
 
+// composeCheck assembles the check workflow. On the machine it sets up
+// every toolchain; with a dev container it builds the container and runs
+// the check in it; with docker or podman the job runs in the image.
 func composeCheck(stack string, p fix.Project) ([]byte, error) {
-	if p.Devcontainer {
-		head, err := fragment("check/head.yml")
-		if err != nil {
-			return nil, err
-		}
+	head, err := fragment("check/head.yml")
+	if err != nil {
+		return nil, err
+	}
+	switch p.Container {
+	case facts.ContainerDevcontainer:
 		inside, err := fragment("check/devcontainer.yml")
-		return []byte(head + inside), err
+		return []byte(head + withRunner(inside, p)), err
+	case facts.ContainerDocker, facts.ContainerPodman:
+		head = strings.Replace(head, "    runs-on: ubuntu-latest\n",
+			"    runs-on: ubuntu-latest\n    container: "+devImage(stack)+"   # the image the task runner uses locally\n    env:\n      IN_CONTAINER: \"1\"\n", 1)
 	}
-	nested := p.Nested
 	var b strings.Builder
-	for _, name := range []string{"check/head.yml", "check/" + stack + ".yml"} {
-		part, err := fragment(name)
+	b.WriteString(head)
+	if p.Container == "" || p.Container == facts.ContainerNone {
+		if err := writeToolchains(&b, stack, p.Nested); err != nil {
+			return nil, err
+		}
+	}
+	if p.Runner == repo.RunnerJust || p.Runner == repo.RunnerTask {
+		setup, err := fragment("check/runner-" + p.Runner + ".yml")
 		if err != nil {
 			return nil, err
 		}
-		b.WriteString(part)
+		b.WriteString(setup)
 	}
+	tail, err := fragment("check/tail.yml")
+	if err != nil {
+		return nil, err
+	}
+	b.WriteString(withRunner(tail, p))
+	return []byte(b.String()), nil
+}
+
+// writeToolchains adds the setup steps of the root stack and of every
+// nested stack that differs from it.
+func writeToolchains(b *strings.Builder, stack string, nested []fix.Nested) error {
+	own, err := fragment("check/" + stack + ".yml")
+	if err != nil {
+		return err
+	}
+	b.WriteString(own)
 	seen := map[string]bool{stack: true}
 	for _, n := range nested {
 		if seen[n.Stack] {
@@ -202,18 +333,13 @@ func composeCheck(stack string, p fix.Project) ([]byte, error) {
 		seen[n.Stack] = true
 		part, err := fragment("check/" + n.Stack + ".yml")
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if n.Path == "" {
 			b.WriteString(part)
 			continue
 		}
-		fmt.Fprintf(&b, "      # toolchain for %s/\n%s", n.Path, versionFileRe.ReplaceAllString(part, "${1}"+n.Path+"/${2}"))
+		fmt.Fprintf(b, "      # toolchain for %s/\n%s", n.Path, versionFileRe.ReplaceAllString(part, "${1}"+n.Path+"/${2}"))
 	}
-	tail, err := fragment("check/tail.yml")
-	if err != nil {
-		return nil, err
-	}
-	b.WriteString(tail)
-	return []byte(b.String()), nil
+	return nil
 }

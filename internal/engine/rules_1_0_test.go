@@ -182,8 +182,13 @@ func TestOneDotZeroRules(t *testing.T) {
 			pass: map[string]string{"Makefile": "tools:\n\tgo install example.com/lint@v1.2.3\n"},
 			fail: map[string]string{"Makefile": "tools:\n\t@echo install the tools\n"},
 		},
-		"taskrunner/devcontainer": {
-			pass: map[string]string{".devcontainer/devcontainer.json": "{}", "Makefile": "lint:\n\tdevcontainer exec --workspace-folder . make lint DEVCONTAINER=0\n"},
+		"taskrunner/targets": {
+			pass:        map[string]string{"justfile": "fmt:\n    gofmt -w .\nlint:\n    go vet ./...\ntest:\n    go test ./...\ncover:\n    go test -cover ./...\naudit:\n    govulncheck ./...\ncheck: lint test\ncheck-fast: lint\n"},
+			fail:        map[string]string{"Makefile": "fmt:\n\tgofmt -w .\nlint:\n\t@echo \"TODO: linter\"\ntest:\n\tgo test ./...\ncover:\n\tgo test -cover ./...\naudit:\n\tgovulncheck ./...\ncheck: lint test\n"},
+			wantMessage: "(lint)",
+		},
+		"taskrunner/container": {
+			pass: map[string]string{".devcontainer/devcontainer.json": "{}", "Taskfile.yml": "version: '3'\ntasks:\n  lint:\n    cmds: ['podman compose exec dev golangci-lint run']\n"},
 			fail: map[string]string{".devcontainer/devcontainer.json": "{}", "Makefile": "lint:\n\tgolangci-lint run\n"},
 		},
 		"quality/policy-enforced": {

@@ -55,9 +55,9 @@ var Accessors = []Accessor{
 
 // Variables documents the variables exposed to CEL.
 var Variables = []Accessor{
-	{"repo", "Facts: `name`, `stacks`, `forge`, `visibility`, `public`, `devcontainer`, `tier`, `layout`, `ci`, `hooks`, `has_git`, `scope`."},
+	{"repo", "Facts: `name`, `stacks`, `forge`, `visibility`, `public`, `container` (`none`, `devcontainer`, `docker`, `podman`), `tier`, `layout`, `ci`, `hooks`, `has_git`, `scope`."},
 	{"release", "`{exists, mechanisms, tag_patterns, latest_tag}`."},
-	{"taskrunner", "`{kind, targets}`."},
+	{"taskrunner", "`{kind, targets, file, cmd, deps, recipes}`: the task runner whatever its kind (`make`, `just`, `task`, `npm-scripts`, `gradle`, `none`). `cmd` is how a target is invoked (`make`, `just`, `task`, `npm run`, `./gradlew`); `deps` and `recipes` map each target to what it depends on and the commands it runs."},
 	{"params", "The rule's `params` map from the catalog or the repo override."},
 	{"item", "In a rule with `foreach`, the current element; `\"\"` otherwise."},
 }
@@ -190,19 +190,19 @@ func (e *Env) activation(params map[string]any, item any) map[string]any {
 	return map[string]any{
 		"item": item,
 		"repo": map[string]any{
-			"name":         f.Name,
-			"stacks":       toAnyList(f.Stacks),
-			"forge":        f.Forge,
-			"forge_host":   f.ForgeHost,
-			"visibility":   string(f.Visibility),
-			"public":       f.Public(),
-			"devcontainer": f.Devcontainer,
-			"tier":         int64(f.Tier),
-			"layout":       f.Layout,
-			"ci":           toAnyList(f.CI),
-			"hooks":        toAnyList(f.Hooks),
-			"has_git":      f.HasGit,
-			"scope":        e.repo.Scope,
+			"name":       f.Name,
+			"stacks":     toAnyList(f.Stacks),
+			"forge":      f.Forge,
+			"forge_host": f.ForgeHost,
+			"visibility": string(f.Visibility),
+			"public":     f.Public(),
+			"container":  f.Container,
+			"tier":       int64(f.Tier),
+			"layout":     f.Layout,
+			"ci":         toAnyList(f.CI),
+			"hooks":      toAnyList(f.Hooks),
+			"has_git":    f.HasGit,
+			"scope":      e.repo.Scope,
 		},
 		"release": map[string]any{
 			"exists":       f.Release.Exists,
@@ -213,6 +213,10 @@ func (e *Env) activation(params map[string]any, item any) map[string]any {
 		"taskrunner": map[string]any{
 			"kind":    f.TaskRunner.Kind,
 			"targets": toAnyList(f.TaskRunner.Targets),
+			"file":    f.TaskRunner.File,
+			"cmd":     f.TaskRunner.Cmd,
+			"deps":    listMap(f.TaskRunner.Deps),
+			"recipes": listMap(f.TaskRunner.Recipes),
 		},
 		"params": params,
 	}
@@ -420,6 +424,15 @@ func toAnyList(in []string) []any {
 	out := make([]any, 0, len(in))
 	for _, s := range in {
 		out = append(out, s)
+	}
+	return out
+}
+
+// listMap converts a map of string lists for CEL.
+func listMap(m map[string][]string) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = toAnyList(v)
 	}
 	return out
 }

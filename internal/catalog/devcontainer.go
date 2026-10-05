@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlint/fleetlint/internal/fix"
+	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
 const devcontainerTemplate = "devcontainer.json"
@@ -25,7 +26,7 @@ const (
 	devcontainerFlutter = "ghcr.io/cirruslabs/flutter:stable"
 	// The environment is a second layer over the task runner: it provides
 	// the toolchains and then asks the Makefile for the project's tools.
-	devcontainerSetup = "if make -n tools >/dev/null 2>&1; then make tools; fi; if command -v prek >/dev/null 2>&1; then prek install; fi"
+	devcontainerHooks = "if command -v prek >/dev/null 2>&1; then prek install; fi"
 )
 
 type devcontainer struct {
@@ -38,12 +39,26 @@ type devcontainer struct {
 
 // composeDevcontainer writes .devcontainer/devcontainer.json for the root
 // stack and every further stack in the repository.
-func composeDevcontainer(stack string, nested []fix.Nested) ([]byte, error) {
+// devcontainerSetup hands over to the task runner after the container is
+// created: its `tools` target when there is one, then the git hooks.
+func devcontainerSetup(p fix.Project) string {
+	probe := map[string]string{
+		repo.RunnerJust: "just --summary 2>/dev/null | tr ' ' '\\n' | grep -qx tools",
+		repo.RunnerTask: "task --list-all 2>/dev/null | grep -q '^\\* tools:'",
+	}[p.Runner]
+	if probe == "" {
+		probe = "make -n tools >/dev/null 2>&1"
+	}
+	return "if " + probe + "; then " + runnerCmd(p) + " tools; fi; " + devcontainerHooks
+}
+
+func composeDevcontainer(stack string, p fix.Project) ([]byte, error) {
+	nested := p.Nested
 	dc := devcontainer{
 		Name: "dev", Image: devcontainerBase, Features: map[string]map[string]any{},
-		// A Makefile with the dev container switch runs its recipes directly when it sees this.
-		ContainerEnv:      map[string]string{"IN_DEVCONTAINER": "1"},
-		PostCreateCommand: devcontainerSetup,
+		// A runner file with the container switch runs its commands directly when it sees this.
+		ContainerEnv:      map[string]string{"IN_CONTAINER": "1"},
+		PostCreateCommand: devcontainerSetup(p),
 	}
 	stacks := make([]string, 0, 1+len(nested))
 	stacks = append(stacks, stack)

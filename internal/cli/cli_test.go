@@ -340,7 +340,7 @@ func TestFixFollowsTheDevcontainerFlag(t *testing.T) {
 	t.Parallel()
 	dir := testutil.GitFixture(t, map[string]string{
 		"go.mod":          "module x\n\ngo 1.26.0\n",
-		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, devcontainer: true}\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, container: devcontainer}\n",
 	}).Root
 	_, before, _ := runCLI(t, dir, "check")
 	if !strings.Contains(before, "repo/dev-environment *") {
@@ -356,7 +356,7 @@ func TestFixFollowsTheDevcontainerFlag(t *testing.T) {
 		}
 		return string(b)
 	}
-	if !strings.Contains(read(".devcontainer/devcontainer.json"), `"IN_DEVCONTAINER": "1"`) {
+	if !strings.Contains(read(".devcontainer/devcontainer.json"), `"IN_CONTAINER": "1"`) {
 		t.Error("the container must mark itself for the Makefile")
 	}
 	if !strings.Contains(read("Makefile"), "devcontainer exec --workspace-folder . make $@") {
@@ -366,7 +366,7 @@ func TestFixFollowsTheDevcontainerFlag(t *testing.T) {
 		t.Error("the workflow must run the check in the container")
 	}
 	_, after, _ := runCLI(t, dir, "check")
-	for _, id := range []string{"repo/dev-environment", "taskrunner/devcontainer"} {
+	for _, id := range []string{"repo/dev-environment", "taskrunner/container"} {
 		if strings.Contains(after, id) {
 			t.Errorf("%s still reported after fix:\n%s", id, after)
 		}
@@ -383,7 +383,68 @@ func TestFixFollowsTheDevcontainerFlag(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(bare, ".devcontainer")); err == nil {
 		t.Error("without the flag fix must not introduce a dev container")
 	}
-	if _, out, _ := runCLI(t, bare, "check"); strings.Contains(out, "taskrunner/devcontainer") || strings.Contains(out, "repo/dev-environment *") {
+	if _, out, _ := runCLI(t, bare, "check"); strings.Contains(out, "taskrunner/container") || strings.Contains(out, "repo/dev-environment *") {
 		t.Errorf("on the machine the container rule does not apply and the tools are the user's choice:\n%s", out)
+	}
+}
+
+// The same contract with other tools: a justfile whose recipes run in a
+// podman image, a workflow whose job runs in that image, hooks that call
+// `just check`. And a Taskfile on the machine.
+func TestFixWritesForTheConfiguredTools(t *testing.T) {
+	t.Parallel()
+	read := func(dir, name string) string {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n\ngo 1.26.0\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, taskrunner: just, container: podman}\n",
+	}).Root
+	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	justfile := read(dir, "justfile")
+	for _, want := range []string{`podman run --rm -v "$PWD":/work`, "{{run}}fleetlint check --fail-on error", "check: lint test cover audit build"} {
+		if !strings.Contains(justfile, want) {
+			t.Errorf("justfile lacks %q:\n%s", want, justfile)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil {
+		t.Error("a just repository does not get a Makefile")
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".devcontainer")); err == nil {
+		t.Error("podman mode has no devcontainer.json")
+	}
+	workflow := read(dir, ".github/workflows/check.yml")
+	for _, want := range []string{"container: mcr.microsoft.com/devcontainers/go", "extractions/setup-just@", "run: just check"} {
+		if !strings.Contains(workflow, want) {
+			t.Errorf("workflow lacks %q:\n%s", want, workflow)
+		}
+	}
+	if !strings.Contains(read(dir, ".pre-commit-config.yaml"), "entry: just check") {
+		t.Error("the pre-push hook must call the configured runner")
+	}
+	_, after, _ := runCLI(t, dir, "check")
+	for _, id := range []string{"taskrunner/container", "repo/dev-environment", "ci/check-workflow", "hooks/pre-push-check"} {
+		if strings.Contains(after, id) {
+			t.Errorf("%s still reported after fix:\n%s", id, after)
+		}
+	}
+
+	bare := testutil.GitFixture(t, map[string]string{
+		"go.mod":          "module x\n\ngo 1.26.0\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, taskrunner: task}\n",
+	}).Root
+	runCLI(t, bare, "fix", "--apply")
+	taskfile := read(bare, "Taskfile.yml")
+	if strings.Contains(taskfile, "RUN") || !strings.Contains(taskfile, "- 'fleetlint check --fail-on error'") {
+		t.Errorf("on the machine the Taskfile runs its commands directly:\n%s", taskfile)
+	}
+	if w := read(bare, ".github/workflows/check.yml"); !strings.Contains(w, "arduino/setup-task@") || !strings.Contains(w, "run: task check") {
+		t.Errorf("workflow must install and call task:\n%s", w)
 	}
 }

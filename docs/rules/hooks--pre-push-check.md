@@ -13,7 +13,7 @@ Full check runs before push
 
 ## Requirement
 
-`make check` (or the stack's equivalent) runs as a pre-push hook.
+The task runner's `check` (`make check`, `just check`, `task check`, `npm run check`, `./gradlew check`) runs as a pre-push hook.
 
 ## Why
 

@@ -19,15 +19,15 @@ Severity is the default; repositories may raise it freely and lower it with a re
 | `repo/lockfile-committed` | error (tiers 1–2) | lockfile for every detected package manager is tracked | done |
 | `repo/no-large-files` | warning | no tracked file over `params.max_kb` (default 2048) unless under git-lfs | done |
 | `repo/codeowners` | info (tier 1) | `CODEOWNERS` in a recognised location | done |
-| `repo/dev-environment` | warning (tiers 1–2) | the tools are reproducible: with the dev container flag a dev container; without it a Nix flake or devenv, `mise.toml` / `.tool-versions`, or a `tools` target with pinned versions (outcome rule; `fix` writes the container when the flag is set) | done |
+| `repo/dev-environment` | warning (tiers 1–2) | the tools are reproducible: in a container mode the container; on the machine a Nix flake or devenv, `mise.toml` / `.tool-versions`, or a `tools` target with pinned versions (outcome rule) | done |
 | `repo/toolchain-pinned` | warning (tiers 1–2) | each stack pins its toolchain: go.mod `toolchain` or full `go` version, `.python-version`, `rust-toolchain.toml`, `.nvmrc`, Gradle wrapper, `.fvmrc`, `.tool-versions`, `mise.toml` | done |
 
 ## taskrunner — the Makefile contract
 
 | Rule | Severity | Checks | Status |
 |---|---|---|---|
-| `taskrunner/targets` | error (tiers 1–2) | `fmt lint test cover audit build check check-fast` exist (Makefile, package.json scripts or Gradle) | done |
-| `taskrunner/devcontainer` | warning (tiers 1–2, when the dev container flag is set) | `make` called outside the container runs the target inside it | done |
+| `taskrunner/targets` | error (tiers 1–2) | `fmt lint test cover audit check check-fast` exist and are not placeholders, in whichever runner is used (Makefile, justfile, Taskfile, package.json scripts; Gradle by convention) | done |
+| `taskrunner/container` | warning (tiers 1–2, when `facts.container` is not `none`) | a target called outside the container runs inside it: devcontainer CLI, docker, podman, or an `accept:`ed way (outcome rule) | done |
 | `taskrunner/check-composition` | warning | `check` depends on `lint` and `test` (and `cover`, `audit` at tier 1) | done |
 
 ## lint — strict static analysis per stack

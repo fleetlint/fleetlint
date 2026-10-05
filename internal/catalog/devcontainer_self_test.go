@@ -11,7 +11,7 @@ import (
 // This repository's own dev container is the Go template, unedited.
 func TestOwnDevcontainerIsTheTemplate(t *testing.T) {
 	t.Parallel()
-	want, _, err := catalog.EmbeddedTemplates{}.Compose("go/devcontainer.json", fix.Project{Devcontainer: true})
+	want, _, err := catalog.EmbeddedTemplates{}.Compose("go/devcontainer.json", fix.Project{Container: "devcontainer"})
 	if err != nil {
 		t.Fatal(err)
 	}

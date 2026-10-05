@@ -22,7 +22,7 @@ A policy that is only checked by hand drifts with the first busy week; the repor
 ## Check
 
 ```cel
-text(".pre-commit-config.yaml").contains("fleetlint") || text("lefthook.yml").contains("fleetlint") || ["Makefile", "package.json", "build.gradle", "build.gradle.kts", "justfile", "Taskfile.yml"].exists(f, text(f).contains("fleetlint")) || workflows().exists(w, text(w).contains("fleetlint"))
+text(".pre-commit-config.yaml").contains("fleetlint") || text("lefthook.yml").contains("fleetlint") || [taskrunner.file, "Makefile", "justfile", "Taskfile.yml", "package.json", "build.gradle", "build.gradle.kts"].exists(f, text(f).contains("fleetlint")) || workflows().exists(w, text(w).contains("fleetlint"))
 ```
 
 ## Fix

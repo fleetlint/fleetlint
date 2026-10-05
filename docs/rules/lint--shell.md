@@ -13,7 +13,7 @@ Shell scripts are linted
 
 ## Requirement
 
-When the repository contains shell scripts, shellcheck runs as a hook, in the `lint` target or in CI.
+When the repository contains shell scripts, shellcheck runs as a hook, in the task runner or in CI.
 
 ## Why
 
@@ -28,7 +28,7 @@ tracked().exists(p, p.endsWith(".sh"))
 ## Check
 
 ```cel
-text(".pre-commit-config.yaml").contains("shellcheck") || text("Makefile").contains("shellcheck") || workflows().exists(w, text(w).contains("shellcheck"))
+text(".pre-commit-config.yaml").contains("shellcheck") || text(taskrunner.file).contains("shellcheck") || workflows().exists(w, text(w).contains("shellcheck"))
 ```
 
 ## Fix

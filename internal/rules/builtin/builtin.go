@@ -10,7 +10,6 @@ import (
 func init() {
 	rules.Register(trackedJunk{})
 	rules.Register(lockfileCommitted{})
-	rules.Register(taskrunnerTargets{})
 	rules.Register(actionsPinned{})
 	rules.Register(checkPasses{})
 }

@@ -41,12 +41,13 @@ type Facts struct {
 	Forge      string     `json:"forge"`
 	ForgeHost  string     `json:"forge_host,omitempty"`
 	Visibility Visibility `json:"visibility"`
-	// Devcontainer says the repository works inside a dev container: one is
-	// present, or the configuration asks for one. The task runner then runs
-	// its targets in the container; without it they run on the machine.
-	Devcontainer bool   `json:"devcontainer"`
-	Tier         int    `json:"tier"`
-	Layout       string `json:"layout"`
+	// Container says where the task runner's targets run: `none` is the
+	// machine; `devcontainer` the repository's dev container (detected when a
+	// devcontainer.json exists); `docker` and `podman` an image run with that
+	// engine, set by configuration.
+	Container string `json:"container"`
+	Tier      int    `json:"tier"`
+	Layout    string `json:"layout"`
 	// Members are workspace member directories (repo-relative), when Layout is "workspace".
 	Members    []string   `json:"members,omitempty"`
 	CI         []string   `json:"ci"`
@@ -71,7 +72,21 @@ type Release struct {
 type TaskRunner struct {
 	Kind    string   `json:"kind"`
 	Targets []string `json:"targets,omitempty"`
+	// File is the runner's definition file, Cmd how a target is invoked.
+	File string `json:"file,omitempty"`
+	Cmd  string `json:"cmd,omitempty"`
+	// Deps and Recipes describe each target; rules read them, reports do not.
+	Deps    map[string][]string `json:"-"`
+	Recipes map[string][]string `json:"-"`
 }
+
+// Container values: where the task runner's targets run.
+const (
+	ContainerNone         = "none"
+	ContainerDevcontainer = "devcontainer"
+	ContainerDocker       = "docker"
+	ContainerPodman       = "podman"
+)
 
 // Overrides are values a config file pins instead of detecting.
 type Overrides struct {
@@ -79,8 +94,10 @@ type Overrides struct {
 	Visibility Visibility
 	Tier       int
 	Forge      string
-	// Devcontainer pins the dev container flag; nil keeps detection.
-	Devcontainer *bool
+	// Container pins where targets run; "" keeps detection.
+	Container string
+	// TaskRunner names the runner to use when several could be; "" detects.
+	TaskRunner string
 	// DetectedVisibility is what a forge said; it applies only when neither
 	// git config nor the configuration file settles the visibility.
 	DetectedVisibility Visibility
@@ -97,13 +114,20 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 		f.Visibility = ov.DetectedVisibility
 	}
 	f.Sources["visibility"] = SourceDetected
-	f.Devcontainer = r.Has(".devcontainer/devcontainer.json") || r.Has(".devcontainer.json") || len(r.Glob(".devcontainer/*/devcontainer.json")) > 0
-	f.Sources["devcontainer"] = SourceDetected
+	f.Container = ContainerNone
+	if r.Has(".devcontainer/devcontainer.json") || r.Has(".devcontainer.json") || len(r.Glob(".devcontainer/*/devcontainer.json")) > 0 {
+		f.Container = ContainerDevcontainer
+	}
+	f.Sources["container"] = SourceDetected
 	f.Layout, f.Members = detectLayout(r)
 	f.Sources["layout"] = SourceDetected
 	f.CI = detectCI(r)
 	f.Release = detectRelease(r)
-	f.TaskRunner = detectTaskRunner(r)
+	f.TaskRunner = detectTaskRunner(r, ov.TaskRunner)
+	f.Sources["taskrunner"] = SourceDetected
+	if ov.TaskRunner != "" {
+		f.Sources["taskrunner"] = SourceConfigured
+	}
 	f.Hooks = detectHooks(r)
 
 	applyOverrides(&f, ov)
@@ -124,9 +148,9 @@ func applyOverrides(f *Facts, ov Overrides) {
 		f.Visibility = ov.Visibility
 		f.Sources["visibility"] = SourceConfigured
 	}
-	if ov.Devcontainer != nil {
-		f.Devcontainer = *ov.Devcontainer
-		f.Sources["devcontainer"] = SourceConfigured
+	if ov.Container != "" {
+		f.Container = ov.Container
+		f.Sources["container"] = SourceConfigured
 	}
 	if ov.Forge != "" {
 		f.Forge = ov.Forge
@@ -281,27 +305,9 @@ func tagTriggers(r *repo.Repo, wf string) []string {
 	return out
 }
 
-func detectTaskRunner(r *repo.Repo) TaskRunner {
-	if mf, ok := r.Makefile("Makefile"); ok {
-		return TaskRunner{Kind: "make", Targets: mf.Targets}
-	}
-	if r.Has("justfile") || r.Has("Justfile") {
-		return TaskRunner{Kind: "just"}
-	}
-	if r.Has("gradlew") || r.Has("build.gradle.kts") || r.Has("build.gradle") {
-		return TaskRunner{Kind: "gradle"}
-	}
-	if doc, ok, err := r.Doc(repo.FormatJSON, "package.json"); ok && err == nil {
-		m, _ := doc.(map[string]any)
-		scripts, _ := m["scripts"].(map[string]any)
-		names := make([]string, 0, len(scripts))
-		for name := range scripts {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		return TaskRunner{Kind: "npm-scripts", Targets: names}
-	}
-	return TaskRunner{Kind: "none"}
+func detectTaskRunner(r *repo.Repo, want string) TaskRunner {
+	rn := r.Runner(want)
+	return TaskRunner{Kind: rn.Kind, Targets: rn.Targets, File: rn.File, Cmd: rn.Cmd, Deps: rn.Deps, Recipes: rn.Recipes}
 }
 
 func detectHooks(r *repo.Repo) []string {

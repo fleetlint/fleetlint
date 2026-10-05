@@ -147,7 +147,10 @@ func planRule(r *repo.Repo, run *engine.Run, res model.Result) ([]fix.Change, er
 // project describes a scope for the templates: its stack and, for the root,
 // the nested projects that share its hook configuration and workflow.
 func project(run *engine.Run, scope string) fix.Project {
-	p := fix.Project{Stack: primaryStack(run, scope), Devcontainer: scope == "" && run.Facts.Devcontainer}
+	p := fix.Project{Stack: primaryStack(run, scope), Runner: run.Facts.TaskRunner.Kind}
+	if scope == "" {
+		p.Container = run.Facts.Container
+	}
 	for _, s := range run.Scopes {
 		// Further stacks in the same directory share its hooks and workflow.
 		if s.Path == scope && len(s.Facts.Stacks) > 1 {

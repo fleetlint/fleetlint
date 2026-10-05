@@ -84,7 +84,7 @@ func TestComposeCheckWorkflowForNestedProjects(t *testing.T) {
 
 func TestComposeDevcontainer(t *testing.T) {
 	t.Parallel()
-	body, ok, err := catalog.EmbeddedTemplates{}.Compose("go/devcontainer.json", fix.Project{Devcontainer: true, Nested: []fix.Nested{{Path: "frontend", Stack: "node"}}})
+	body, ok, err := catalog.EmbeddedTemplates{}.Compose("go/devcontainer.json", fix.Project{Container: "devcontainer", Nested: []fix.Nested{{Path: "frontend", Stack: "node"}}})
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
@@ -102,11 +102,11 @@ func TestComposeDevcontainer(t *testing.T) {
 	if !strings.Contains(doc.PostCreateCommand, "make tools") {
 		t.Errorf("the container must hand over to the task runner: %q", doc.PostCreateCommand)
 	}
-	flutter, _, err := catalog.EmbeddedTemplates{}.Compose("flutter/devcontainer.json", fix.Project{Devcontainer: true})
+	flutter, _, err := catalog.EmbeddedTemplates{}.Compose("flutter/devcontainer.json", fix.Project{Container: "devcontainer"})
 	if err != nil || !strings.Contains(string(flutter), "flutter:stable") {
 		t.Errorf("flutter uses an image: err=%v\n%s", err, flutter)
 	}
-	if _, _, err := (catalog.EmbeddedTemplates{}).Compose("cobol/devcontainer.json", fix.Project{Devcontainer: true}); err == nil {
+	if _, _, err := (catalog.EmbeddedTemplates{}).Compose("cobol/devcontainer.json", fix.Project{Container: "devcontainer"}); err == nil {
 		t.Error("an unknown stack has no dev container")
 	}
 	if body, ok, err := (catalog.EmbeddedTemplates{}).Compose("go/devcontainer.json", fix.Project{}); body != nil || !ok || err != nil {
@@ -119,10 +119,10 @@ func TestComposeDevcontainer(t *testing.T) {
 // told to stay on the machine.
 func TestMakefileDevcontainerSwitch(t *testing.T) {
 	t.Parallel()
-	if _, ok, _ := (catalog.EmbeddedTemplates{}).Compose("Makefile", fix.Project{}); ok {
-		t.Fatal("without the flag the Makefile is the plain template")
+	if plain, _, _ := (catalog.EmbeddedTemplates{}).Compose("Makefile", fix.Project{}); strings.Contains(string(plain), "CONTAINER") {
+		t.Fatalf("on the machine the Makefile has no switch:\n%s", plain)
 	}
-	body, ok, err := catalog.EmbeddedTemplates{}.Compose("Makefile", fix.Project{Devcontainer: true})
+	body, ok, err := catalog.EmbeddedTemplates{}.Compose("Makefile", fix.Project{Container: "devcontainer"})
 	if err != nil || !ok {
 		t.Fatalf("ok=%v err=%v", ok, err)
 	}
@@ -135,12 +135,12 @@ func TestMakefileDevcontainerSwitch(t *testing.T) {
 		cmd := exec.CommandContext(context.Background(), "make", append([]string{"-n", "-C", dir}, args...)...)
 		// Start from an environment that says nothing about containers.
 		for _, kv := range os.Environ() {
-			if !strings.HasPrefix(kv, "DEVCONTAINER=") && !strings.HasPrefix(kv, "IN_DEVCONTAINER=") && !strings.HasPrefix(kv, "MAKEFLAGS=") {
+			if !strings.HasPrefix(kv, "CONTAINER=") && !strings.HasPrefix(kv, "IN_CONTAINER=") && !strings.HasPrefix(kv, "MAKEFLAGS=") {
 				cmd.Env = append(cmd.Env, kv)
 			}
 		}
 		if env != "" {
-			cmd.Env = append(cmd.Env, "IN_DEVCONTAINER="+env)
+			cmd.Env = append(cmd.Env, "IN_CONTAINER="+env)
 		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -151,10 +151,10 @@ func TestMakefileDevcontainerSwitch(t *testing.T) {
 	if out := dryRun("", "lint"); !strings.Contains(out, "devcontainer exec --workspace-folder . make lint") || strings.Contains(out, "TODO: linter") {
 		t.Errorf("outside the container the target must be forwarded:\n%s", out)
 	}
-	if out := dryRun("", "test", "COVER_MIN=90"); !strings.Contains(out, "make test COVER_MIN=90 DEVCONTAINER=0") {
+	if out := dryRun("", "test", "COVER_MIN=90"); !strings.Contains(out, "make test COVER_MIN=90 CONTAINER=0") {
 		t.Errorf("variables given on the command line must reach the container:\n%s", out)
 	}
-	for name, out := range map[string]string{"inside the container": dryRun("1", "lint"), "DEVCONTAINER=0": dryRun("", "lint", "DEVCONTAINER=0")} {
+	for name, out := range map[string]string{"inside the container": dryRun("1", "lint"), "CONTAINER=0": dryRun("", "lint", "CONTAINER=0")} {
 		if strings.Contains(out, "devcontainer exec") || !strings.Contains(out, "TODO: linter") {
 			t.Errorf("%s the recipe runs directly:\n%s", name, out)
 		}
@@ -163,7 +163,7 @@ func TestMakefileDevcontainerSwitch(t *testing.T) {
 
 func TestCheckWorkflowUsesTheDevcontainer(t *testing.T) {
 	t.Parallel()
-	body, _, err := catalog.EmbeddedTemplates{}.Compose("go/check.yml", fix.Project{Devcontainer: true})
+	body, _, err := catalog.EmbeddedTemplates{}.Compose("go/check.yml", fix.Project{Container: "devcontainer"})
 	if err != nil {
 		t.Fatal(err)
 	}

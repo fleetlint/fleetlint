@@ -18,16 +18,16 @@ GOCOVER_VERSION     ?= v1.5.0
 TOOLCHAIN   := $(shell go env GOVERSION)
 BIN         := bin/fleetlint
 
-# DEVCONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
-# the default, DEVCONTAINER=0, runs it on this machine. Inside the container targets always run directly.
-DEVCONTAINER ?= 0
+# CONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
+# the default, CONTAINER=0, runs it on this machine. Inside the container targets always run directly.
+CONTAINER ?= 0
 TARGETS := help tools fmt lint test cover audit bench build dist check-fast check release docs
 .PHONY: $(TARGETS)
 
-ifeq ($(DEVCONTAINER)$(IN_DEVCONTAINER),1)
+ifeq ($(CONTAINER)$(IN_CONTAINER),1)
 $(TARGETS):
 	@devcontainer up --workspace-folder . >/dev/null
-	devcontainer exec --workspace-folder . make $@ $(filter-out DEVCONTAINER=%,$(MAKEOVERRIDES)) DEVCONTAINER=0
+	devcontainer exec --workspace-folder . make $@ $(filter-out CONTAINER=%,$(MAKEOVERRIDES)) CONTAINER=0
 else
 
 help: ## list targets

@@ -48,7 +48,8 @@ extends:
 facts:
   tier: 1            # 1 production/public, 2 personal tool, 3 experiment
   visibility: public
-  devcontainer: true # run the task runner in a dev container; default: only if one exists
+  taskrunner: just   # make, just, task, npm-scripts, gradle; default: the first one found
+  container: podman  # none, devcontainer, docker, podman; default: devcontainer if one exists, else none
 scopes:              # polyglot repositories: each path is evaluated as its own repo
   - path: web/
     facts: { stacks: [node] }
@@ -79,7 +80,7 @@ Disabling a rule or lowering its severity requires a `reason`; both appear in th
 | `make tools` | installs the pinned golangci-lint, govulncheck and gocover-cobertura |
 | `make release` | checks, bumps the version from conventional commits, tags |
 
-Requires Go 1.26 or newer (the build uses the toolchain named in `go.mod` and downloads it if needed) and, for `audit`, gitleaks; `make tools` installs the rest. Hooks: `prek install`. `make <target> DEVCONTAINER=1` runs any target inside the dev container (`.devcontainer/`, needs Docker and the devcontainer CLI); the default is this machine. See `CONTRIBUTING.md`.
+Requires Go 1.26 or newer (the build uses the toolchain named in `go.mod` and downloads it if needed) and, for `audit`, gitleaks; `make tools` installs the rest. Hooks: `prek install`. `make <target> CONTAINER=1` runs any target inside the dev container (`.devcontainer/`, needs Docker and the devcontainer CLI); the default is this machine. See `CONTRIBUTING.md`.
 
 ## Status
 

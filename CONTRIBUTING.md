@@ -10,7 +10,7 @@ make check          # fmt, lint, test with -race, audit; what CI runs
 make check-fast     # the pre-push subset
 ```
 
-Two ways to run the gates: on your machine (the default), or inside the dev container with `make check DEVCONTAINER=1` (needs Docker and the devcontainer CLI). The container gives you Go and runs `make tools`; gitleaks, diff-cover and prek still need installing in it.
+Two ways to run the gates: on your machine (the default), or inside the dev container with `make check CONTAINER=1` (needs Docker and the devcontainer CLI). The container gives you Go and runs `make tools`; gitleaks, diff-cover and prek still need installing in it.
 
 `prek install` turns on the commit hooks (`uv tool install prek` if you do not have it).
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -50,9 +51,12 @@ type FactOverrides struct {
 	Visibility string   `yaml:"visibility,omitempty"`
 	Stacks     []string `yaml:"stacks,omitempty"`
 	Forge      string   `yaml:"forge,omitempty"`
-	// Devcontainer: true asks for a dev container, false keeps the task
-	// runner on the machine even when one exists; unset follows detection.
-	Devcontainer *bool `yaml:"devcontainer,omitempty"`
+	// Container says where the task runner's targets run: none, devcontainer,
+	// docker or podman; unset follows detection.
+	Container string `yaml:"container,omitempty"`
+	// TaskRunner names the runner to use: make, just, task, npm-scripts or
+	// gradle; unset takes the first one found.
+	TaskRunner string `yaml:"taskrunner,omitempty"`
 }
 
 // Scope is a sub-directory evaluated as its own repository.
@@ -183,6 +187,14 @@ func validateFile(f *File) error {
 	}
 	if f.Facts.Tier < 0 || f.Facts.Tier > 3 {
 		return fmt.Errorf("facts.tier must be 1, 2 or 3")
+	}
+	switch f.Facts.Container {
+	case "", facts.ContainerNone, facts.ContainerDevcontainer, facts.ContainerDocker, facts.ContainerPodman:
+	default:
+		return fmt.Errorf("facts.container must be none, devcontainer, docker or podman (got %q)", f.Facts.Container)
+	}
+	if f.Facts.TaskRunner != "" && !slices.Contains(repo.RunnerKinds(), f.Facts.TaskRunner) {
+		return fmt.Errorf("facts.taskrunner must be one of %s (got %q)", strings.Join(repo.RunnerKinds(), ", "), f.Facts.TaskRunner)
 	}
 	switch f.Facts.Visibility {
 	case "", "public", "private":
@@ -323,7 +335,8 @@ func (f FactOverrides) ToFacts() facts.Overrides {
 		Tier:       f.Tier,
 		Forge:      f.Forge,
 
-		Devcontainer: f.Devcontainer,
+		Container:  f.Container,
+		TaskRunner: f.TaskRunner,
 	}
 }
 

@@ -1,6 +1,6 @@
 # lint/go-config
 
-golangci-lint is configured strictly
+A Go linter is configured strictly
 
 | | |
 |---|---|
@@ -8,23 +8,16 @@ golangci-lint is configured strictly
 | Tiers | all |
 | Stacks | go |
 | Scope | each |
-| Kind | expr |
+| Kind | outcome |
 | Source | fleetlint-recommended@0.1.0 |
 
 ## Requirement
 
-A golangci-lint v2 config enables errcheck, govet, staticcheck, errorlint, gosec, gocognit and funlen at least.
+A Go linter configuration is committed: golangci-lint v2 enabling errcheck, govet, staticcheck, errorlint, gosec, gocognit and funlen at least, or staticcheck together with revive. Another linter setup is added with `accept:`.
 
 ## Why
 
 Default linting misses the swallowed errors and oversized functions the baseline bans.
-
-## Check
-
-```cel
-(file(".golangci.yml") || file(".golangci.yaml")) && (yaml(file(".golangci.yml") ? ".golangci.yml" : ".golangci.yaml").version == "2"
-    || yaml(file(".golangci.yml") ? ".golangci.yml" : ".golangci.yaml").version == 2)
-```
 
 ## Fix
 

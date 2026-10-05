@@ -98,12 +98,12 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"stacks", strings.Join(f.Stacks, ", "), string(f.Sources["stacks"])},
 		{"forge", f.Forge + hostSuffix(f.ForgeHost), string(f.Sources["forge"])},
 		{"visibility", string(f.Visibility), string(f.Sources["visibility"])},
-		{"devcontainer", yesNo(f.Devcontainer), string(f.Sources["devcontainer"])},
+		{"container", f.Container, string(f.Sources["container"])},
 		{"tier", fmt.Sprint(f.Tier), string(f.Sources["tier"])},
 		{"layout", f.Layout, string(f.Sources["layout"])},
 		{"ci", orNone(strings.Join(f.CI, ", ")), "detected"},
 		{"release", releaseText(f), "detected"},
-		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), "detected"},
+		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), string(f.Sources["taskrunner"])},
 		{"hooks", orNone(strings.Join(f.Hooks, ", ")), "detected"},
 	}...)
 	for _, s := range run.Scopes[1:] {

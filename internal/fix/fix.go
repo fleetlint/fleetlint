@@ -108,9 +108,10 @@ type Nested struct {
 type Project struct {
 	Stack  string
 	Nested []Nested
-	// Devcontainer is the repository's dev container flag: templates then
-	// run the task runner inside the container.
-	Devcontainer bool
+	// Runner is the task runner kind templates are written for (make, just,
+	// task); Container is where its targets run (none, devcontainer, docker,
+	// podman).
+	Runner, Container string
 	// Vars are the values for placeholders in `set` actions, e.g. license.
 	Vars map[string]string
 }
@@ -192,6 +193,7 @@ func render(tpl Templates, name string, p Project) ([]byte, error) {
 func planTemplate(r *repo.Repo, p Project, a Action, tpl Templates) (*Change, error) {
 	stack := p.Stack
 	name := strings.ReplaceAll(a.Template, "{stack}", stack)
+	name = strings.ReplaceAll(name, "{taskrunner}", repo.RunnerFile(p.Runner))
 	if strings.Contains(a.Template, "{stack}") && stack == "" {
 		return nil, fmt.Errorf("template %s needs a stack, but none was detected", a.Template)
 	}

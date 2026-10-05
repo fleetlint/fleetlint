@@ -12,5 +12,5 @@ rules:
     reason: "nolintlint already requires a specific linter and an explanation on every suppression"
 exceptions:
   - rule: slop/huge-commits
-    match: "re:initial public commit"
-    reason: "the initial import"
+    match: "re:(initial public commit|take presets and templates from the catalog module)"
+    reason: "the initial import and the move of the catalog into its own repository"

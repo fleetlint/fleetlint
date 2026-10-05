@@ -5,7 +5,7 @@
     "ghcr.io/devcontainers/features/go:1": {}
   },
   "containerEnv": {
-    "IN_DEVCONTAINER": "1"
+    "IN_CONTAINER": "1"
   },
   "postCreateCommand": "if make -n tools >/dev/null 2>&1; then make tools; fi; if command -v prek >/dev/null 2>&1; then prek install; fi"
 }
