@@ -28,7 +28,7 @@ Dependencies point inward: `cli → engine → {config, facts, celenv, rules} �
 | `repo` | one repository's files, git data and parsed YAML/TOML/JSON/Makefile, memoized | every path is confined to the repo root; nothing outside is read |
 | `facts` | discovery of stacks, forge, visibility, tier, layout, CI, release, task runner, hooks | each fact records its source: detected, configured, default |
 | `celenv` | the CEL environment: variables and accessor functions rules may use | the only surface `expr` rules see; documented from this package |
-| `catalog` | catalog format, presets embedded in the binary, local, https and git loading, digest verification, includes | https catalogs require a digest, git catalogs a digest or a commit SHA; untrusted catalogs cannot declare `command` rules |
+| `catalog` | catalog format, presets and templates embedded from the module `github.com/fleetlint/catalog`, local, https and git loading, digest verification, includes | https catalogs require a digest, git catalogs a digest or a commit SHA; untrusted catalogs cannot declare `command` rules |
 | `forge` | read-only GitHub and Gitea REST client: an owner's repositories, one repository's visibility | used only by `fleet --from` and `init`; `check` never contacts a forge; tokens come from the environment and go to their own forge only |
 | `config` | `.fleetlint.yaml`: validation, merge with catalogs, overrides, exceptions | unknown keys, unknown ids, disables without reason are errors |
 | `rules`, `rules/builtin` | Go-implemented rules and their registry | the catalog carries metadata; Go carries only detection logic |

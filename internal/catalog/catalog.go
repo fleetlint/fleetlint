@@ -1,4 +1,5 @@
-// Package catalog loads rule catalogs: the presets embedded in the binary,
+// Package catalog loads rule catalogs: the presets embedded in the binary
+// (from the module github.com/fleetlint/catalog),
 // local files, and remote files over https or from a git repository, pinned
 // by digest or commit. A catalog is data; it can
 // add and tighten rules but, unless it is the repo's own file, it cannot
@@ -8,7 +9,6 @@ package catalog
 import (
 	"context"
 	"crypto/sha256"
-	"embed"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	data "github.com/fleetlint/catalog"
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/fix"
@@ -28,11 +29,12 @@ import (
 // APIVersion is the catalog format this binary reads.
 const APIVersion = "fleetlint.org/v1"
 
-//go:embed presets/*.yaml
-var presets embed.FS
-
-//go:embed templates
-var templates embed.FS
+// The presets and templates are data from the catalog module; the binary
+// embeds the version go.mod names.
+var (
+	presets   = data.Presets
+	templates = data.Templates
+)
 
 // EmbeddedTemplates serves the fix templates shipped with the presets.
 type EmbeddedTemplates struct{}

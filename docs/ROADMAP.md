@@ -4,7 +4,7 @@ This file tracks what is next and what is blocked. The practices the presets che
 
 ## Blocked: needs a real runner
 
-**The workflow templates in `internal/catalog/templates/*/check.yml` and `*/release.yml` and fleetlint's own release workflow must run at least once on a real GitHub runner.** They were written from documentation, not from a passing run. Until then they are offered by `fleetlint fix` as a starting point and nothing requires their shape.
+**The workflow templates in the catalog repository (`templates/check/` and `templates/*/release.yml`) and fleetlint's own release workflow must run at least once on a real GitHub runner.** They were written from documentation, not from a passing run. Until then they are offered by `fleetlint fix` as a starting point and nothing requires their shape.
 
 Verified locally (2026-10-05, goreleaser 2.18.2, syft 1.52, Go 1.27.1): `.goreleaser.yaml` is valid, and a snapshot release builds all six targets, writes `checksums.txt` and one SPDX SBOM per archive. Not verified anywhere yet: signing with cosign (keyless OIDC and the Rekor upload), `actions/attest-build-provenance`, the workflows themselves on a runner, and Pages deployment. The actions were moved to their latest major versions for 0.1.0 (checkout v7, setup-go v7, cosign-installer v4, goreleaser-action v7, attest-build-provenance v4), so the first run is also the first test of those versions.
 
@@ -37,7 +37,7 @@ Gitea: the templates and `scripts/sign.sh` keep their Gitea branches (key-based 
 
 ## Also outstanding
 
-- The per-stack release templates (`internal/catalog/templates/*/release.yml`) are unverified like the rest of the release path; the Rust one assumes a `.goreleaser.yaml` with the Rust builder. Folding the four `make dist` variants into one template with a per-stack toolchain step is open.
+- The per-stack release templates (`templates/*/release.yml` in the catalog repository) are unverified like the rest of the release path; the Rust one assumes a `.goreleaser.yaml` with the Rust builder. Folding the four `make dist` variants into one template with a per-stack toolchain step is open.
 - Baseline practices without a rule yet: detekt rule strictness for Kotlin, duplication and mutation gates, API-compatibility checks for libraries, signed tags, documented forks.
 
 - Statement coverage is ~44%; CLI and reporters are the gap.

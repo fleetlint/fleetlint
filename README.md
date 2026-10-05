@@ -31,7 +31,7 @@ fleetlint baseline        # grandfather today's findings; from now on only new o
 
 Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 configuration error, 3 internal error.
 
-What the presets check and why is in `docs/baseline.md`; the tools per stack are in `docs/stacks.md`; `docs/slop.md` is the catalog behind the `slop/*` rules and the add-on preset `fleetlint:slop`.
+The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it. What the presets check and why is in `docs/baseline.md`; the tools per stack are in `docs/stacks.md`; `docs/slop.md` is the catalog behind the `slop/*` rules and the add-on preset `fleetlint:slop`.
 
 Organizations: a baseline catalog can mark rules `locked`, set a `min_severity` floor or forbid `exceptions`; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See `docs/writing-rules.md` and `docs/fleet.md`. Hooks, CI and editors: `docs/integrations.md`.
 
