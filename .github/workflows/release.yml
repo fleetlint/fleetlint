@@ -37,11 +37,22 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Shared tools (gitleaks, diff-cover)
+      - name: Shared tools (gitleaks, diff-cover), pinned and checksum-verified
+        env:
+          # renovate: datasource=github-releases depName=gitleaks/gitleaks
+          GITLEAKS_VERSION: v8.30.1
+          # renovate: datasource=pypi depName=diff-cover
+          DIFF_COVER_VERSION: 10.6.0
         run: |
           set -euo pipefail
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/install.sh | sh -s -- -b "$HOME/.local/bin"
-          pipx install diff-cover || pip install --user diff-cover
+          mkdir -p "$HOME/.local/bin"
+          v=${GITLEAKS_VERSION#v}
+          base="https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VERSION}"
+          curl -sSfLO "${base}/gitleaks_${v}_linux_x64.tar.gz"
+          curl -sSfL "${base}/gitleaks_${v}_checksums.txt" | grep " gitleaks_${v}_linux_x64.tar.gz$" | sha256sum -c -
+          tar -xzf "gitleaks_${v}_linux_x64.tar.gz" -C "$HOME/.local/bin" gitleaks
+          rm "gitleaks_${v}_linux_x64.tar.gz"
+          pipx install "diff-cover==${DIFF_COVER_VERSION}"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Verify tag is on main and check passes
         run: |
