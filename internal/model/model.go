@@ -149,6 +149,9 @@ type Rule struct {
 	AllowExceptions *bool  `yaml:"exceptions,omitempty" json:"exceptions,omitempty"`
 	// Source is the catalog the rule came from, filled by the loader.
 	Source string `yaml:"-" json:"source,omitempty"`
+	// Use, in a catalog's rules list, selects rules from the source's library
+	// (an id or a glob) instead of defining one; the loader expands it.
+	Use string `yaml:"use,omitempty" json:"-"`
 	// Layer is who owns the definition: preset, org, team or repo.
 	Layer string `yaml:"-" json:"layer,omitempty"`
 	// PolicyBy is the catalog that locked the rule or set its floor when that

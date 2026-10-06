@@ -235,7 +235,16 @@ func (l Loader) loadOCI(ref string) ([]*Catalog, error) {
 			return nil, fmt.Errorf("%s: %w", ref, err)
 		}
 	}
-	return catalogsFromArtifact(ref, art)
+	cats, err := catalogsFromArtifact(ref, art)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range cats {
+		if err := l.expand(c); err != nil {
+			return nil, fmt.Errorf("%s: %w", ref, err)
+		}
+	}
+	return cats, nil
 }
 
 func catalogsFromArtifact(ref string, art *OCIArtifact) ([]*Catalog, error) {

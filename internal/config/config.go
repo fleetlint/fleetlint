@@ -549,7 +549,7 @@ func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]stri
 		}
 		return []string{key}, nil
 	}
-	rx, err := regexp.Compile(globRegexp(key))
+	rx, err := regexp.Compile(catalog.GlobRegexp(key))
 	if err != nil {
 		return nil, fmt.Errorf("%s: rules.%s: bad pattern: %w", where, key, err)
 	}
@@ -561,25 +561,6 @@ func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]stri
 	}
 	sort.Strings(ids)
 	return ids, nil
-}
-
-// globRegexp turns an override pattern into a regular expression. `*`
-// spans the family separator too: "*" is every rule, "release/*" a family.
-func globRegexp(pattern string) string {
-	var b strings.Builder
-	b.WriteString("^")
-	for _, r := range pattern {
-		switch r {
-		case '*':
-			b.WriteString(".*")
-		case '?':
-			b.WriteString(".")
-		default:
-			b.WriteString(regexp.QuoteMeta(string(r)))
-		}
-	}
-	b.WriteString("$")
-	return b.String()
 }
 
 func (e *Effective) applyOverride(r *model.Rule, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {

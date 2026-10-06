@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -35,7 +36,7 @@ const APIVersion = "fleetlint.org/v1"
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
 const (
-	EngineLevel    = 1
+	EngineLevel    = 2
 	MinEngineLevel = 1
 )
 
@@ -58,8 +59,9 @@ func checkEngine(c *Catalog) error {
 // carries one (the module version go.mod names); a repository can pin
 // another, which is fetched once and kept in the user's cache.
 type Source struct {
-	// Presets holds presets/<name>.yaml, Templates holds templates/...
-	Presets, Templates fs.FS
+	// Presets holds presets/<name>.yaml, Templates holds templates/..., Rules
+	// holds rules/<family>/<name>.yaml, the library presets select from.
+	Presets, Templates, Rules fs.FS
 	// Version is how reports name this source.
 	Version string
 	// Pinned is true when the repository chose the version.
@@ -68,7 +70,7 @@ type Source struct {
 
 // Builtin returns the catalog the binary was built with.
 func Builtin() *Source {
-	return &Source{Presets: data.Presets, Templates: data.Templates, Version: ModuleVersion()}
+	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Version: ModuleVersion()}
 }
 
 // Describe names the source for a report.
@@ -175,6 +177,10 @@ type Catalog struct {
 	// sources-file name it was referenced by, if any. Both are set by config.
 	Layer string `yaml:"-"`
 	Alias string `yaml:"-"`
+	// uses are the `use:` entries awaiting expansion; used are the ids they
+	// brought in, which an included catalog defining the same rule supersedes.
+	uses []useEntry
+	used map[string]bool
 }
 
 const presetPrefix = "fleetlint:"
@@ -275,7 +281,7 @@ func (l *Loader) Pin(repoURL, version string) (*Source, error) {
 		name += " (" + commit[:12] + ")"
 	}
 	root := os.DirFS(dir)
-	l.Source = &Source{Presets: root, Templates: root, Version: name, Pinned: true}
+	l.Source = &Source{Presets: root, Templates: root, Rules: root, Version: name, Pinned: true}
 	if len(l.Source.PresetNames()) == 0 {
 		return nil, fmt.Errorf("catalog %s from %s: no presets/ directory", version, repoURL)
 	}
@@ -323,9 +329,33 @@ func (l Loader) load(ref string, seen map[string]bool) ([]*Catalog, error) {
 			}
 			out = append(out, deps...)
 		}
+		dropIncluded(c, out)
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// dropIncluded removes the rules a catalog selected with `use:` that one of
+// its includes already defines: the same library rule, from the catalog
+// that introduced it. An inline redefinition is kept and judged as such.
+func dropIncluded(c *Catalog, included []*Catalog) {
+	if len(c.used) == 0 {
+		return
+	}
+	have := map[string]bool{}
+	for _, inc := range included {
+		for _, r := range inc.Rules {
+			have[r.ID] = true
+		}
+	}
+	kept := c.Rules[:0]
+	for _, r := range c.Rules {
+		if c.used[r.ID] && have[r.ID] {
+			continue
+		}
+		kept = append(kept, r)
+	}
+	c.Rules = kept
 }
 
 func (l Loader) loadOne(ref string) ([]*Catalog, error) {
@@ -353,6 +383,9 @@ func (l Loader) loadPreset(name string) (*Catalog, error) {
 	}
 	c, err := Parse(b)
 	if err != nil {
+		return nil, fmt.Errorf("preset %s: %w", name, err)
+	}
+	if err := l.expand(c); err != nil {
 		return nil, fmt.Errorf("preset %s: %w", name, err)
 	}
 	c.Ref = "fleetlint:" + name
@@ -385,6 +418,9 @@ func (l Loader) loadLocal(ref string) ([]*Catalog, error) {
 		if err != nil {
 			return nil, fmt.Errorf("catalog %s: %w", f, err)
 		}
+		if err := l.expand(c); err != nil {
+			return nil, fmt.Errorf("catalog %s: %w", f, err)
+		}
 		c.Ref, c.Trusted = ref, true
 		out = append(out, c)
 	}
@@ -411,6 +447,9 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 	}
 	c, err := Parse(b)
 	if err != nil {
+		return nil, fmt.Errorf("catalog %s: %w", ref, err)
+	}
+	if err := l.expand(c); err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
 	c.Ref, c.Templates = ref, templates
@@ -502,6 +541,9 @@ func (l Loader) readGit(ref string) ([]byte, error) {
 
 // Parse decodes and validates a catalog document.
 func Parse(b []byte) (*Catalog, error) {
+	if err := probeEngine(b); err != nil {
+		return nil, err
+	}
 	var c Catalog
 	if err := yaml.UnmarshalWithOptions(b, &c, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
@@ -528,19 +570,64 @@ func Parse(b []byte) (*Catalog, error) {
 	if err := validateOverrides(&c); err != nil {
 		return nil, err
 	}
+	if err := splitUses(&c); err != nil {
+		return nil, err
+	}
+	if err := validateRules(&c); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
+// validateRules checks each inline rule and marks it with its catalog.
+func validateRules(c *Catalog) error {
 	seen := map[string]bool{}
 	for i := range c.Rules {
 		r := &c.Rules[i]
 		r.Source = c.Metadata.Name + "@" + c.Metadata.Version
 		if err := validateRule(r); err != nil {
-			return nil, err
+			return err
 		}
 		if seen[r.ID] {
-			return nil, fmt.Errorf("rule %s: duplicate id", r.ID)
+			return fmt.Errorf("rule %s: duplicate id", r.ID)
 		}
 		seen[r.ID] = true
 	}
-	return &c, nil
+	return nil
+}
+
+// splitUses takes the `use:` entries out of the rules list, remembering
+// where they stood so expansion keeps the order.
+func splitUses(c *Catalog) error {
+	c.used = map[string]bool{}
+	var rules []model.Rule
+	for _, r := range c.Rules {
+		if r.Use == "" {
+			rules = append(rules, r)
+			continue
+		}
+		bare := r
+		bare.Use = ""
+		if !reflect.DeepEqual(bare, model.Rule{}) {
+			return fmt.Errorf("rules: a `use: %s` entry selects a library rule and takes no other keys (adjust it under overrides:)", r.Use)
+		}
+		c.uses = append(c.uses, useEntry{Pattern: r.Use, Index: len(rules)})
+	}
+	c.Rules = rules
+	return nil
+}
+
+// probeEngine reads the engine level before the strict decode, so a catalog
+// written for a newer fleetlint says so instead of failing on a key this
+// one lacks. A document that does not even decode loosely is left to Parse.
+func probeEngine(b []byte) error {
+	var probe struct {
+		Metadata Metadata `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal(b, &probe); err != nil {
+		return nil //nolint:nilerr // the strict decode reports the shape error with its position
+	}
+	return checkEngine(&Catalog{Metadata: probe.Metadata})
 }
 
 func validateRule(r *model.Rule) error {
@@ -672,6 +759,9 @@ func requireSeverity(b []byte) error {
 		return fmt.Errorf("parse: %w", err)
 	}
 	for _, r := range raw.Rules {
+		if _, isUse := r["use"]; isUse {
+			continue
+		}
 		id, _ := r["id"].(string)
 		if _, ok := r["severity"]; !ok {
 			return fmt.Errorf("rule %s: severity is required (error, warning or info)", id)
