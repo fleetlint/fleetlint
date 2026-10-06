@@ -7,7 +7,7 @@ toolchain go1.27.1
 require (
 	cel.dev/cel-go v0.32.0
 	github.com/BurntSushi/toml v1.6.0
-	github.com/fleetlint/catalog v0.0.0-20261005223521-4aae9b076e27
+	github.com/fleetlint/catalog v0.0.0-20261006064332-fc20ee0af74f
 	github.com/goccy/go-yaml v1.19.2
 	github.com/google/licensecheck v0.3.1
 	github.com/spf13/cobra v1.10.2

@@ -7,8 +7,8 @@ github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
-github.com/fleetlint/catalog v0.0.0-20261005223521-4aae9b076e27 h1:ebJ2OSSabKyc3FUCM4bSTEY138rESyRshYCOnCU86sc=
-github.com/fleetlint/catalog v0.0.0-20261005223521-4aae9b076e27/go.mod h1:Jv0UavnvgaqUmp/qV7Fb4T5MNUjIS8av6FEo3divNVI=
+github.com/fleetlint/catalog v0.0.0-20261006064332-fc20ee0af74f h1:rg/1In5+D4g5dFFnQ/r/IBHbLecWtd82nryF7DHL97U=
+github.com/fleetlint/catalog v0.0.0-20261006064332-fc20ee0af74f/go.mod h1:Jv0UavnvgaqUmp/qV7Fb4T5MNUjIS8av6FEo3divNVI=
 github.com/goccy/go-yaml v1.19.2 h1:PmFC1S6h8ljIz6gMRBopkjP1TVT7xuwrButHID66PoM=
 github.com/goccy/go-yaml v1.19.2/go.mod h1:XBurs7gK8ATbW4ZPGKgcbrY1Br56PdM69F7LkFRi1kA=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

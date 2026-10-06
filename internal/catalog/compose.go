@@ -16,14 +16,15 @@ import (
 // repository with a nested project of another stack gets both stacks in one
 // file.
 const (
-	hooksTemplate = "pre-commit-config.yaml"
-	checkTemplate = "check.yml"
+	hooksTemplate   = "pre-commit-config.yaml"
+	checkTemplate   = "check.yml"
+	releaseTemplate = "release.yml"
 )
 
 // composed splits "<stack>/<file>" for the assembled templates.
 func composed(name string) (stack, file string, ok bool) {
 	stack, file, found := strings.Cut(name, "/")
-	return stack, file, found && (file == hooksTemplate || file == checkTemplate || file == devcontainerTemplate || file == renovateTemplate)
+	return stack, file, found && (file == hooksTemplate || file == checkTemplate || file == releaseTemplate || file == devcontainerTemplate || file == renovateTemplate)
 }
 
 // Compose returns a template assembled for the project: its stacks, its
@@ -43,6 +44,8 @@ func (t Templates) Compose(name string, p fix.Project) (body []byte, ok bool, er
 		body, err = t.composeHooks(stack, p)
 	case file == checkTemplate:
 		body, err = t.composeCheck(stack, p)
+	case file == releaseTemplate:
+		body, err = t.composeRelease(stack, p)
 	case file == renovateTemplate:
 		body, err = composeRenovate(stack, p)
 	case p.Container == facts.ContainerDevcontainer:
@@ -69,7 +72,7 @@ func withRunner(text string, p fix.Project) string {
 	if cmd == "make" {
 		return text
 	}
-	for _, target := range []string{"check-fast", "check", "tools"} {
+	for _, target := range []string{"check-fast", "check", "tools", "dist"} {
 		text = strings.ReplaceAll(text, "make "+target, cmd+" "+target)
 	}
 	return text
@@ -314,11 +317,68 @@ func (t Templates) composeCheck(stack string, p fix.Project) ([]byte, error) {
 		}
 		b.WriteString(setup)
 	}
-	tail, err := t.fragment("check/tail.yml")
+	if err := t.writeFragments(&b, p, "check/tools.yml", "check/tail.yml"); err != nil {
+		return nil, err
+	}
+	return []byte(b.String()), nil
+}
+
+// writeFragments appends shared fragments, with `make` spelled for the
+// project's task runner.
+func (t Templates) writeFragments(b *strings.Builder, p fix.Project, names ...string) error {
+	for _, name := range names {
+		part, err := t.fragment(name)
+		if err != nil {
+			return err
+		}
+		b.WriteString(withRunner(part, p))
+	}
+	return nil
+}
+
+// goreleaserStacks release through GoReleaser; the others build with the
+// task runner's dist target and sign, attest and publish step by step.
+var goreleaserStacks = map[string]bool{"go": true, "rust": true}
+
+// composeRelease assembles the tag-triggered release workflow: the
+// toolchains of the check workflow, the same tools and check, then the
+// stack's publisher. Releases build on the runner itself: with docker or
+// podman the job runs in the image like the check does, with a dev
+// container the targets run directly because the runner has no container CLI.
+func (t Templates) composeRelease(stack string, p fix.Project) ([]byte, error) {
+	head, err := t.fragment("release/head.yml")
 	if err != nil {
 		return nil, err
 	}
-	b.WriteString(withRunner(tail, p))
+	switch p.Container {
+	case facts.ContainerDocker, facts.ContainerPodman:
+		head = strings.Replace(head, "    runs-on: ubuntu-latest\n",
+			"    runs-on: ubuntu-latest\n    container: "+devImage(stack)+"   # the image the task runner uses locally\n", 1)
+		head = strings.Replace(head, "    env:\n", "    env:\n      IN_CONTAINER: \"1\"\n", 1)
+	case facts.ContainerDevcontainer:
+		head = strings.Replace(head, "    env:\n", "    env:\n      CONTAINER: \"0\"   # no dev container on the release runner: targets run on its toolchains\n", 1)
+	}
+	var b strings.Builder
+	b.WriteString(head)
+	if err := t.writeToolchains(&b, stack, p.Nested); err != nil {
+		return nil, err
+	}
+	if p.Runner == repo.RunnerJust || p.Runner == repo.RunnerTask {
+		if err := t.writeFragments(&b, p, "check/runner-"+p.Runner+".yml"); err != nil {
+			return nil, err
+		}
+	}
+	publisher := "release/dist.yml"
+	if goreleaserStacks[stack] {
+		publisher = "release/goreleaser.yml"
+	}
+	parts := []string{"check/tools.yml", "release/verify.yml", publisher}
+	if _, err := fs.Stat(t.fsys, "templates/release/publish-"+stack+".yml"); err == nil {
+		parts = append(parts, "release/publish-"+stack+".yml")
+	}
+	if err := t.writeFragments(&b, p, parts...); err != nil {
+		return nil, err
+	}
 	return []byte(b.String()), nil
 }
 

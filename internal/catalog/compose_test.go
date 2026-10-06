@@ -12,7 +12,9 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
+	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fix"
+	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
 func TestComposeHooksForNestedProjects(t *testing.T) {
@@ -204,5 +206,83 @@ func TestComposeRenovate(t *testing.T) {
 	mixed := read(fix.Project{Stack: "go", Nested: []fix.Nested{{Path: "frontend", Stack: "node"}}})
 	if mixed["postUpdateOptions"] == nil || mixed["lockFileMaintenance"] == nil {
 		t.Errorf("go plus node gets both: %v", mixed)
+	}
+}
+
+func TestComposeReleaseWorkflow(t *testing.T) {
+	t.Parallel()
+	compose := func(t *testing.T, name string, p fix.Project) string {
+		t.Helper()
+		body, ok, err := catalog.EmbeddedTemplates{}.Compose(name, p)
+		if err != nil || !ok {
+			t.Fatalf("%s: ok=%v err=%v", name, ok, err)
+		}
+		var doc map[string]any
+		if err := yaml.Unmarshal(body, &doc); err != nil {
+			t.Fatalf("%s is not valid YAML: %v\n%s", name, err, body)
+		}
+		return string(body)
+	}
+	cases := map[string]struct {
+		name  string
+		p     fix.Project
+		want  []string
+		avoid []string
+	}{
+		"go releases through goreleaser": {
+			"go/release.yml",
+			fix.Project{Stack: "go"},
+			[]string{"tags: [\"v*\"]", "goreleaser/goreleaser-action", "go-version-file: go.mod", "make check", "gitleaks_"},
+			[]string{"make dist", "npm publish"},
+		},
+		"node builds dist and publishes to npm": {
+			"node/release.yml",
+			fix.Project{Stack: "node"},
+			[]string{"setup-node", "make dist", "cosign sign-blob", "npm publish --provenance"},
+			[]string{"goreleaser", "pypi-publish"},
+		},
+		"python publishes to pypi with just": {
+			"python/release.yml",
+			fix.Project{Stack: "python", Runner: repo.RunnerJust},
+			[]string{"setup-just", "just check", "just dist", "pypa/gh-action-pypi-publish"},
+			[]string{"make "},
+		},
+		"docker mode runs the job in the image": {
+			"go/release.yml",
+			fix.Project{Stack: "go", Container: facts.ContainerDocker},
+			[]string{"container: mcr.microsoft.com/devcontainers/go:1", "IN_CONTAINER: \"1\""},
+			nil,
+		},
+		"devcontainer mode runs on the runner": {
+			"go/release.yml",
+			fix.Project{Stack: "go", Container: facts.ContainerDevcontainer},
+			[]string{"CONTAINER: \"0\""},
+			[]string{"devcontainers/ci"},
+		},
+		"nested stacks get their toolchains": {
+			"go/release.yml",
+			fix.Project{Stack: "go", Nested: []fix.Nested{{Path: "web", Stack: "node"}}},
+			[]string{"node-version-file: web/.nvmrc", "goreleaser/goreleaser-action"},
+			nil,
+		},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := compose(t, c.name, c.p)
+			for _, w := range c.want {
+				if !strings.Contains(s, w) {
+					t.Errorf("lacks %q:\n%s", w, s)
+				}
+			}
+			for _, a := range c.avoid {
+				if strings.Contains(s, a) {
+					t.Errorf("contains %q:\n%s", a, s)
+				}
+			}
+			if n := strings.Count(s, "download-syft"); n != 1 {
+				t.Errorf("syft is installed %d times", n)
+			}
+		})
 	}
 }
