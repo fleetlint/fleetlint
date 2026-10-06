@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/fleetlint/fleetlint/internal/engine"
+	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 )
 
@@ -58,5 +59,23 @@ func TestExitFor(t *testing.T) {
 	}
 	if exitFor(clean, "info") != ExitOK {
 		t.Error("excepted findings do not fail")
+	}
+}
+
+func TestReleaseText(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		rel  facts.Release
+		want string
+	}{
+		{"none", facts.Release{}, "none detected"},
+		{"mechanisms only", facts.Release{Exists: true, Mechanisms: []string{"goreleaser", "tag-workflow"}}, "goreleaser, tag-workflow"},
+		{"with latest tag", facts.Release{Exists: true, Mechanisms: []string{"tag-workflow"}, LatestTag: "v1.2.3"}, "tag-workflow latest=v1.2.3"},
+	}
+	for _, c := range cases {
+		if got := releaseText(facts.Facts{Release: c.rel}); got != c.want {
+			t.Errorf("%s: releaseText = %q, want %q", c.name, got, c.want)
+		}
 	}
 }

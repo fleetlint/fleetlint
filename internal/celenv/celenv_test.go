@@ -240,3 +240,20 @@ func fakeSignedTag(t *testing.T, dir, name string) {
 	}
 	gitRun(t, dir, "update-ref", "refs/tags/"+name, strings.TrimSpace(string(obj)))
 }
+
+func TestJobTimeoutMinutesTypes(t *testing.T) {
+	t.Parallel()
+	// Each job spells its timeout differently: YAML decodes them as uint64, int64, float64, string and list.
+	r := fixture(t, map[string]string{
+		".github/workflows/ci.yml": "on: push\njobs:\n  a: {timeout-minutes: 10}\n  b: {timeout-minutes: -5}\n  c: {timeout-minutes: 2.5}\n  d: {timeout-minutes: \"15\"}\n  e: {timeout-minutes: [1]}\n  f: {timeout-minutes: notanumber}\n",
+	})
+	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expr := `jobs(".github/workflows/ci.yml").map(j, j.timeout_minutes) == [10, -5, 2, 15, 0, 0]`
+	got, err := env.Check(expr, nil)
+	if err != nil || !got {
+		t.Fatalf("%s = %v, %v", expr, got, err)
+	}
+}

@@ -74,6 +74,33 @@ func TestTableRenderer(t *testing.T) {
 	}
 }
 
+func TestTableShowsExceptionDeadlines(t *testing.T) {
+	t.Parallel()
+	excepted := func(id string, ex *model.Exception) model.Result {
+		return model.Result{
+			Rule: model.Rule{ID: id, Title: id}, Status: model.StatusExcepted, Severity: model.SeverityError,
+			Evidence: "evidence not shown", Findings: []model.Finding{{Message: "m", Exception: ex}},
+		}
+	}
+	run := &engine.Run{Facts: facts.Facts{Name: "demo", Sources: map[string]facts.Source{}}, Config: &config.Effective{}, Results: []model.Result{
+		excepted("repo/dated", &model.Exception{Rule: "repo/dated", Reason: "migration", Until: "2027-01-31"}),
+		excepted("repo/open", &model.Exception{Rule: "repo/open", Reason: "legacy"}),
+	}}
+	var b bytes.Buffer
+	if err := report.Write(&b, run, report.FormatTable, report.Options{Verbose: true}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	for _, want := range []string{"excepted: migration (until 2027-01-31)", "excepted: legacy (no deadline)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "evidence not shown") {
+		t.Errorf("the exception text replaces the evidence:\n%s", out)
+	}
+}
+
 func TestMarkdownRendererEscapesCells(t *testing.T) {
 	t.Parallel()
 	out := render(t, report.FormatMarkdown, report.Options{})

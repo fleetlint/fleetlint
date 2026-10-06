@@ -72,22 +72,21 @@ func (c checkPasses) CheckDeep(ctx context.Context, rc rules.Context) ([]model.F
 
 // tailBuffer keeps only the last limit bytes of output: enough to explain a
 // failure, never enough to exhaust memory on a chatty build.
+// buf is not embedded: a promoted ReadFrom would let io.Copy bypass Write and the limit.
 type tailBuffer struct {
-	bytes.Buffer
+	buf   bytes.Buffer
 	limit int
 }
 
 func (t *tailBuffer) Write(p []byte) (int, error) {
-	_, _ = t.Buffer.Write(p) // bytes.Buffer.Write never returns an error
-	if t.Len() > t.limit {
-		excess := t.Len() - t.limit
-		rest := make([]byte, t.limit)
-		copy(rest, t.Bytes()[excess:])
-		t.Reset()
-		_, _ = t.Buffer.Write(rest)
+	_, _ = t.buf.Write(p) // bytes.Buffer.Write never returns an error
+	if excess := t.buf.Len() - t.limit; excess > 0 {
+		t.buf.Next(excess) // drop the oldest bytes
 	}
 	return len(p), nil
 }
+
+func (t *tailBuffer) String() string { return t.buf.String() }
 
 func checkCommand(kind string) ([]string, bool) {
 	switch kind {

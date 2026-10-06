@@ -29,25 +29,30 @@ const (
 )
 
 // limitedBuffer keeps at most limit bytes and records that more arrived.
+// buf is not embedded: a promoted ReadFrom would let io.Copy bypass Write and the limit.
 type limitedBuffer struct {
-	bytes.Buffer
+	buf       bytes.Buffer
 	limit     int
 	truncated bool
 }
 
 func (l *limitedBuffer) Write(p []byte) (int, error) {
-	room := l.limit - l.Len()
+	n := len(p) // report everything as written so io.Copy does not see a short write
+	room := l.limit - l.buf.Len()
 	if room <= 0 {
 		l.truncated = true
-		return len(p), nil
+		return n, nil
 	}
 	if len(p) > room {
 		l.truncated = true
 		p = p[:room]
 	}
-	_, _ = l.Buffer.Write(p) // bytes.Buffer.Write never returns an error
-	return len(p), nil
+	_, _ = l.buf.Write(p) // bytes.Buffer.Write never returns an error
+	return n, nil
 }
+
+func (l *limitedBuffer) Bytes() []byte  { return l.buf.Bytes() }
+func (l *limitedBuffer) String() string { return l.buf.String() }
 
 // commandInput is what the executable receives on stdin.
 type commandInput struct {
