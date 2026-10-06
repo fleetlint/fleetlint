@@ -44,7 +44,7 @@ func TestAppendBlock(t *testing.T) {
 	if err != nil || len(changes) != 1 || changes[0].Kind != "append" {
 		t.Fatalf("changes=%+v err=%v", changes, err)
 	}
-	if want := "[project]\nname = \"x\"\n\n" + ruff; got["pyproject.toml"] != want {
+	if want := "[project]\nname = \"x\"\n\n" + strings.TrimLeft(ruff, "\n"); got["pyproject.toml"] != want {
 		t.Errorf("got %q\nwant %q", got["pyproject.toml"], want)
 	}
 	if !strings.Contains(changes[0].Diff, "+ [tool.ruff]") {
@@ -62,6 +62,17 @@ func TestAppendBlock(t *testing.T) {
 	bad := []fix.Action{{Append: &fix.AppendAction{File: "pyproject.toml", Template: "broken.toml", Unless: "never-matches"}}}
 	if _, _, err := planAndApply(t, map[string]string{"pyproject.toml": "[project]\n"}, bad, tpl); err == nil || !strings.Contains(err.Error(), "would not parse") {
 		t.Errorf("an unparsable result is refused: %v", err)
+	}
+
+	// Two appends to one file in a single plan both land, once each.
+	two := []fix.Action{
+		{Append: &fix.AppendAction{File: "pyproject.toml", Template: "{stack}/ruff.toml", Unless: `(?m)^\[tool\.ruff\]`}},
+		{Append: &fix.AppendAction{File: "pyproject.toml", Template: "dev.toml", Unless: `(?m)^\[dependency-groups\]`}},
+	}
+	tpl["dev.toml"] = "\n[dependency-groups]\ndev = [\"ruff\"]\n"
+	got, changes, err = planAndApply(t, map[string]string{"pyproject.toml": "[project]\nname = \"x\"\n"}, two, tpl)
+	if err != nil || len(changes) != 2 || strings.Count(got["pyproject.toml"], "[tool.ruff]") != 1 || strings.Count(got["pyproject.toml"], "[dependency-groups]") != 1 {
+		t.Errorf("both blocks once: %v\n%s", err, got["pyproject.toml"])
 	}
 
 	yml := []fix.Action{{Append: &fix.AppendAction{File: "analysis_options.yaml", Template: "strict.yaml", Unless: "strict-casts"}}}
@@ -88,6 +99,15 @@ func TestMergeJSON(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+	// Member order is the file's: compilerOptions before include, target before strict, new keys after the existing ones.
+	if strings.Index(out, `"compilerOptions"`) > strings.Index(out, `"include"`) || strings.Index(out, `"target"`) > strings.Index(out, `"strict"`) || strings.Index(out, `"strict"`) > strings.Index(out, `"noUncheckedIndexedAccess"`) {
+		t.Errorf("merge reordered the document:\n%s", out)
+	}
+	numbers := "{\n  \"version\": 1.10,\n  \"big\": 12345678901234567890,\n  \"compilerOptions\": {}\n}\n"
+	got, _, err = planAndApply(t, map[string]string{"tsconfig.json": numbers}, merge, tpl)
+	if err != nil || !strings.Contains(got["tsconfig.json"], "1.10") || !strings.Contains(got["tsconfig.json"], "12345678901234567890") {
+		t.Errorf("numbers are written back as they were: %v\n%s", err, got["tsconfig.json"])
 	}
 	if !strings.Contains(changes[0].Diff, "compilerOptions.noUncheckedIndexedAccess: true") || strings.Contains(changes[0].Diff, "strict") {
 		t.Errorf("the diff lists the added keys only: %q", changes[0].Diff)

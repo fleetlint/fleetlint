@@ -216,6 +216,7 @@ func TestLintFixesSatisfyTheirRules(t *testing.T) {
 			first := evaluate(t, scope)
 			for pass := 0; pass < 2; pass++ {
 				var changed int
+				var changedDiffs []string
 				for _, res := range first.Results {
 					if !slices.Contains(tc.rules, res.Rule.ID) || res.Status != model.StatusFail {
 						continue
@@ -232,12 +233,15 @@ func TestLintFixesSatisfyTheirRules(t *testing.T) {
 						t.Fatal(err)
 					}
 					changed += len(changes)
+					for _, c := range changes {
+						changedDiffs = append(changedDiffs, res.Rule.ID+": "+c.Diff)
+					}
 				}
 				if pass == 0 && changed == 0 {
 					t.Fatal("the bare manifest must fail at least one lint rule with a fix")
 				}
 				if pass == 1 && changed != 0 {
-					t.Errorf("second pass changed %d files: the fixes are not idempotent", changed)
+					t.Errorf("second pass changed %d files: the fixes are not idempotent: %s", changed, strings.Join(changedDiffs, "\n"))
 				}
 				// A fresh handle: the repository caches parsed documents.
 				fresh, err := repo.Open(context.Background(), scope.Root)

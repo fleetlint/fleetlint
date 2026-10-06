@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -86,25 +85,20 @@ func decodeMerge(v any) (*MergeAction, error) {
 }
 
 // planAppend returns the change, or nil when the file is absent or already
-// has what the template would add.
+// has what the template would add. apply reads the file again: two appends
+// to one file in the same plan must both land.
 func planAppend(r *repo.Repo, a AppendAction, p Project, tpl Templates) (*Change, error) {
 	old, ok := r.Text(a.File)
-	if !ok || regexp.MustCompile(a.Unless).MatchString(old) {
+	unless := regexp.MustCompile(a.Unless)
+	if !ok || unless.MatchString(old) {
 		return nil, nil
 	}
 	body, err := render(tpl, strings.ReplaceAll(a.Template, "{stack}", p.Stack), p)
 	if err != nil {
 		return nil, err
 	}
-	block := strings.TrimRight(string(body), "\n") + "\n"
-	sep := "\n"
-	if old == "" || strings.HasSuffix(old, "\n\n") {
-		sep = ""
-	} else if !strings.HasSuffix(old, "\n") {
-		sep = "\n\n"
-	}
-	updated := old + sep + block
-	if err := parses(a.File, updated); err != nil {
+	block := strings.Trim(string(body), "\n") + "\n"
+	if _, err := appended(a.File, old, block); err != nil {
 		return nil, fmt.Errorf("%s: appending %s would not parse: %w", a.File, a.Template, err)
 	}
 	abs, err := r.Abs(a.File)
@@ -114,9 +108,34 @@ func planAppend(r *repo.Repo, a AppendAction, p Project, tpl Templates) (*Change
 	return &Change{
 		Path: a.File, Kind: "append", Diff: renderAppend(a.File, block),
 		apply: func() error {
+			current, err := os.ReadFile(abs) //nolint:gosec // the path was resolved inside the repository
+			if err != nil {
+				return err
+			}
+			if unless.Match(current) {
+				return nil // an earlier change in this plan already added it
+			}
+			updated, err := appended(a.File, string(current), block)
+			if err != nil {
+				return fmt.Errorf("appending %s would not parse: %w", a.Template, err)
+			}
 			return os.WriteFile(abs, []byte(updated), 0o644) //nolint:gosec // project configuration must be readable by other tools
 		},
 	}, nil
+}
+
+// appended joins the file and the block with one blank line and checks the
+// result parses in the file's format.
+func appended(file, old, block string) (string, error) {
+	sep := "\n"
+	switch {
+	case old == "" || strings.HasSuffix(old, "\n\n"):
+		sep = ""
+	case !strings.HasSuffix(old, "\n"):
+		sep = "\n\n"
+	}
+	updated := old + sep + block
+	return updated, parses(file, updated)
 }
 
 // parses checks the whole document in the file's own format.
@@ -135,13 +154,14 @@ func parses(file, text string) error {
 
 // planMerge returns the change, or nil when the file is absent or has every
 // key of the template. A file that is not strict JSON (comments, trailing
-// commas) is reported, not rewritten.
+// commas) is reported, not rewritten; member order and number formatting
+// are kept.
 func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, error) {
 	old, ok := r.Text(a.File)
 	if !ok {
 		return nil, nil
 	}
-	var doc map[string]any
+	var doc omap
 	if err := json.Unmarshal([]byte(old), &doc); err != nil {
 		return nil, fmt.Errorf("%s is not strict JSON (comments or trailing commas?); add the keys of template %s by hand", a.File, a.Template)
 	}
@@ -149,16 +169,15 @@ func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, 
 	if err != nil {
 		return nil, err
 	}
-	var want map[string]any
+	var want omap
 	if err := json.Unmarshal(body, &want); err != nil {
 		return nil, fmt.Errorf("template %s: %w", a.Template, err)
 	}
-	added := mergeMissing(doc, want, "")
+	added := mergeMissing(&doc, &want, "")
 	if len(added) == 0 {
 		return nil, nil
 	}
-	sort.Strings(added)
-	out, err := json.MarshalIndent(doc, "", indentOf(old))
+	out, err := json.MarshalIndent(&doc, "", indentOf(old))
 	if err != nil {
 		return nil, err
 	}
@@ -175,20 +194,22 @@ func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, 
 	}, nil
 }
 
-// mergeMissing adds want's keys that dst lacks and returns their dotted
-// paths with values; nested objects recurse, anything else is left as is.
-func mergeMissing(dst, want map[string]any, prefix string) []string {
+// mergeMissing adds want's members that dst lacks, in the template's order,
+// and returns their dotted paths with values; nested objects recurse,
+// anything else is left as is.
+func mergeMissing(dst, want *omap, prefix string) []string {
 	var added []string
-	for k, v := range want {
-		cur, ok := dst[k]
+	for _, k := range want.keys {
+		v := want.vals[k]
+		cur, ok := dst.vals[k]
 		if !ok {
-			dst[k] = v
+			dst.set(k, v)
 			b, _ := json.Marshal(v)
 			added = append(added, prefix+k+": "+string(b))
 			continue
 		}
-		sub, isMap := v.(map[string]any)
-		curMap, curIsMap := cur.(map[string]any)
+		sub, isMap := v.(*omap)
+		curMap, curIsMap := cur.(*omap)
 		if isMap && curIsMap {
 			added = append(added, mergeMissing(curMap, sub, prefix+k+".")...)
 		}
