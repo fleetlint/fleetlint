@@ -6,8 +6,10 @@ package fleet
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,6 +43,9 @@ type Entry struct {
 	// Visibility (public or private) is what the forge says about the
 	// repository; it applies when the repository does not say itself.
 	Visibility string `yaml:"visibility,omitempty"`
+	// Token authenticates the clone over https the way the forge API call
+	// was authenticated; set by discovery, never read from a fleet file.
+	Token string `yaml:"-"`
 }
 
 // Normalize validates an entry built outside a fleet file.
@@ -236,17 +241,37 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		if err := os.MkdirAll(cache, 0o750); err != nil {
 			return "", err
 		}
-		if err := gitRun(ctx, "", "clone", "--quiet", "--depth=50", "--", e.URL, dest); err != nil {
+		if err := gitRun(ctx, "", cloneAuth(e), "clone", "--quiet", "--depth=50", "--", e.URL, dest); err != nil {
 			return "", err
 		}
 		return dest, nil
 	}
 	if update {
-		if err := gitRun(ctx, dest, "pull", "--quiet", "--ff-only"); err != nil {
+		if err := gitRun(ctx, dest, cloneAuth(e), "pull", "--quiet", "--ff-only"); err != nil {
 			return "", err
 		}
 	}
 	return dest, nil
+}
+
+// cloneAuth is the git configuration that sends the entry's token with
+// every request to its host, as actions/checkout does: an Authorization
+// header scoped to the URL, passed through the environment so it appears
+// in no command line and no error message.
+func cloneAuth(e Entry) []string {
+	if e.Token == "" || !strings.HasPrefix(e.URL, "https://") {
+		return nil
+	}
+	u, err := url.Parse(e.URL)
+	if err != nil || u.Host == "" {
+		return nil
+	}
+	basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + e.Token))
+	return []string{
+		"GIT_CONFIG_COUNT=1",
+		"GIT_CONFIG_KEY_0=http." + u.Scheme + "://" + u.Host + "/.extraheader",
+		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic " + basic,
+	}
 }
 
 func validCloneURL(u string) bool {

@@ -25,7 +25,8 @@ func fleetCmd(g *globals, code *int) *cobra.Command {
 runs check in each, and writes fleet.html, fleet.md, fleet.json, actions/<repo>.md
 and history/<timestamp>.json into --out. URL entries are cloned into --cache.
 --from lists an owner's repositories through the forge API (GITHUB_TOKEN or
-GITEA_TOKEN from the environment, if set) and clones them with git's credentials.`,
+GITEA_TOKEN from the environment, if set) and clones them over https with the
+same token; without one, public repositories only.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			spec, err := buildSpec(specPath, args)
 			if err == nil {
@@ -132,7 +133,8 @@ func discover(ctx context.Context, source string) ([]fleet.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	repos, err := forge.Client{}.List(ctx, src)
+	client := forge.Client{}
+	repos, err := client.List(ctx, src)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +143,7 @@ func discover(ctx context.Context, source string) ([]fleet.Entry, error) {
 		if fr.Archived || fr.Fork {
 			continue
 		}
-		e := fleet.Entry{Name: fr.Name, URL: fr.CloneURL, Visibility: string(facts.VisibilityPublic)}
+		e := fleet.Entry{Name: fr.Name, URL: fr.CloneURL, Visibility: string(facts.VisibilityPublic), Token: client.Token(src)}
 		if fr.Private {
 			e.Visibility = string(facts.VisibilityPrivate)
 		}

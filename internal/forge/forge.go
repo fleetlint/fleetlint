@@ -171,6 +171,10 @@ func (c Client) get(ctx context.Context, kind, host, path string, into any) erro
 	return nil
 }
 
+// Token returns the token the client would use for the source, so clones
+// of what it listed can authenticate the same way; "" when none is set.
+func (c Client) Token(src Source) string { return c.token(src.Kind) }
+
 // token returns the forge's token from the environment: GITHUB_TOKEN or
 // GH_TOKEN for GitHub, GITEA_TOKEN for Gitea.
 func (c Client) token(kind string) string {
