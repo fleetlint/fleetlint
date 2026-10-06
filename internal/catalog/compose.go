@@ -87,6 +87,11 @@ var devImages = map[string]string{
 	"kotlin":  "mcr.microsoft.com/devcontainers/java:21",
 	"flutter": devcontainerFlutter,
 	"hugo":    "ghcr.io/gohugoio/hugo:latest",
+	"java":    "mcr.microsoft.com/devcontainers/java:21",
+	"dotnet":  "mcr.microsoft.com/devcontainers/dotnet:9.0",
+	"cpp":     devcontainerCpp,
+	"ruby":    "mcr.microsoft.com/devcontainers/ruby:3",
+	"php":     "mcr.microsoft.com/devcontainers/php:8",
 }
 
 func devImage(stack string) string {

@@ -30,6 +30,11 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 		"kotlin":  {"build.gradle.kts": "plugins {}\n"},
 		"flutter": {"pubspec.yaml": "name: x\n"},
 		"hugo":    {"hugo.toml": "baseURL = 'https://example.org/'\n"},
+		"java":    {"pom.xml": "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>\n"},
+		"dotnet":  {"global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n", "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n"},
+		"cpp":     {"CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"},
+		"ruby":    {"Gemfile": "source 'https://rubygems.org'\n"},
+		"php":     {"composer.json": "{\"name\": \"x/x\"}\n"},
 	}
 	rules := []string{
 		"hooks/config-present", "hooks/shared-hygiene", "hooks/secret-scan", "hooks/conventional-commits", "hooks/pre-push-check",
@@ -193,6 +198,11 @@ func TestLintFixesSatisfyTheirRules(t *testing.T) {
 		"node":    {map[string]string{"package.json": "{\"name\": \"x\"}\n", "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\"\n  }\n}\n"}, []string{"lint/node-config", "lint/node-strict-flags"}},
 		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {}\n"}, []string{"lint/kotlin-config", "lint/kotlin-detekt-strict"}},
 		"flutter": {map[string]string{"pubspec.yaml": "name: x\n"}, []string{"lint/flutter-config", "lint/flutter-strict-modes"}},
+		"java":    {map[string]string{"pom.xml": "<project></project>\n"}, []string{"lint/java-config"}},
+		"dotnet":  {map[string]string{"global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n"}, []string{"lint/dotnet-config"}},
+		"cpp":     {map[string]string{"CMakeLists.txt": "project(x)\n"}, []string{"lint/cpp-config"}},
+		"ruby":    {map[string]string{"Gemfile": "source 'https://rubygems.org'\n"}, []string{"lint/ruby-config"}},
+		"php":     {map[string]string{"composer.json": "{\"name\": \"x/x\"}\n"}, []string{"lint/php-config"}},
 	}
 	for stack, tc := range cases {
 		t.Run(stack, func(t *testing.T) {

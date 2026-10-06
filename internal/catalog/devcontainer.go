@@ -20,6 +20,10 @@ var devcontainerFeatures = map[string]string{
 	"rust":   "ghcr.io/devcontainers/features/rust:1",
 	"kotlin": "ghcr.io/devcontainers/features/java:1",
 	"hugo":   "ghcr.io/devcontainers/features/hugo:1",
+	"java":   "ghcr.io/devcontainers/features/java:1",
+	"dotnet": "ghcr.io/devcontainers/features/dotnet:1",
+	"ruby":   "ghcr.io/devcontainers/features/ruby:1",
+	"php":    "ghcr.io/devcontainers/features/php:1",
 }
 
 const (
@@ -42,6 +46,9 @@ type devcontainer struct {
 // stack and every further stack in the repository.
 // devcontainerSetup hands over to the task runner after the container is
 // created: its `tools` target when there is one, then the git hooks.
+// devcontainerCpp is the image for C/C++ projects: no feature installs a compiler.
+const devcontainerCpp = "mcr.microsoft.com/devcontainers/cpp:1"
+
 func devcontainerSetup(p fix.Project) string {
 	probe := map[string]string{
 		repo.RunnerJust: "just --summary 2>/dev/null | tr ' ' '\\n' | grep -qx tools",
@@ -77,6 +84,8 @@ func composeDevcontainer(stack string, p fix.Project) ([]byte, error) {
 			dc.Features[feature] = map[string]any{}
 		case s == "flutter":
 			dc.Image = devcontainerFlutter
+		case s == "cpp":
+			dc.Image = devcontainerCpp
 		default:
 			return nil, fmt.Errorf("no dev container template for stack %q", s)
 		}

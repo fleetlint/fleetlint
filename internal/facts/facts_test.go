@@ -92,6 +92,26 @@ func TestHugoDetection(t *testing.T) {
 	}
 }
 
+func TestLargeOrgStacks(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]struct {
+		files map[string]string
+		want  []string
+	}{
+		"maven":        {map[string]string{"pom.xml": "<project/>\n"}, []string{"java"}},
+		"dotnet sln":   {map[string]string{"App.sln": "\n", "src/App/App.csproj": "<Project/>\n"}, []string{"dotnet"}},
+		"dotnet props": {map[string]string{"Directory.Build.props": "<Project/>\n"}, []string{"dotnet"}},
+		"cmake":        {map[string]string{"CMakeLists.txt": "project(x)\n"}, []string{"cpp"}},
+		"gemspec":      {map[string]string{"x.gemspec": "Gem::Specification.new\n"}, []string{"ruby"}},
+		"composer":     {map[string]string{"composer.json": "{}\n"}, []string{"php"}},
+		"php and node": {map[string]string{"composer.json": "{}\n", "package.json": "{}\n"}, []string{"node", "php"}},
+	} {
+		if f := facts.Discover(testutil.Fixture(t, c.files), facts.Overrides{}); !reflect.DeepEqual(f.Stacks, c.want) {
+			t.Errorf("%s: stacks = %v, want %v", name, f.Stacks, c.want)
+		}
+	}
+}
+
 func TestNestedProjectsWithoutWorkspaceFile(t *testing.T) {
 	t.Parallel()
 	files := map[string]string{

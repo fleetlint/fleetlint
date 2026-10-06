@@ -22,7 +22,7 @@ type renovateConfig struct {
 
 // lockfileStacks are the stacks whose package manager keeps a lockfile that
 // Renovate can refresh on a schedule. Go's go.sum is not one.
-var lockfileStacks = map[string]bool{"node": true, "python": true, "rust": true, "flutter": true, "kotlin": true}
+var lockfileStacks = map[string]bool{"node": true, "python": true, "rust": true, "flutter": true, "kotlin": true, "ruby": true, "php": true, "dotnet": true}
 
 // composeRenovate writes renovate.json for the project's stacks.
 func composeRenovate(stack string, p fix.Project) ([]byte, error) {

@@ -173,24 +173,33 @@ var stackMarkers = map[string][]string{
 	"kotlin":  {"build.gradle.kts", "settings.gradle.kts", "build.gradle"},
 	"flutter": {"pubspec.yaml"},
 	"hugo":    {"hugo.toml", "hugo.yaml", "hugo.json", "config/_default/hugo.toml", "config/_default/hugo.yaml", "config/_default/config.toml"},
+	"java":    {"pom.xml"},
+	"dotnet":  {"global.json", "Directory.Build.props"},
+	"cpp":     {"CMakeLists.txt", "meson.build", "conanfile.txt", "conanfile.py", "vcpkg.json"},
+	"ruby":    {"Gemfile"},
+	"php":     {"composer.json"},
+}
+
+// stackGlobs are markers whose name varies: solution and project files, gemspecs.
+var stackGlobs = map[string][]string{
+	"dotnet": {"*.sln", "*.slnx", "*.csproj", "*.fsproj"},
+	"ruby":   {"*.gemspec"},
 }
 
 func detectStacks(r *repo.Repo) []string {
 	var out []string
 	for stack, markers := range stackMarkers {
-		for _, m := range markers {
-			if r.Has(m) {
-				out = append(out, stack)
-				break
-			}
+		if anyMarker(markers, r.Has) {
+			out = append(out, stack)
 		}
 	}
-	// Older Hugo sites keep a config.toml; it is Hugo's when it names the
-	// baseURL and the site has content.
-	if !slices.Contains(out, "hugo") && r.Has("config.toml") && r.Has("content") {
-		if text, ok := r.Text("config.toml"); ok && strings.Contains(text, "baseURL") {
-			out = append(out, "hugo")
+	for stack, globs := range stackGlobs {
+		if !slices.Contains(out, stack) && anyMarker(globs, func(g string) bool { return len(r.Glob(g)) > 0 }) {
+			out = append(out, stack)
 		}
+	}
+	if !slices.Contains(out, "hugo") && legacyHugo(r) {
+		out = append(out, "hugo")
 	}
 	// A Flutter project's Android shell lives under android/, so a root
 	// pubspec plus a root Groovy build file is still Flutter, not a Kotlin
@@ -200,6 +209,25 @@ func detectStacks(r *repo.Repo) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func anyMarker(markers []string, has func(string) bool) bool {
+	for _, m := range markers {
+		if has(m) {
+			return true
+		}
+	}
+	return false
+}
+
+// legacyHugo recognises an older Hugo site: a config.toml that names the
+// baseURL next to a content directory.
+func legacyHugo(r *repo.Repo) bool {
+	if !r.Has("config.toml") || !r.Has("content") {
+		return false
+	}
+	text, ok := r.Text("config.toml")
+	return ok && strings.Contains(text, "baseURL")
 }
 
 func detectForge(remote string) (forge, host string) {
