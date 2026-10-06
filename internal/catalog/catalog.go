@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -228,6 +229,10 @@ type Loader struct {
 	// FetchGit reads one file from a git repository at a tag or commit; nil
 	// disables git catalogs.
 	FetchGit func(repoURL, rev, path string) ([]byte, error)
+	// FetchGitTree reads a directory (its files and its templates/ tree) at
+	// a tag or commit, so a git catalog can ship templates; nil means the
+	// catalog file alone is read through FetchGit.
+	FetchGitTree func(repoURL, rev, dir string) (map[string][]byte, error)
 	// FetchCatalog provides a whole catalog repository at a tag or commit as
 	// a directory, with the commit it resolved to; nil disables pinning.
 	FetchCatalog func(repoURL, rev string) (dir, commit string, err error)
@@ -281,7 +286,7 @@ func (l Loader) source() *Source {
 
 // RemoteLoader is the Loader for commands that may use the network.
 func RemoteLoader(ctx context.Context) Loader {
-	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchCatalog: PinFetch(ctx, ""), FetchOCI: OCIFetch(ctx), TrustedRoot: PublicTrustedRoot(ctx)}
+	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchGitTree: GitTreeFetch(ctx), FetchCatalog: PinFetch(ctx, ""), FetchOCI: OCIFetch(ctx), TrustedRoot: PublicTrustedRoot(ctx)}
 }
 
 // Load resolves one reference: `fleetlint:<preset>`, a local path (file or
@@ -386,7 +391,16 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 	if strings.HasPrefix(ref, ociPrefix) {
 		return l.loadOCI(ref)
 	}
-	b, err := l.readPinned(ref)
+	var (
+		b         []byte
+		templates fs.FS
+		err       error
+	)
+	if strings.HasPrefix(ref, gitPrefix) && l.FetchGitTree != nil {
+		b, templates, err = l.readGitTree(ref)
+	} else {
+		b, err = l.readPinned(ref)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -394,8 +408,45 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
-	c.Ref = ref
+	c.Ref, c.Templates = ref, templates
 	return []*Catalog{c}, nil
+}
+
+// readGitTree reads a git catalog with the templates/ directory next to it.
+// Templates are taken only from a commit-pinned reference: the digest of a
+// tag reference covers the catalog file, not the files around it.
+func (l Loader) readGitTree(ref string) ([]byte, fs.FS, error) {
+	g, err := parseGitRef(ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	dir, file := path.Split(g.Path)
+	files, err := l.FetchGitTree(g.URL, g.Rev, strings.TrimSuffix(dir, "/"))
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetch %s: %w", ref, err)
+	}
+	b, ok := files[file]
+	if !ok {
+		return nil, nil, fmt.Errorf("fetch %s: %s has no file %s", ref, g.URL, g.Path)
+	}
+	if g.Digest != "" {
+		if err := VerifyDigest(b, g.Digest); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", ref, err)
+		}
+	}
+	if !g.isCommit() {
+		return b, nil, nil
+	}
+	templates := memFS{}
+	for name, body := range files {
+		if strings.HasPrefix(name, templatesDir) {
+			templates[name] = body
+		}
+	}
+	if len(templates) == 0 {
+		return b, nil, nil
+	}
+	return b, templates, nil
 }
 
 // readPinned returns the body of an https or git reference after checking

@@ -309,6 +309,26 @@ func TestSemverTags(t *testing.T) {
 	}
 }
 
+// A tools target pinned through *_VERSION variables counts only when the
+// variables hold versions or commits; a branch name is not a pin.
+func TestDevEnvironmentVersionVariables(t *testing.T) {
+	t.Parallel()
+	mk := func(v string) map[string]string {
+		return map[string]string{"go.mod": "module x\n", "Makefile": "GOLANGCI_VERSION ?= " + v + "\ntools:\n\tgo install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)\n"}
+	}
+	for _, v := range []string{"v2.14.0", "2.14.0-rc.1", "04dfe7ad9a81d8d7380ddd207e472c83948d800c   # the commit the pages come from", "\"1.5.2\""} {
+		if s := status(t, run(t, mk(v), tier1Public), "repo/dev-environment"); s.Status != model.StatusPass {
+			t.Errorf("%q is a pin: %s %+v", v, s.Status, s.Findings)
+		}
+	}
+	for _, v := range []string{"main", "latest", "release-2.x"} {
+		s := status(t, run(t, mk(v), tier1Public), "repo/dev-environment")
+		if s.Status != model.StatusFail || len(s.Findings) == 0 || !strings.Contains(s.Findings[0].Message, "not a version") {
+			t.Errorf("%q is not a pin: %s %+v", v, s.Status, s.Findings)
+		}
+	}
+}
+
 // A Go module with a main package is an application: the API rule does not
 // apply. A library without the check fails; one with a documented fork via
 // docs/FORKS.md passes the forks rule however the replace line looks.

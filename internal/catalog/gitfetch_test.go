@@ -3,6 +3,7 @@ package catalog_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os/exec"
 	"strings"
 	"testing"
@@ -102,5 +103,65 @@ func TestGitFetchReadsTagAndCommit(t *testing.T) {
 	}
 	if _, err := fetch(src, "v1.0.0", "policy/missing.yaml"); err == nil || !strings.Contains(err.Error(), "policy/missing.yaml") {
 		t.Fatalf("a missing file must be named in the error, got %v", err)
+	}
+}
+
+// A git catalog ships the templates/ directory next to it, but only from a
+// commit-pinned reference; a tag reference gets the catalog file alone.
+func TestGitCatalogShipsTemplates(t *testing.T) {
+	t.Parallel()
+	src := testutil.GitFixture(t, map[string]string{
+		"policy/catalog.yaml":           gitCatalogBody,
+		"policy/templates/SECURITY.md":  "org policy\n",
+		"policy/templates/check/go.yml": "      - run: true\n",
+		"policy/notes/README.md":        "not a template\n",
+		"other.yaml":                    "unrelated\n",
+	}).Root
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", src}, args...)...)
+		cmd.Env = testutil.GitEnv()
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("tag", "v1.0.0")
+	commit := git("rev-parse", "HEAD")
+	fetch := catalog.GitTreeFetch(context.Background())
+	files, err := fetch(src, commit, "policy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"catalog.yaml", "templates/SECURITY.md", "templates/check/go.yml"} {
+		if _, ok := files[want]; !ok {
+			t.Errorf("missing %s in %v", want, files)
+		}
+	}
+	if _, ok := files["notes/README.md"]; ok {
+		t.Error("only the directory's own files and templates/ are read")
+	}
+	root, err := fetch(src, commit, "")
+	if err != nil || string(root["other.yaml"]) != "unrelated\n" {
+		t.Errorf("the repository root works as a directory: %v %q", err, root["other.yaml"])
+	}
+
+	// Through the loader (the reference's URL is mapped to the fixture):
+	// a commit pin brings templates, a tag pin does not.
+	l := catalog.Loader{FetchGitTree: func(_, rev, dir string) (map[string][]byte, error) { return fetch(src, rev, dir) }}
+	cats, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@" + commit)
+	if err != nil || len(cats) != 1 || cats[0].Templates == nil {
+		t.Fatalf("commit pin: err=%v templates=%v", err, cats != nil && cats[0].Templates != nil)
+	}
+	if b, err := fs.ReadFile(cats[0].Templates, "templates/SECURITY.md"); err != nil || string(b) != "org policy\n" {
+		t.Errorf("template: %q %v", b, err)
+	}
+	tagged, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@v1.0.0#sha256-" + catalog.Digest([]byte(gitCatalogBody)))
+	if err != nil || tagged[0].Templates != nil {
+		t.Errorf("tag pin: err=%v, templates must be nil", err)
+	}
+	if _, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@v1.0.0#sha256-" + strings.Repeat("0", 64)); err == nil {
+		t.Error("the digest still guards the catalog file")
 	}
 }

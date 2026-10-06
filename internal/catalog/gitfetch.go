@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -102,6 +103,71 @@ func GitFetch(ctx context.Context) func(repoURL, rev, path string) ([]byte, erro
 		}
 		return gitOut(ctx, dir, "cat-file", "blob", object)
 	}
+}
+
+// GitTreeFetch returns a FetchGitTree function for Loader: the files of one
+// directory at a tag or commit, by path relative to that directory. It
+// serves the catalog file and the templates/ tree next to it in one fetch.
+func GitTreeFetch(ctx context.Context) func(repoURL, rev, dir string) (map[string][]byte, error) {
+	return func(repoURL, rev, dir string) (map[string][]byte, error) {
+		ctx, cancel := context.WithTimeout(ctx, gitFetchTimeout)
+		defer cancel()
+		tmp, err := os.MkdirTemp("", "fleetlint-catalog-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(tmp) //nolint:errcheck // best-effort cleanup of a temp dir
+		if err := fetchRev(ctx, tmp, repoURL, rev); err != nil {
+			return nil, err
+		}
+		files, err := readTree(ctx, tmp, dir)
+		if err != nil {
+			return nil, fmt.Errorf("%s at %s: %w", repoURL, rev, err)
+		}
+		return files, nil
+	}
+}
+
+// readTree returns the files of dir in the fetched revision: its own files
+// and the templates/ tree below it, nothing else.
+func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
+	listing, err := gitOut(ctx, tmp, "ls-tree", "-r", "-z", "--name-only", treeObject(dir))
+	if err != nil {
+		return nil, fmt.Errorf("no directory %q: %w", dir, err)
+	}
+	files := map[string][]byte{}
+	for _, name := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
+		if name == "" || (strings.Contains(name, "/") && !strings.HasPrefix(name, templatesDir)) {
+			continue
+		}
+		if len(files) >= ociMaxFiles {
+			return nil, fmt.Errorf("more than %d files under %q", ociMaxFiles, dir)
+		}
+		if files[name], err = readBlob(ctx, tmp, treeObject(path.Join(dir, name))); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return files, nil
+}
+
+// treeObject names a path of the fetched revision; "" is the root tree.
+func treeObject(p string) string {
+	if p == "" || p == "." {
+		return "FETCH_HEAD"
+	}
+	return "FETCH_HEAD:" + p
+}
+
+// readBlob returns a blob of the fetched revision, refusing oversized ones.
+func readBlob(ctx context.Context, dir, object string) ([]byte, error) {
+	size, err := gitOut(ctx, dir, "cat-file", "-s", object)
+	if err != nil {
+		return nil, err
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > maxCatalogLen {
+		return nil, fmt.Errorf("larger than %d bytes", maxCatalogLen)
+	}
+	return gitOut(ctx, dir, "cat-file", "blob", object)
 }
 
 // fetchRev fetches one tag or commit into the bare repository at dir and
