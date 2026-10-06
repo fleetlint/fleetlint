@@ -199,6 +199,27 @@ func TestOneDotZeroRules(t *testing.T) {
 			pass: map[string]string{".github/ISSUE_TEMPLATE/bug.md": "steps\n"},
 			fail: map[string]string{},
 		},
+		"lint/kotlin-detekt-strict": {
+			pass:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"},
+			fail:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n"},
+			wantMessage: "(exceptions.SwallowedException)",
+		},
+		"quality/duplication-gate": {
+			pass: map[string]string{".golangci.yml": "version: \"2\"\nlinters:\n  enable:\n    - dupl\n"},
+			fail: map[string]string{".golangci.yml": "version: \"2\"\nlinters:\n  enable:\n    - errcheck\n", "Makefile": "lint:\n\tgolangci-lint run\n"},
+		},
+		"quality/mutation-gate": {
+			pass: map[string]string{"Makefile": "mutate:\n\tgremlins unleash ./internal/...\n"},
+			fail: map[string]string{"Makefile": "test:\n\tgo test ./...\n"},
+		},
+		"release/api-compatibility": {
+			pass: map[string]string{"pkg/lib.go": "package pkg\n", ".github/workflows/release.yml": wf(tagPush, job("a", step("", "gorelease -base=$(git describe --tags --abbrev=0 HEAD^)")))},
+			fail: map[string]string{"pkg/lib.go": "package pkg\n", "Makefile": "release:\n\tgoreleaser release\n"},
+		},
+		"deps/forks-documented": {
+			pass: map[string]string{"go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3 // upstream #42: nil deref in parser, drop at v1.3\n"},
+			fail: map[string]string{"go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3\n"},
+		},
 	}
 	for id, tc := range cases {
 		t.Run(id, func(t *testing.T) {
@@ -286,6 +307,66 @@ func TestSemverTags(t *testing.T) {
 			t.Errorf("unexpected finding %q", f.Message)
 		}
 	}
+}
+
+// A Go module with a main package is an application: the API rule does not
+// apply. A library without the check fails; one with a documented fork via
+// docs/FORKS.md passes the forks rule however the replace line looks.
+func TestLibraryHeuristicAndForksDoc(t *testing.T) {
+	t.Parallel()
+	app := run(t, map[string]string{"go.mod": "module x\n", "cmd/x/main.go": "package main\n"}, tier1Public)
+	if s := status(t, app, "release/api-compatibility"); s.Status != model.StatusNotApplicable {
+		t.Errorf("an application is not held to API compatibility: %s %+v", s.Status, s.Findings)
+	}
+	forks := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/dep => ../dep\n", "docs/FORKS.md": "# Forks\n\n- dep: local patch\n"}, tier1Public)
+	if s := status(t, forks, "deps/forks-documented"); s.Status != model.StatusPass {
+		t.Errorf("docs/FORKS.md documents the fork: %s %+v", s.Status, s.Findings)
+	}
+	none := run(t, map[string]string{"go.mod": "module x\n"}, tier1Public)
+	if s := status(t, none, "deps/forks-documented"); s.Status != model.StatusNotApplicable {
+		t.Errorf("no forks, nothing to document: %s", s.Status)
+	}
+}
+
+// Only the newest params.recent version tags are checked, lightweight tags
+// fail, fabricated signature blocks pass, non-version tags are ignored.
+func TestSignedTags(t *testing.T) {
+	t.Parallel()
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": tier1Public})
+	tagIt(t, r.Root, "v0.1.0")
+	tagIt(t, r.Root, "release-2")
+	signedTag(t, r.Root, "v0.2.0")
+	signedTag(t, r.Root, "v0.3.0")
+	tagIt(t, r.Root, "v0.4.0")
+	s := status(t, evaluate(t, r), "release/signed-tags")
+	if s.Status != model.StatusFail || len(s.Findings) != 1 || !strings.Contains(s.Findings[0].Message, "v0.4.0") {
+		t.Fatalf("v0.4.0 alone is unsigned among the newest three: %s %+v", s.Status, s.Findings)
+	}
+	untagged := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": tier1Public})
+	if s := status(t, evaluate(t, untagged), "release/signed-tags"); s.Status != model.StatusNotApplicable {
+		t.Errorf("without version tags the rule does not apply: %s", s.Status)
+	}
+}
+
+// signedTag writes an annotated tag carrying an SSH signature block, as
+// `git tag -s` would; git stores it without checking.
+func signedTag(t *testing.T, dir, name string) {
+	t.Helper()
+	head := exec.CommandContext(context.Background(), "git", "-C", dir, "rev-parse", "HEAD")
+	head.Env = testutil.GitEnv()
+	sha, err := head.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := exec.CommandContext(context.Background(), "git", "-C", dir, "mktag")
+	mk.Env = testutil.GitEnv()
+	mk.Stdin = strings.NewReader("object " + strings.TrimSpace(string(sha)) + "\ntype commit\ntag " + name + "\ntagger t <t@t> 0 +0000\n\n" + name +
+		"\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQ==\n-----END SSH SIGNATURE-----\n")
+	obj, err := mk.Output()
+	if err != nil {
+		t.Fatalf("mktag: %v", err)
+	}
+	gitCmd(t, dir, "update-ref", "refs/tags/"+name, strings.TrimSpace(string(obj)))
 }
 
 func TestNoAIAttribution(t *testing.T) {

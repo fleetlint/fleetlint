@@ -46,6 +46,7 @@ var Accessors = []Accessor{
 	{"jobs(path: string) -> list<map>", "Every job of a workflow as `{name, timeout_minutes, permissions, runs_on, uses}`; `timeout_minutes` is 0 when unset."},
 	{"triggers(path: string) -> list<string>", "Event names a workflow reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape."},
 	{"tags() -> list<string>", "Git tags, newest version first."},
+	{"tag_signed(name: string) -> bool", "True if the tag is an annotated tag carrying a PGP, SSH or X.509 signature; false for lightweight or unsigned tags. The signature is not verified."},
 	{"commits(n: int) -> list<map>", "Newest n commits as `{hash, author, email, subject, body, trailers, lines}`; `lines` is insertions plus deletions; empty without git."},
 	{"grep(glob: string, regex: string) -> list<map>", "`{path, line, text, match}` for every line matching the regex (case-insensitive) in files matching the glob; `match` is the first capture group, or the whole match, unshortened; skips fenced code blocks; pairs with `foreach` to flag every match."},
 	{"codegrep(kind: string, regex: string) -> list<map>", "`{path, line, text, match}` for every matching line of tracked source code; kind is `code`, `test` or `nontest`. Case-sensitive unless the pattern starts with `(?i)`; vendored, generated and build paths are skipped."},

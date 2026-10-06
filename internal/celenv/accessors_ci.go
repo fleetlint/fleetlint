@@ -47,6 +47,7 @@ func (e *Env) ciAccessors() []cel.EnvOption {
 			}))),
 		cel.Function("tags", cel.Overload("tags_void", nil, strList,
 			cel.FunctionBinding(func(...ref.Val) ref.Val { return strs(e.repo.Tags()) }))),
+		unaryStr("tag_signed", cel.BoolType, func(s string) ref.Val { return types.Bool(e.repo.TagSigned(s)) }),
 		cel.Function("commits", cel.Overload("commits_int", []*cel.Type{cel.IntType}, mapList,
 			cel.UnaryBinding(func(n ref.Val) ref.Val {
 				count, ok := n.Value().(int64)

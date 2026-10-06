@@ -20,6 +20,8 @@ GOLANGCI_VERSION    ?= v2.14.0
 GOVULNCHECK_VERSION ?= v1.8.0
 # renovate: datasource=go depName=github.com/boumenot/gocover-cobertura
 GOCOVER_VERSION     ?= v1.5.0
+# renovate: datasource=go depName=github.com/go-gremlins/gremlins
+GREMLINS_VERSION    ?= v0.6.0
 # Tools are built with this module's toolchain: golangci-lint refuses code that targets a newer Go than it was built with.
 TOOLCHAIN   := $(shell go env GOVERSION)
 BIN         := bin/fleetlint
@@ -27,7 +29,7 @@ BIN         := bin/fleetlint
 # CONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
 # the default, CONTAINER=0, runs it on this machine. Inside the container targets always run directly.
 CONTAINER ?= 0
-TARGETS := help tools fmt lint test cover audit bench build dist check-fast check release
+TARGETS := help tools fmt lint test cover mutate audit bench build dist check-fast check release
 .PHONY: $(TARGETS)
 
 ifeq ($(CONTAINER)$(IN_CONTAINER),1)
@@ -43,6 +45,7 @@ tools: ## install the pinned Go tools the gates use (CI runs this; gitleaks, syf
 	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 	GOTOOLCHAIN=$(TOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
 	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/boumenot/gocover-cobertura@$(GOCOVER_VERSION)
+	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
 
 fmt: ## format in place
 	golangci-lint fmt
@@ -63,6 +66,10 @@ cover: ## coverage on changed lines >= COVER_MIN (diff-cover) plus total for inf
 	  gocover-cobertura < coverage/cover.out > coverage/cobertura.xml; \
 	  diff-cover coverage/cobertura.xml --compare-branch=origin/$(MAIN_BRANCH) --fail-under=$(COVER_MIN); \
 	else echo "diff-cover/gocover-cobertura not installed: changed-line gate skipped"; fi
+
+mutate: ## mutation testing on the core packages (weekly in CI, not part of check): surviving mutants mean tests that would not notice a bug
+	gremlins unleash . --timeout-coefficient 5 --threshold-efficacy 80 --threshold-mcover 75 \
+	  -E 'cmd/' -E 'internal/(cli|report|fleet|forge|docs|testutil|baseline|rules|facts|catalog|repo)/'
 
 audit: ## vulnerabilities, licenses, tidy module graph, secrets
 	govulncheck $(PKGS)

@@ -312,6 +312,24 @@ func (r *Repo) Tags() []string {
 	return strings.Split(out, "\n")
 }
 
+// TagSigned reports whether a tag is an annotated tag with a PGP, SSH or
+// X.509 signature block. It does not verify the signature.
+func (r *Repo) TagSigned(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") {
+		return false
+	}
+	out, err := r.Git("cat-file", "-p", "refs/tags/"+name)
+	if err != nil {
+		return false
+	}
+	for _, marker := range []string{"-----BEGIN PGP SIGNATURE-----", "-----BEGIN SSH SIGNATURE-----", "-----BEGIN SIGNED MESSAGE-----"} {
+		if strings.Contains(out, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // Size returns a file's size in bytes, or 0 when it is absent, a directory,
 // or outside the repository.
 func (r *Repo) Size(rel string) int64 {

@@ -132,6 +132,7 @@ func TestCIAndHistoryAccessors(t *testing.T) {
 	})
 	gitRun(t, r.Root, "tag", "v1.2.3")
 	gitRun(t, r.Root, "tag", "release-2")
+	fakeSignedTag(t, r.Root, "v0.9.0")
 	gitRun(t, r.Root, "commit", "--allow-empty", "-q", "-m", "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
 	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
@@ -148,11 +149,12 @@ func TestCIAndHistoryAccessors(t *testing.T) {
 		`jobs(".github/workflows/pr.yml").filter(j, j.timeout_minutes == 0).map(j, j.name) == ["slow"]`:                        true,
 		`jobs(".github/workflows/pr.yml")[0].runs_on == "ubuntu-latest" && jobs(".github/workflows/pr.yml")[0].name == "slow"`: true,
 		`yaml(".github/workflows/pr.yml").concurrency["cancel-in-progress"] == true`:                                           true,
-		`tags() == ["v1.2.3", "release-2"]`:                                                                                    true,
-		`commits(10).size() == 2`:                                                                                              true,
-		`commits(1)[0].subject == "feat: x" && commits(1)[0].author == "t" && commits(1)[0].email == "t@t"`:                    true,
-		`commits(1)[0].trailers.contains("Co-Authored-By: Claude")`:                                                            true,
-		`commits(2)[1].trailers == ""`:                                                                                         true,
+		`tags() == ["v1.2.3", "v0.9.0", "release-2"]`:                                                                          true,
+		`tag_signed("v0.9.0") && !tag_signed("v1.2.3") && !tag_signed("missing") && !tag_signed("")`:                           true,
+		`commits(10).size() == 2`: true,
+		`commits(1)[0].subject == "feat: x" && commits(1)[0].author == "t" && commits(1)[0].email == "t@t"`: true,
+		`commits(1)[0].trailers.contains("Co-Authored-By: Claude")`:                                         true,
+		`commits(2)[1].trailers == ""`: true,
 	}
 	for expr, want := range cases {
 		got, err := env.Check(expr, nil)
@@ -215,4 +217,26 @@ func TestCodegrep(t *testing.T) {
 	if _, err := env.EvalBool(prg, nil); err == nil {
 		t.Error("an unknown kind must be an evaluation error, not an empty list")
 	}
+}
+
+// fakeSignedTag writes an annotated tag whose message carries an SSH
+// signature block, the way `git tag -s` does; git does not check it.
+func fakeSignedTag(t *testing.T, dir, name string) {
+	t.Helper()
+	head := exec.CommandContext(context.Background(), "git", "-C", dir, "rev-parse", "HEAD")
+	head.Env = testutil.GitEnv()
+	sha, err := head.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := "object " + strings.TrimSpace(string(sha)) + "\ntype commit\ntag " + name + "\ntagger t <t@t> 0 +0000\n\n" + name +
+		"\n-----BEGIN SSH SIGNATURE-----\nU1NIU0lHAAAAAQ==\n-----END SSH SIGNATURE-----\n"
+	mk := exec.CommandContext(context.Background(), "git", "-C", dir, "mktag")
+	mk.Env = testutil.GitEnv()
+	mk.Stdin = strings.NewReader(body)
+	obj, err := mk.Output()
+	if err != nil {
+		t.Fatalf("mktag: %v", err)
+	}
+	gitRun(t, dir, "update-ref", "refs/tags/"+name, strings.TrimSpace(string(obj)))
 }
