@@ -28,6 +28,10 @@ type Action struct {
 	Gitignore []string `yaml:"gitignore,omitempty" json:"gitignore,omitempty"`
 	// Set adds a value to an existing JSON or TOML file.
 	Set *SetAction `yaml:"set,omitempty" json:"set,omitempty"`
+	// Append adds a template's block to an existing TOML or YAML file.
+	Append *AppendAction `yaml:"append,omitempty" json:"append,omitempty"`
+	// Merge adds a JSON template's missing keys to an existing JSON file.
+	Merge *MergeAction `yaml:"merge,omitempty" json:"merge,omitempty"`
 }
 
 // Decode converts a rule's generic action maps into Actions, rejecting
@@ -41,7 +45,7 @@ func Decode(raw []map[string]any) ([]Action, error) {
 				return nil, fmt.Errorf("actions[%d]: %w", i, err)
 			}
 		}
-		if a.Template == "" && a.Untrack == "" && len(a.Gitignore) == 0 && a.Set == nil {
+		if a.Template == "" && a.Untrack == "" && len(a.Gitignore) == 0 && a.Set == nil && a.Append == nil && a.Merge == nil {
 			return nil, fmt.Errorf("actions[%d]: empty action", i)
 		}
 		out = append(out, a)
@@ -69,8 +73,20 @@ func (a *Action) set(key string, v any) error {
 			return err
 		}
 		a.Set = s
+	case "append":
+		ap, err := decodeAppend(v)
+		if err != nil {
+			return err
+		}
+		a.Append = ap
+	case "merge":
+		m, err := decodeMerge(v)
+		if err != nil {
+			return err
+		}
+		a.Merge = m
 	default:
-		return fmt.Errorf("unknown key %q (want template, to, untrack, gitignore, set)", key)
+		return fmt.Errorf("unknown key %q (want template, to, untrack, gitignore, set, append, merge)", key)
 	}
 	return nil
 }
@@ -159,6 +175,10 @@ func planAction(r *repo.Repo, p Project, a Action, tpl Templates, findings []mod
 		return planUntrack(r, a.Untrack, findings), nil
 	case a.Set != nil:
 		c, err = planSet(r, *a.Set, p.Vars)
+	case a.Append != nil:
+		c, err = planAppend(r, *a.Append, p, tpl)
+	case a.Merge != nil:
+		c, err = planMerge(r, *a.Merge, p, tpl)
 	}
 	if err != nil || c == nil {
 		return nil, err

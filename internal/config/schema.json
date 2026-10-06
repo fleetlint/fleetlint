@@ -67,7 +67,7 @@
       "properties": {
         "tier": { "type": "integer", "minimum": 1, "maximum": 3, "description": "1 production/public, 2 personal tool, 3 experiment." },
         "visibility": { "enum": ["public", "private"] },
-        "stacks": { "type": "array", "items": { "enum": ["go", "python", "rust", "node", "kotlin", "flutter"] } },
+        "stacks": { "type": "array", "items": { "enum": ["go", "python", "rust", "node", "kotlin", "flutter", "hugo"] } },
         "forge": { "enum": ["github", "gitea", "gitlab", "unknown"] },
         "container": { "enum": ["none", "devcontainer", "docker", "podman"], "description": "Where the task runner's targets run. none: on the machine. devcontainer: in the repository's dev container (the default when a devcontainer.json exists). docker / podman: in an image run with that engine. fix writes the runner file and the check workflow for the chosen value." },
         "taskrunner": { "enum": ["make", "just", "task", "npm-scripts", "gradle"], "description": "The task runner to check and to generate for. Unset: the first one found (Makefile, justfile, Taskfile, Gradle, package.json scripts); make when there is none." }

@@ -199,6 +199,10 @@ func TestOneDotZeroRules(t *testing.T) {
 			pass: map[string]string{".github/ISSUE_TEMPLATE/bug.md": "steps\n"},
 			fail: map[string]string{},
 		},
+		"lint/hugo-strict-build": {
+			pass: map[string]string{"hugo.toml": "baseURL = 'https://example.org/'\n", "Makefile": "lint:\n\thugo --quiet --panicOnWarning --destination /tmp/site\n"},
+			fail: map[string]string{"hugo.toml": "baseURL = 'https://example.org/'\n", "Makefile": "build:\n\thugo --minify\n"},
+		},
 		"lint/kotlin-detekt-strict": {
 			pass:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"},
 			fail:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n"},

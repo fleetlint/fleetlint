@@ -1,14 +1,18 @@
 package engine_test
 
 import (
+	"context"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
+	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
+	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
 // The templates `fleetlint fix` writes must satisfy the rules that asked for
@@ -25,6 +29,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 		"node":    {"package.json": "{}"},
 		"kotlin":  {"build.gradle.kts": "plugins {}\n"},
 		"flutter": {"pubspec.yaml": "name: x\n"},
+		"hugo":    {"hugo.toml": "baseURL = 'https://example.org/'\n"},
 	}
 	rules := []string{
 		"hooks/config-present", "hooks/shared-hygiene", "hooks/secret-scan", "hooks/conventional-commits", "hooks/pre-push-check",
@@ -168,6 +173,73 @@ func TestAlteredTemplatesStillPass(t *testing.T) {
 			for _, id := range check {
 				if s := status(t, out, id); s.Status != model.StatusPass {
 					t.Errorf("%s: %s %q %+v", id, s.Status, s.Err, s.Findings)
+				}
+			}
+		})
+	}
+}
+
+// The lint templates close the lint rules they belong to: for each stack a
+// bare manifest fails the rule, applying the rule's fix actions makes it
+// pass, and applying them again changes nothing.
+func TestLintFixesSatisfyTheirRules(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		files map[string]string
+		rules []string
+	}{
+		"python":  {map[string]string{"pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"}, []string{"lint/python-config", "lint/python-rules-enabled"}},
+		"rust":    {map[string]string{"Cargo.toml": "[package]\nname = \"x\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"}, []string{"lint/rust-config", "lint/rust-lints-denied"}},
+		"node":    {map[string]string{"package.json": "{\"name\": \"x\"}\n", "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\"\n  }\n}\n"}, []string{"lint/node-config", "lint/node-strict-flags"}},
+		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {}\n"}, []string{"lint/kotlin-config", "lint/kotlin-detekt-strict"}},
+		"flutter": {map[string]string{"pubspec.yaml": "name: x\n"}, []string{"lint/flutter-config", "lint/flutter-strict-modes"}},
+	}
+	for stack, tc := range cases {
+		t.Run(stack, func(t *testing.T) {
+			t.Parallel()
+			files := map[string]string{}
+			for k, v := range tc.files {
+				files[k] = v
+			}
+			files[config.FileName] = tier1Public
+			scope := testutil.GitFixture(t, files)
+			first := evaluate(t, scope)
+			for pass := 0; pass < 2; pass++ {
+				var changed int
+				for _, res := range first.Results {
+					if !slices.Contains(tc.rules, res.Rule.ID) || res.Status != model.StatusFail {
+						continue
+					}
+					actions, err := fix.Decode(res.Rule.Fix.Actions)
+					if err != nil {
+						t.Fatal(err)
+					}
+					changes, err := fix.PlanFor(scope, fix.Project{Stack: stack}, actions, catalog.EmbeddedTemplates{}, res.Findings)
+					if err != nil {
+						t.Fatalf("%s: %v", res.Rule.ID, err)
+					}
+					if err := fix.Apply(changes); err != nil {
+						t.Fatal(err)
+					}
+					changed += len(changes)
+				}
+				if pass == 0 && changed == 0 {
+					t.Fatal("the bare manifest must fail at least one lint rule with a fix")
+				}
+				if pass == 1 && changed != 0 {
+					t.Errorf("second pass changed %d files: the fixes are not idempotent", changed)
+				}
+				// A fresh handle: the repository caches parsed documents.
+				fresh, err := repo.Open(context.Background(), scope.Root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				scope = fresh
+				first = evaluate(t, scope)
+			}
+			for _, id := range tc.rules {
+				if s := status(t, first, id); s.Status != model.StatusPass {
+					t.Errorf("%s after fix: %s %q %+v", id, s.Status, s.Err, s.Findings)
 				}
 			}
 		})

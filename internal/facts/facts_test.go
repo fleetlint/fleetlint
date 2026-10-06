@@ -72,6 +72,26 @@ func TestStacksAndTaskRunner(t *testing.T) {
 	}
 }
 
+// A Hugo site is recognised by its hugo.* configuration, or by a legacy
+// config.toml that names the baseURL next to a content directory; a
+// config.toml alone is not Hugo.
+func TestHugoDetection(t *testing.T) {
+	t.Parallel()
+	for name, files := range map[string]map[string]string{
+		"hugo.toml":          {"hugo.toml": "baseURL = 'https://x/'\n"},
+		"config dir":         {"config/_default/hugo.yaml": "baseURL: https://x/\n"},
+		"legacy config.toml": {"config.toml": "baseURL = 'https://x/'\ntitle = 'x'\n", "content/_index.md": "# x\n"},
+	} {
+		if f := facts.Discover(testutil.Fixture(t, files), facts.Overrides{}); !reflect.DeepEqual(f.Stacks, []string{"hugo"}) {
+			t.Errorf("%s: stacks = %v", name, f.Stacks)
+		}
+	}
+	plain := facts.Discover(testutil.Fixture(t, map[string]string{"config.toml": "name = 'x'\n", "content/a.md": "a\n"}), facts.Overrides{})
+	if len(plain.Stacks) != 0 {
+		t.Errorf("a config.toml without baseURL is not Hugo: %v", plain.Stacks)
+	}
+}
+
 func TestNestedProjectsWithoutWorkspaceFile(t *testing.T) {
 	t.Parallel()
 	files := map[string]string{

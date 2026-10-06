@@ -172,6 +172,7 @@ var stackMarkers = map[string][]string{
 	"node":    {"package.json"},
 	"kotlin":  {"build.gradle.kts", "settings.gradle.kts", "build.gradle"},
 	"flutter": {"pubspec.yaml"},
+	"hugo":    {"hugo.toml", "hugo.yaml", "hugo.json", "config/_default/hugo.toml", "config/_default/hugo.yaml", "config/_default/config.toml"},
 }
 
 func detectStacks(r *repo.Repo) []string {
@@ -182,6 +183,13 @@ func detectStacks(r *repo.Repo) []string {
 				out = append(out, stack)
 				break
 			}
+		}
+	}
+	// Older Hugo sites keep a config.toml; it is Hugo's when it names the
+	// baseURL and the site has content.
+	if !slices.Contains(out, "hugo") && r.Has("config.toml") && r.Has("content") {
+		if text, ok := r.Text("config.toml"); ok && strings.Contains(text, "baseURL") {
+			out = append(out, "hugo")
 		}
 	}
 	// A Flutter project's Android shell lives under android/, so a root

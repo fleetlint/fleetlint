@@ -19,6 +19,7 @@ var devcontainerFeatures = map[string]string{
 	"python": "ghcr.io/devcontainers/features/python:1",
 	"rust":   "ghcr.io/devcontainers/features/rust:1",
 	"kotlin": "ghcr.io/devcontainers/features/java:1",
+	"hugo":   "ghcr.io/devcontainers/features/hugo:1",
 }
 
 const (
