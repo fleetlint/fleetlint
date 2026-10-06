@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -506,34 +507,103 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 // includes brought in. A catalog is held to the policy of the catalogs
 // before it, like a repository is, and may tighten that policy further.
 func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*model.Rule) error {
-	ids := make([]string, 0, len(c.Overrides))
-	for id := range c.Overrides {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 	where := "catalog " + c.Ref + " (overrides)"
 	by := c.Metadata.Name + "@" + c.Metadata.Version
-	for _, id := range ids {
-		ov := c.Overrides[id]
-		r, ok := byID[id]
-		if !ok {
-			return fmt.Errorf("%s: rules.%s: no such rule in the catalogs loaded before this one", where, id)
-		}
-		rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
-		if err := e.overrideAs(r, rc, where, c.Layer, byID); err != nil {
+	for _, key := range overrideKeys(c.Overrides) {
+		ov := c.Overrides[key]
+		ids, err := matchRuleIDs(key, byID, where)
+		if err != nil {
 			return err
 		}
-		if _, still := byID[id]; !still {
-			continue
-		}
-		if err := applyScope(r, ov, where); err != nil {
-			return err
-		}
-		if err := tightenPolicy(r, ov, where, by); err != nil {
-			return err
+		for _, id := range ids {
+			if err := e.applyOverride(byID[id], ov, where, c.Layer, by, byID); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// overrideKeys orders a catalog's override keys: patterns first, then exact
+// ids, each group sorted, so an exact key refines what a pattern set.
+func overrideKeys(overrides map[string]catalog.Override) []string {
+	var globs, exact []string
+	for k := range overrides {
+		if strings.ContainsAny(k, "*?[") {
+			globs = append(globs, k)
+		} else {
+			exact = append(exact, k)
+		}
+	}
+	sort.Strings(globs)
+	sort.Strings(exact)
+	return append(globs, exact...)
+}
+
+// matchRuleIDs resolves an override key to loaded rule ids. An exact key
+// must exist; a pattern may match nothing.
+func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]string, error) {
+	if !strings.ContainsAny(key, "*?[") {
+		if _, ok := byID[key]; !ok {
+			return nil, fmt.Errorf("%s: rules.%s: no such rule in the catalogs loaded before this one", where, key)
+		}
+		return []string{key}, nil
+	}
+	rx, err := regexp.Compile(globRegexp(key))
+	if err != nil {
+		return nil, fmt.Errorf("%s: rules.%s: bad pattern: %w", where, key, err)
+	}
+	var ids []string
+	for id := range byID {
+		if rx.MatchString(id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+// globRegexp turns an override pattern into a regular expression. `*`
+// spans the family separator too: "*" is every rule, "release/*" a family.
+func globRegexp(pattern string) string {
+	var b strings.Builder
+	b.WriteString("^")
+	for _, r := range pattern {
+		switch r {
+		case '*':
+			b.WriteString(".*")
+		case '?':
+			b.WriteString(".")
+		default:
+			b.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	b.WriteString("$")
+	return b.String()
+}
+
+func (e *Effective) applyOverride(r *model.Rule, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+	rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
+	if ov.Raise != 0 {
+		if ov.Raise < 0 || ov.Severity != "" {
+			return fmt.Errorf("%s: rules.%s: raise must be positive and not combined with severity", where, r.ID)
+		}
+		raised := r.Severity + model.Severity(ov.Raise)
+		if raised > model.SeverityError {
+			raised = model.SeverityError
+		}
+		rc.Severity = raised.String()
+	}
+	if err := e.overrideAs(r, rc, where, layer, byID); err != nil {
+		return err
+	}
+	if _, still := byID[r.ID]; !still {
+		return nil
+	}
+	if err := applyScope(r, ov, where); err != nil {
+		return err
+	}
+	return tightenPolicy(r, ov, where, by)
 }
 
 // applyScope replaces a rule's `when` and `tiers` from a catalog override.

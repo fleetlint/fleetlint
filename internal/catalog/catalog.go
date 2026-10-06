@@ -159,6 +159,8 @@ type Catalog struct {
 	Metadata   Metadata     `yaml:"metadata"`
 	Rules      []model.Rule `yaml:"rules"`
 	// Overrides adjust rules this catalog includes without restating them.
+	// A key is a rule id or a glob over ids ("*", "release/*"); globs apply
+	// first, so an exact key refines them.
 	Overrides map[string]Override `yaml:"overrides,omitempty"`
 	// Ref is how the catalog was referenced; Digest is its sha256 (hex).
 	Ref    string `yaml:"-"`
@@ -186,11 +188,14 @@ func isPinnedRef(ref string) bool {
 // parameters and accepted producers, and the policy lower layers are held
 // to. It can tighten policy but not loosen what an earlier catalog locked.
 type Override struct {
-	Enabled  *bool            `yaml:"enabled,omitempty"`
-	Reason   string           `yaml:"reason,omitempty"`
-	Severity string           `yaml:"severity,omitempty"`
-	Params   map[string]any   `yaml:"params,omitempty"`
-	Accept   []map[string]any `yaml:"accept,omitempty"`
+	Enabled  *bool  `yaml:"enabled,omitempty"`
+	Reason   string `yaml:"reason,omitempty"`
+	Severity string `yaml:"severity,omitempty"`
+	// Raise lifts the severity by that many steps (info, warning, error),
+	// capped at error; for pattern overrides that tighten whatever they match.
+	Raise  int              `yaml:"raise,omitempty"`
+	Params map[string]any   `yaml:"params,omitempty"`
+	Accept []map[string]any `yaml:"accept,omitempty"`
 	// When and Tiers replace the rule's applicability; "true" for When
 	// makes a conditional rule unconditional. Neither may change a locked rule.
 	When  *string `yaml:"when,omitempty"`

@@ -183,3 +183,49 @@ overrides:
 		t.Errorf("tiers override applies: %+v", r.Tiers)
 	}
 }
+
+// A pattern key applies to every matching rule before exact keys refine it;
+// raise lifts severities step by step and stops at error.
+func TestPatternOverridesAndRaise(t *testing.T) {
+	t.Parallel()
+	org := `apiVersion: fleetlint.org/v1
+kind: Catalog
+metadata: {name: acme, version: 1.0.0, includes: ["fleetlint:recommended"]}
+rules: []
+overrides:
+  "release/*": {locked: true}
+  "docs/*": {raise: 2}
+  "*": {raise: 1}
+  docs/adr-directory: {severity: info, reason: "decisions live in the wiki"}
+`
+	eff, err := loadLayered(t, layered("", org, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	get := func(id string) model.Rule {
+		r, ok := ruleByID(eff, id)
+		if !ok {
+			t.Fatalf("%s missing", id)
+		}
+		return r
+	}
+	if r := get("release/sbom"); !r.Locked || r.Severity != model.SeverityError {
+		t.Errorf("release/* locked and error stays error: %+v", r)
+	}
+	if r := get("repo/editorconfig"); r.Severity != model.SeverityError {
+		t.Errorf("warning raised once: %s", r.Severity)
+	}
+	if r := get("docs/architecture"); r.Severity != model.SeverityError {
+		t.Errorf("info raised by two patterns is capped at error: %s", r.Severity)
+	}
+	if r := get("docs/adr-directory"); r.Severity != model.SeverityInfo {
+		t.Errorf("an exact key refines the patterns: %s", r.Severity)
+	}
+	bad := strings.Replace(org, `"*": {raise: 1}`, `"*": {raise: 1, severity: error}`, 1)
+	if _, err := loadLayered(t, layered("", bad, "")); err == nil || !strings.Contains(err.Error(), "raise must be positive") {
+		t.Errorf("raise with severity is refused: %v", err)
+	}
+	if _, err := loadLayered(t, layered("", strings.Replace(org, `"docs/*"`, `"nothing/*"`, 1), "")); err != nil {
+		t.Errorf("a pattern matching nothing is not an error: %v", err)
+	}
+}
