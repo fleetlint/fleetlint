@@ -143,14 +143,15 @@ func renderMarkdown(rep *Report) []byte {
 		}
 		fmt.Fprintf(&b, "| `%s` | %d | %d | %d | %d |\n", rule, pass, fail, exc, na)
 	}
-	b.WriteString("\n## Matrix\n\n| Repository |")
-	for _, rule := range rep.Rules {
-		fmt.Fprintf(&b, " `%s` |", rule)
-	}
-	b.WriteString("\n|---|" + strings.Repeat("---|", len(rep.Rules)) + "\n")
+	// Rules down, repositories across: the rule list is long, the fleet usually is not.
+	b.WriteString("\n## Matrix\n\n| Rule |")
 	for _, r := range rep.Repos {
-		fmt.Fprintf(&b, "| %s |", r.Name)
-		for _, rule := range rep.Rules {
+		fmt.Fprintf(&b, " %s |", r.Name)
+	}
+	b.WriteString("\n|---|" + strings.Repeat("---|", len(rep.Repos)) + "\n")
+	for _, rule := range rep.Rules {
+		fmt.Fprintf(&b, "| `%s` |", rule)
+		for _, r := range rep.Repos {
 			fmt.Fprintf(&b, " %s |", cellFor(r, rule).Mark)
 		}
 		b.WriteString("\n")
@@ -251,14 +252,14 @@ th.rot{height:170px;vertical-align:bottom;padding:4px 2px}th.rot div{writing-mod
 	}
 	b.WriteString("</table></div>")
 	writeTeamsHTML(&b, rep.Teams)
-	b.WriteString("<h2>Matrix</h2><div class=wrap><table><tr><th>Repository</th>")
-	for _, rule := range rep.Rules {
-		fmt.Fprintf(&b, "<th class=rot><div>%s</div></th>", html.EscapeString(rule))
+	b.WriteString("<h2>Matrix</h2><div class=wrap><table><tr><th>Rule</th>")
+	for _, r := range rep.Repos {
+		fmt.Fprintf(&b, "<th class=rot><div>%s</div></th>", html.EscapeString(r.Name))
 	}
 	b.WriteString("</tr>")
-	for _, r := range rep.Repos {
-		fmt.Fprintf(&b, "<tr><td>%s</td>", html.EscapeString(r.Name))
-		for _, rule := range rep.Rules {
+	for _, rule := range rep.Rules {
+		fmt.Fprintf(&b, "<tr><td><code>%s</code></td>", html.EscapeString(rule))
+		for _, r := range rep.Repos {
 			c := cellFor(r, rule)
 			fmt.Fprintf(&b, "<td class=\"c %s\"><abbr title=\"%s\">%s</abbr></td>", markClass(c.Mark), html.EscapeString(c.Title), c.Mark)
 		}

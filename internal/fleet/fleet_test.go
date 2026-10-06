@@ -72,6 +72,10 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 	if !strings.Contains(string(md), "| messy | b |") || !strings.Contains(string(md), "## Disabled rules") || !strings.Contains(string(md), "| repo | .fleetlint.yaml |") || !strings.Contains(string(md), "demo") {
 		t.Fatalf("markdown lacks expected sections:\n%s", md)
 	}
+	// The matrix has rules down and repositories across.
+	if i := strings.Index(string(md), "## Matrix\n\n| Rule |"); i < 0 || !strings.Contains(string(md)[i:], "\n| `repo/no-tracked-junk` |") {
+		t.Errorf("matrix rows are rules:\n%s", md)
+	}
 	actions, _ := os.ReadFile(filepath.Join(out, "actions/messy.md"))
 	if !strings.Contains(string(actions), "repo/no-tracked-junk") {
 		t.Fatalf("actions should list the failing rule:\n%s", actions)
