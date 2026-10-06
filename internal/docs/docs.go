@@ -114,14 +114,22 @@ func rulesIndex(rules []model.Rule, byPreset map[string][]string) []byte {
 	return b.Bytes()
 }
 
+// writeOriginRows adds the rows that depend on how the rule was taken in.
+func writeOriginRows(b *bytes.Buffer, r model.Rule) {
+	if r.SelectedBy != "" {
+		fmt.Fprintf(b, "| Selected by | %s |\n", r.SelectedBy)
+	}
+	if r.Locked || r.MinSeverity != "" || !r.ExceptionsAllowed() {
+		fmt.Fprintf(b, "| Policy | locked: %t, floor: %s, exceptions: %t |\n", r.Locked, r.Floor(), r.ExceptionsAllowed())
+	}
+}
+
 func rulePage(r model.Rule) []byte {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "# %s\n\n%s\n\n", r.ID, prose(r.Title))
 	fmt.Fprintf(&b, "| | |\n|---|---|\n| Severity | %s |\n| Tiers | %s |\n| Stacks | %s |\n| Scope | %s |\n| Kind | %s |\n| Source | %s |\n",
 		r.Severity, tiers(r), stacks(r), scope(r), r.Kind, r.Source)
-	if r.Locked || r.MinSeverity != "" || !r.ExceptionsAllowed() {
-		fmt.Fprintf(&b, "| Policy | locked: %t, floor: %s, exceptions: %t |\n", r.Locked, r.Floor(), r.ExceptionsAllowed())
-	}
+	writeOriginRows(&b, r)
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "## Requirement\n\n%s\n\n", prose(strings.TrimSpace(r.Requirement)))
 	if r.Rationale != "" {

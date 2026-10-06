@@ -56,7 +56,7 @@ func TestOverridesAndInline(t *testing.T) {
 	eff, err := load(t, `
 version: 1
 extends: [fleetlint:minimal]
-rules:
+overrides:
   hooks/config-present:
     enabled: false
     reason: "hooks run in CI only"
@@ -65,7 +65,8 @@ rules:
   repo/no-tracked-env:
     severity: info
     reason: "fixtures contain .env files on purpose"
-  repo/arch-doc:
+rules:
+  - id: repo/arch-doc
     kind: expr
     severity: warning
     expr: file("docs/ARCHITECTURE.md")
@@ -95,7 +96,7 @@ exceptions:
 	if len(eff.Weakened) != 1 || eff.Weakened[0].ID != "repo/no-tracked-env" {
 		t.Fatalf("lowering severity should be recorded as weakened: %+v", eff.Weakened)
 	}
-	if r, ok := ruleByID(eff, "repo/arch-doc"); !ok || r.Kind != model.KindExpr || r.Source != ".fleetlint.yaml" {
+	if r, ok := ruleByID(eff, "repo/arch-doc"); !ok || r.Kind != model.KindExpr || r.Source != ".fleetlint.yaml@local" {
 		t.Fatalf("inline rule missing or wrong: %+v", r)
 	}
 	if eff.Exceptions[0].Expired || !eff.Exceptions[1].Expired {
@@ -106,22 +107,22 @@ exceptions:
 func TestValidationErrors(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
-		"disable without reason":   "version: 1\nextends: [fleetlint:minimal]\nrules:\n  hooks/config-present: {enabled: false}\n",
-		"lower without reason":     "version: 1\nextends: [fleetlint:minimal]\nrules:\n  hooks/config-present: {severity: info}\n",
-		"unknown rule":             "version: 1\nextends: [fleetlint:minimal]\nrules:\n  nope/nope: {severity: info}\n",
-		"redefine catalog rule":    "version: 1\nextends: [fleetlint:minimal]\nrules:\n  hooks/config-present: {kind: expr, expr: 'true'}\n",
+		"disable without reason":   "version: 1\nextends: [fleetlint:minimal]\noverrides:\n  hooks/config-present: {enabled: false}\n",
+		"lower without reason":     "version: 1\nextends: [fleetlint:minimal]\noverrides:\n  hooks/config-present: {severity: info}\n",
+		"unknown rule":             "version: 1\nextends: [fleetlint:minimal]\noverrides:\n  nope/nope: {severity: info}\n",
+		"redefine catalog rule":    "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - {id: hooks/config-present, kind: expr, expr: 'true'}\n",
 		"exception for unloaded":   "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: nope/x, reason: r}\n",
 		"exception without reason": "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: hooks/config-present}\n",
 		"bad until":                "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: hooks/config-present, reason: r, until: soon}\n",
 		"unknown key":              "version: 1\nextendz: [fleetlint:minimal]\n",
 		"bad version":              "version: 2\n",
 		"bad visibility":           "version: 1\nfacts: {visibility: secret}\n",
-		"inline go rule":           "version: 1\nrules:\n  x/y: {kind: go}\n",
+		"inline go rule":           "version: 1\nrules:\n  - {id: x/y, kind: go}\n",
 		"bad cel is caught later":  "version: 1\nrules:\n  x/y: {kind: expr, expr: 'file(']\n",
 		"bad exception glob":       "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: repo/no-tracked-junk, reason: r, match: '['}\n",
 		"scope inline rule":        "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    rules:\n      x/y: {kind: expr, expr: 'true'}\n",
-		"scope unknown rule":       "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    rules:\n      nope/nope: {enabled: false, reason: r}\n",
-		"scope lower no reason":    "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    rules:\n      hooks/config-present: {severity: info}\n",
+		"scope unknown rule":       "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    overrides:\n      nope/nope: {enabled: false, reason: r}\n",
+		"scope lower no reason":    "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    overrides:\n      hooks/config-present: {severity: info}\n",
 		"scope escapes repo":       "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: ../x\n",
 	}
 	for name, body := range cases {
@@ -160,16 +161,16 @@ func TestUntrustedCatalogCannotDeclareCommandRules(t *testing.T) {
 func TestAcceptValidation(t *testing.T) {
 	t.Parallel()
 	bad := map[string]string{
-		"accept on non-outcome": "version: 1\nextends: [fleetlint:recommended]\nrules:\n  repo/editorconfig:\n    accept: [{expr: 'true'}]\n",
-		"accept without expr":   "version: 1\nextends: [fleetlint:recommended]\nrules:\n  release/sbom:\n    accept: [{name: x}]\n",
-		"accept unknown key":    "version: 1\nextends: [fleetlint:recommended]\nrules:\n  release/sbom:\n    accept: [{expr: 'true', exprs: 'x'}]\n",
+		"accept on non-outcome": "version: 1\nextends: [fleetlint:recommended]\noverrides:\n  repo/editorconfig:\n    accept: [{expr: 'true'}]\n",
+		"accept without expr":   "version: 1\nextends: [fleetlint:recommended]\noverrides:\n  release/sbom:\n    accept: [{name: x}]\n",
+		"accept unknown key":    "version: 1\nextends: [fleetlint:recommended]\noverrides:\n  release/sbom:\n    accept: [{expr: 'true', exprs: 'x'}]\n",
 	}
 	for name, body := range bad {
 		if _, err := load(t, body); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
-	eff, err := load(t, "version: 1\nextends: [fleetlint:recommended]\nrules:\n  release/sbom:\n    accept: [{name: own, expr: 'true'}]\n")
+	eff, err := load(t, "version: 1\nextends: [fleetlint:recommended]\noverrides:\n  release/sbom:\n    accept: [{name: own, expr: 'true'}]\n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +203,8 @@ func TestNestedConfigValidation(t *testing.T) {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
-	n, err := config.LoadNested(write("version: 1\nexceptions:\n  - {rule: repo/x, reason: r, until: 2027-01-01}\nrules:\n  repo/x: {enabled: false, reason: r}\n"), now)
-	if err != nil || len(n.Exceptions) != 1 || len(n.Rules) != 1 {
+	n, err := config.LoadNested(write("version: 1\nexceptions:\n  - {rule: repo/x, reason: r, until: 2027-01-01}\noverrides:\n  repo/x: {enabled: false, reason: r}\n"), now)
+	if err != nil || len(n.Exceptions) != 1 || len(n.Overrides) != 1 {
 		t.Fatalf("valid nested config: %+v %v", n, err)
 	}
 }

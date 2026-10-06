@@ -283,7 +283,7 @@ func TestContainerImageReleases(t *testing.T) {
 func TestNoLargeFilesRespectsLFS(t *testing.T) {
 	t.Parallel()
 	big := strings.Repeat("x", 3000)
-	cfg := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\nrules:\n  repo/no-large-files: {params: {max_kb: 2}}\n"
+	cfg := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\noverrides:\n  repo/no-large-files: {params: {max_kb: 2}}\n"
 	out := run(t, map[string]string{"go.mod": "module x\n", "model.bin": big, "fine.txt": "x"}, cfg)
 	s := status(t, out, "repo/no-large-files")
 	if s.Status != model.StatusFail || len(s.Findings) != 1 || s.Findings[0].Path != "model.bin" {

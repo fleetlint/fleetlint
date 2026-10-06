@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/fleetlint/fleetlint/internal/baseline"
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/facts"
@@ -165,11 +166,11 @@ func mergeNested(sc config.Scope, n *config.Nested) config.Scope {
 	if len(n.Facts.Stacks) > 0 {
 		sc.Facts.Stacks = n.Facts.Stacks
 	}
-	if sc.Rules == nil {
-		sc.Rules = map[string]config.RuleConf{}
+	if sc.Overrides == nil {
+		sc.Overrides = map[string]catalog.Override{}
 	}
-	for id, rc := range n.Rules {
-		sc.Rules[id] = rc
+	for id, ov := range n.Overrides {
+		sc.Overrides[id] = ov
 	}
 	sc.Exceptions = append(sc.Exceptions, n.Exceptions...)
 	return sc
@@ -194,8 +195,8 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 		return nil, err
 	}
 	rulesInScope := eff.Rules
-	if sc.Path != "" && len(sc.Rules) > 0 {
-		if rulesInScope, err = eff.ScopeRules(sc.Path, sc.Rules); err != nil {
+	if sc.Path != "" && len(sc.Overrides) > 0 {
+		if rulesInScope, err = eff.ScopeRules(sc.Path, sc.Overrides); err != nil {
 			return nil, err
 		}
 	}

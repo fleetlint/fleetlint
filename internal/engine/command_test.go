@@ -17,7 +17,7 @@ import (
 // runCommandRule evaluates one command rule backed by the given script under --deep.
 func runCommandRule(t *testing.T, script string) model.Result {
 	t.Helper()
-	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  repo/custom:\n    kind: command\n    run: ./scripts/check\n    message: x\n    fix: {human: h}\n"
+	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - id: repo/custom\n    kind: command\n    severity: warning\n    run: ./scripts/check\n    message: x\n    fix: {human: h}\n"
 	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", "scripts/check": "#!/bin/sh\n" + script, config.FileName: cfg})
 	if err := os.Chmod(filepath.Join(r.Root, "scripts", "check"), 0o755); err != nil {
 		t.Fatal(err)

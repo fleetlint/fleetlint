@@ -116,7 +116,7 @@ func toSarifRule(r model.Rule) sarifRule {
 		ShortDescription: sarifText{r.Title},
 		FullDescription:  sarifText{r.Requirement},
 		Help:             sarifText{help},
-		Properties:       map[string]any{"tags": []string{"repository-setup"}, "source": r.Source, "layer": r.Layer},
+		Properties:       map[string]any{"tags": []string{"repository-setup"}, "source": r.Source, "selected_by": r.SelectedBy, "layer": r.Layer},
 		DefaultConfig:    sarifConfiguration{Level: sarifLevel(r.Severity)},
 	}
 }

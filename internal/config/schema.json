@@ -5,110 +5,319 @@
   "description": "Repository policy for fleetlint. Everything is optional; the whole policy lives in this one file.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "catalog": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["version"],
-      "description": "Use another version of the fleetlint catalog than the one built into the binary, for the fleetlint: presets and the fix templates. It is fetched once with git and cached.",
+      "required": [
+        "version"
+      ],
+      "description": "The fleetlint catalog version this repository runs with (presets, library and fix templates): a tag or a full commit SHA, and the repository when it is not fleetlint/catalog. One version holds for a run; a sources file may set it for every repository.",
       "properties": {
-        "version": { "type": "string", "minLength": 1, "description": "A tag or a full commit SHA of the catalog repository. A commit cannot move; a tag can." },
-        "repo": { "type": "string", "description": "The catalog repository (https or ssh). Default: https://github.com/fleetlint/catalog.git" }
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A tag or a full commit SHA of the catalog repository. A commit cannot move; a tag can."
+        },
+        "repo": {
+          "type": "string",
+          "description": "The catalog repository (https or ssh). Default: https://github.com/fleetlint/catalog.git"
+        }
       }
     },
     "sources": {
       "type": "string",
       "minLength": 1,
-      "description": "A sources file mapping the names `org` and `team/<name>` to catalog references: a local path, https://…#sha256-<digest> or git+<url>//<path>@<tag or commit>. With it, extends resolves in the fixed order presets, org, teams, repository."
+      "description": "A sources file mapping the names `org` and `team/<name>` to catalog references: a local path, https://\u2026#sha256-<digest> or git+<url>//<path>@<tag or commit>. With it, extends resolves in the fixed order presets, org, teams, repository."
     },
     "extends": {
       "type": "array",
-      "description": "Catalogs in order; later entries override earlier ones field by field. Presets: fleetlint:minimal, fleetlint:recommended, fleetlint:strict, fleetlint:oss, and the add-on fleetlint:slop. Remote: https://…#sha256-<digest>, git+<url>//<path>@<tag or commit>, or oci://<registry>/<repository>:<tag> (signed; signers in the sources file) or @sha256:<digest>. Local: a file or directory path. Names from the sources file: org, team/<name>.",
-      "items": { "type": "string", "minLength": 1 }
+      "description": "Catalogs in order; later entries override earlier ones field by field. Presets: fleetlint:minimal, fleetlint:recommended, fleetlint:strict, fleetlint:oss, and the add-on fleetlint:slop. Remote: https://\u2026#sha256-<digest>, git+<url>//<path>@<tag or commit>, or oci://<registry>/<repository>:<tag> (signed; signers in the sources file) or @sha256:<digest>. Local: a file or directory path. Names from the sources file: org, team/<name>.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
-    "facts": { "$ref": "#/$defs/factOverrides" },
+    "facts": {
+      "$ref": "#/$defs/factOverrides"
+    },
     "scopes": {
       "type": "array",
       "description": "Sub-directories evaluated as their own repository. Omit to discover workspace members; [] disables scopes.",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path"],
+        "required": [
+          "path"
+        ],
         "properties": {
-          "path": { "type": "string", "minLength": 1 },
-          "facts": { "$ref": "#/$defs/factOverrides" },
-          "rules": { "$ref": "#/$defs/rules" }
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "facts": {
+            "$ref": "#/$defs/factOverrides"
+          },
+          "overrides": {
+            "$ref": "#/$defs/overrides"
+          }
         }
       }
     },
-    "rules": { "$ref": "#/$defs/rules" },
+    "rules": {
+      "$ref": "#/$defs/rules"
+    },
     "exceptions": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["rule", "reason"],
+        "required": [
+          "rule",
+          "reason"
+        ],
         "properties": {
-          "rule": { "type": "string" },
-          "match": { "type": "string", "description": "Glob against the finding's path, or re:<regex> against its message. Omit to cover every finding of the rule." },
-          "reason": { "type": "string", "minLength": 1 },
-          "until": { "type": "string", "format": "date", "description": "YYYY-MM-DD; after this date the finding returns at full severity." }
+          "rule": {
+            "type": "string"
+          },
+          "match": {
+            "type": "string",
+            "description": "Glob against the finding's path, or re:<regex> against its message. Omit to cover every finding of the rule."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "until": {
+            "type": "string",
+            "format": "date",
+            "description": "YYYY-MM-DD; after this date the finding returns at full severity."
+          }
         }
       }
     },
-    "baseline": { "type": "string", "description": "Path of the baseline file (default .fleetlint-baseline.json). Findings listed there report as baselined; the file only shrinks." }
+    "baseline": {
+      "type": "string",
+      "description": "Path of the baseline file (default .fleetlint-baseline.json). Findings listed there report as baselined; the file only shrinks."
+    },
+    "overrides": {
+      "$ref": "#/$defs/overrides"
+    }
   },
   "$defs": {
     "factOverrides": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "tier": { "type": "integer", "minimum": 1, "maximum": 3, "description": "1 production/public, 2 personal tool, 3 experiment." },
-        "visibility": { "enum": ["public", "private"] },
-        "stacks": { "type": "array", "items": { "enum": ["go", "python", "rust", "node", "kotlin", "flutter", "hugo", "java", "dotnet", "cpp", "ruby", "php"] } },
-        "forge": { "enum": ["github", "gitea", "gitlab", "unknown"] },
-        "container": { "enum": ["none", "devcontainer", "docker", "podman"], "description": "Where the task runner's targets run. none: on the machine. devcontainer: in the repository's dev container (the default when a devcontainer.json exists). docker / podman: in an image run with that engine. fix writes the runner file and the check workflow for the chosen value." },
-        "taskrunner": { "enum": ["make", "just", "task", "npm-scripts", "gradle"], "description": "The task runner to check and to generate for. Unset: the first one found (Makefile, justfile, Taskfile, Gradle, package.json scripts); make when there is none." }
+        "tier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "description": "1 production/public, 2 personal tool, 3 experiment."
+        },
+        "visibility": {
+          "enum": [
+            "public",
+            "private"
+          ]
+        },
+        "stacks": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "go",
+              "python",
+              "rust",
+              "node",
+              "kotlin",
+              "flutter",
+              "hugo",
+              "java",
+              "dotnet",
+              "cpp",
+              "ruby",
+              "php"
+            ]
+          }
+        },
+        "forge": {
+          "enum": [
+            "github",
+            "gitea",
+            "gitlab",
+            "unknown"
+          ]
+        },
+        "container": {
+          "enum": [
+            "none",
+            "devcontainer",
+            "docker",
+            "podman"
+          ],
+          "description": "Where the task runner's targets run. none: on the machine. devcontainer: in the repository's dev container (the default when a devcontainer.json exists). docker / podman: in an image run with that engine. fix writes the runner file and the check workflow for the chosen value."
+        },
+        "taskrunner": {
+          "enum": [
+            "make",
+            "just",
+            "task",
+            "npm-scripts",
+            "gradle"
+          ],
+          "description": "The task runner to check and to generate for. Unset: the first one found (Makefile, justfile, Taskfile, Gradle, package.json scripts); make when there is none."
+        }
       }
     },
-    "severity": { "enum": ["error", "warning", "info"] },
+    "severity": {
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ]
+    },
     "rules": {
-      "type": "object",
-      "description": "Keyed by rule id. For a catalog rule: enabled, reason, severity, params, accept. For an inline rule: kind plus its definition.",
-      "propertyNames": { "pattern": "^[a-z0-9-]+/[a-z0-9-]+$" },
-      "additionalProperties": {
+      "type": "array",
+      "description": "The repository's own rules, in the catalog format: full definitions with an id, or `use: <id or glob>` entries that select library rules. A rule a catalog already defines cannot be redefined here; adjust it under overrides.",
+      "items": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "enabled": { "type": "boolean" },
-          "reason": { "type": "string", "description": "Required when disabling a rule or lowering its severity." },
-          "severity": { "$ref": "#/$defs/severity" },
-          "params": { "type": "object" },
-          "accept": { "type": "array", "items": { "type": "object" } },
-          "kind": { "enum": ["expr", "command"] },
-          "title": { "type": "string" },
-          "when": { "type": "string" },
-          "foreach": { "type": "string" },
-          "expr": { "type": "string" },
-          "run": { "type": "string" },
-          "message": { "type": "string" },
-          "requirement": { "type": "string" },
-          "rationale": { "type": "string" },
+          "use": {
+            "type": "string",
+            "description": "Select a library rule or a family (lint/*); no other keys."
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "expr",
+              "outcome",
+              "command"
+            ]
+          },
+          "severity": {
+            "$ref": "#/$defs/severity"
+          },
+          "when": {
+            "type": "string"
+          },
+          "foreach": {
+            "type": "string"
+          },
+          "expr": {
+            "type": "string"
+          },
+          "satisfiers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "partials": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "run": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "rationale": {
+            "type": "string"
+          },
           "fix": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "human": { "type": "string" },
-              "agent": { "type": "string" },
-              "actions": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": {
-                "template": { "type": "string" }, "to": { "type": "string" }, "untrack": { "type": "string" },
-                "gitignore": { "type": "array", "items": { "type": "string" } } } } }
+              "human": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
             }
           },
-          "tiers": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 3 } },
-          "stacks": { "type": "array", "items": { "type": "string" } }
+          "tiers": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            }
+          },
+          "stacks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scope": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "description": "Adjustments to rules the catalogs brought in, keyed by rule id or a pattern over ids (\"*\", \"release/*\"); patterns apply first. The repository adjusts: severity (lowering needs a reason), raise, params, accept, enabled with a reason. Policy keys (locked, min_severity, exceptions) and applicability (when, tiers) are set by catalogs.",
+      "propertyNames": {
+        "pattern": "^[a-z0-9*?-]+(/[a-z0-9*?-]+)?$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when disabling a rule or lowering its severity."
+          },
+          "severity": {
+            "$ref": "#/$defs/severity"
+          },
+          "raise": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Lift the severity this many steps, capped at error."
+          },
+          "params": {
+            "type": "object"
+          },
+          "accept": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
         }
       }
     }

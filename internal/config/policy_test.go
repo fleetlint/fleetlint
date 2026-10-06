@@ -60,12 +60,12 @@ func loadWithOrg(t *testing.T, repoCfg string) (*config.Effective, error) {
 func TestPolicyLocksAndFloors(t *testing.T) {
 	t.Parallel()
 	rejected := map[string]string{
-		"disable locked":          "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {enabled: false, reason: r}\n",
-		"lower locked":            "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {severity: warning, reason: r}\n",
-		"lower below floor":       "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {severity: info, reason: r}\n",
+		"disable locked":          "version: 1\nextends: [$ORG]\noverrides:\n  org/locked: {enabled: false, reason: r}\n",
+		"lower locked":            "version: 1\nextends: [$ORG]\noverrides:\n  org/locked: {severity: warning, reason: r}\n",
+		"lower below floor":       "version: 1\nextends: [$ORG]\noverrides:\n  org/floored: {severity: info, reason: r}\n",
 		"exception on forbidden":  "version: 1\nextends: [$ORG]\nexceptions:\n  - {rule: org/no-exceptions, reason: r}\n",
-		"disable locked in scope": "version: 1\nextends: [$ORG]\nscopes:\n  - path: api\n    rules:\n      org/locked: {enabled: false, reason: r}\n",
-		"repo cannot set lock":    "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {locked: true}\n",
+		"disable locked in scope": "version: 1\nextends: [$ORG]\nscopes:\n  - path: api\n    overrides:\n      org/locked: {enabled: false, reason: r}\n",
+		"repo cannot set lock":    "version: 1\nextends: [$ORG]\noverrides:\n  org/floored: {locked: true}\n",
 		"redefine locked inline":  "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {kind: expr, expr: 'true', message: m, fix: {human: h}}\n",
 		"params on locked":        "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {params: {x: 1}}\n",
 	}
@@ -74,7 +74,7 @@ func TestPolicyLocksAndFloors(t *testing.T) {
 			t.Errorf("%s: expected a config error", name)
 		}
 	}
-	allowed := "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {severity: warning, reason: \"team decision\"}\n  org/locked: {severity: error}\nexceptions:\n  - {rule: org/locked, reason: \"legacy service\", until: 2027-01-01}\n"
+	allowed := "version: 1\nextends: [$ORG]\noverrides:\n  org/floored: {severity: warning, reason: \"team decision\"}\n  org/locked: {severity: error}\nexceptions:\n  - {rule: org/locked, reason: \"legacy service\", until: 2027-01-01}\n"
 	eff, err := loadWithOrg(t, allowed)
 	if err != nil {
 		t.Fatalf("lowering to the floor, raising a locked rule and reasoned exceptions on it are allowed: %v", err)
@@ -85,9 +85,9 @@ func TestPolicyLocksAndFloors(t *testing.T) {
 	if r, _ := ruleByID(eff, "org/locked"); !r.Locked || r.Severity != model.SeverityError {
 		t.Fatalf("locked rule keeps its lock and may be raised: %+v", r)
 	}
-	// Disabling a floored (but not locked) rule with a reason is allowed.
-	if _, err := loadWithOrg(t, "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {enabled: false, reason: r}\n"); err != nil {
-		t.Fatalf("min_severity alone does not forbid disabling: %v", err)
+	// Off is below every floor: a floored rule cannot be disabled either.
+	if _, err := loadWithOrg(t, "version: 1\nextends: [$ORG]\noverrides:\n  org/floored: {enabled: false, reason: r}\n"); err == nil || !strings.Contains(err.Error(), "below every floor") {
+		t.Fatalf("a floor forbids disabling: %v", err)
 	}
 }
 

@@ -27,8 +27,9 @@ type useEntry struct {
 
 // Library is the parsed rules/ directory of a source.
 type Library struct {
-	rules map[string]model.Rule
-	ids   []string
+	rules  map[string]model.Rule
+	source map[string]string // id -> where the text lives, for Rule.Source
+	ids    []string
 }
 
 var (
@@ -44,7 +45,7 @@ func (s *Source) Library() (*Library, error) {
 	if lib, ok := libraries[s]; ok {
 		return lib, nil
 	}
-	lib, err := loadLibrary(s.Rules)
+	lib, err := loadLibrary(s.Rules, "library "+s.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -52,8 +53,8 @@ func (s *Source) Library() (*Library, error) {
 	return lib, nil
 }
 
-func loadLibrary(fsys fs.FS) (*Library, error) {
-	lib := &Library{rules: map[string]model.Rule{}}
+func loadLibrary(fsys fs.FS, source string) (*Library, error) {
+	lib := &Library{rules: map[string]model.Rule{}, source: map[string]string{}}
 	if fsys == nil {
 		return lib, nil
 	}
@@ -75,6 +76,7 @@ func loadLibrary(fsys fs.FS) (*Library, error) {
 			return err
 		}
 		lib.rules[r.ID] = r
+		lib.source[r.ID] = source
 		lib.ids = append(lib.ids, r.ID)
 		return nil
 	})
@@ -178,16 +180,16 @@ func (l Loader) libraryFor(c *Catalog) (*Library, error) {
 	if c.Library == nil {
 		return shared, nil
 	}
-	own, err := loadLibrary(c.Library)
+	own, err := loadLibrary(c.Library, c.Metadata.Name+"@"+c.Metadata.Version+" rules/")
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", c.Metadata.Name, err)
 	}
-	merged := &Library{rules: map[string]model.Rule{}}
+	merged := &Library{rules: map[string]model.Rule{}, source: map[string]string{}}
 	for id, r := range shared.rules {
-		merged.rules[id] = r
+		merged.rules[id], merged.source[id] = r, shared.source[id]
 	}
 	for id, r := range own.rules {
-		merged.rules[id] = r
+		merged.rules[id], merged.source[id] = r, own.source[id]
 	}
 	for id := range merged.rules {
 		merged.ids = append(merged.ids, id)
@@ -229,7 +231,8 @@ func (l Loader) expand(c *Catalog) error {
 			}
 			have[id] = true
 			r := lib.rules[id]
-			r.Source = c.Metadata.Name + "@" + c.Metadata.Version
+			r.Source = lib.source[id]
+			r.SelectedBy = c.Metadata.Name + "@" + c.Metadata.Version
 			out = append(out, r)
 			c.used[id] = true
 		}

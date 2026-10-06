@@ -61,10 +61,10 @@ func TestCatalogOverrides(t *testing.T) {
 	}
 
 	rejectedByRepo := map[string]string{
-		"disable what the org locked":    "rules:\n  repo/no-tracked-env: {enabled: false, reason: r}\n",
+		"disable what the org locked":    "overrides:\n  repo/no-tracked-env: {enabled: false, reason: r}\n",
 		"except what forbids it":         "exceptions:\n  - {rule: repo/no-tracked-env, reason: r}\n",
-		"go below the org's floor":       "rules:\n  hooks/secret-scan: {severity: info, reason: r}\n",
-		"configure what the org removed": "rules:\n  repo/gitignore-present: {severity: info, reason: r}\n",
+		"go below the org's floor":       "overrides:\n  hooks/secret-scan: {severity: info, reason: r}\n",
+		"configure what the org removed": "overrides:\n  repo/gitignore-present: {severity: info, reason: r}\n",
 	}
 	for name, cfg := range rejectedByRepo {
 		if _, err := loadLayered(t, layered(cfg, orgOverrides, "")); err == nil {

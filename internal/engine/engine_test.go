@@ -100,13 +100,15 @@ func TestInlineRuleAndCompileErrorIsRuleError(t *testing.T) {
 	cfg := `version: 1
 extends: [fleetlint:minimal]
 rules:
-  repo/arch-doc:
+  - id: repo/arch-doc
     kind: expr
+    severity: warning
     expr: file("docs/ARCHITECTURE.md")
     message: "no architecture doc"
     fix: { human: "write docs/ARCHITECTURE.md" }
-  repo/broken:
+  - id: repo/broken
     kind: expr
+    severity: warning
     expr: nosuchfn("x")
     message: "x"
     fix: { human: "x" }
@@ -130,7 +132,7 @@ scopes:
     facts: {stacks: [python]}
   - path: web
     facts: {stacks: [node]}
-    rules:
+    overrides:
       taskrunner/targets: {enabled: false, reason: "npm scripts"}
 `
 	out := run(t, map[string]string{
@@ -250,8 +252,9 @@ func TestForeachNamesEachFailingItem(t *testing.T) {
 	cfg := `version: 1
 extends: [fleetlint:minimal]
 rules:
-  ci/every-workflow-has-name:
+  - id: ci/every-workflow-has-name
     kind: expr
+    severity: warning
     foreach: glob(".github/workflows/*.yml")
     expr: has(yaml(item).name)
     message: "workflow has no name"
@@ -298,7 +301,7 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	}
 
 	accepted := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow + "      - run: ./scripts/sbom.sh\n"},
-		cfg+"rules:\n  release/sbom:\n    accept:\n      - name: own-script\n        expr: tagged_workflows().exists(w, steps(w).exists(s, s.run.contains(\"scripts/sbom.sh\")))\n")
+		cfg+"overrides:\n  release/sbom:\n    accept:\n      - name: own-script\n        expr: tagged_workflows().exists(w, steps(w).exists(s, s.run.contains(\"scripts/sbom.sh\")))\n")
 	if s := status(t, accepted, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by own-script" {
 		t.Fatalf("accept should add a satisfier: %+v", s)
 	}
@@ -313,7 +316,7 @@ func TestCommandRule(t *testing.T) { // not parallel: uses t.Setenv to prove the
 	script := "#!/bin/sh\nread input\ncase \"$input\" in *'\"rule\":\"repo/custom\"'*) ;; *) echo 'bad input' >&2; exit 3;; esac\n" +
 		"[ -z \"$SECRET_TOKEN\" ] || { echo 'env not scrubbed' >&2; exit 3; }\n" +
 		"[ -f notes.txt ] && printf '{\"message\":\"notes.txt must not exist\",\"path\":\"notes.txt\",\"line\":1}\\n' && exit 1\nexit 0\n"
-	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  repo/custom:\n    kind: command\n    run: ./scripts/check\n    message: x\n    fix: {human: h}\n"
+	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - id: repo/custom\n    kind: command\n    severity: warning\n    run: ./scripts/check\n    message: x\n    fix: {human: h}\n"
 	t.Setenv("SECRET_TOKEN", "leak")
 	files := map[string]string{"go.mod": "module x\n", "scripts/check": script, "notes.txt": "x", config.FileName: cfg}
 	r := testutil.GitFixture(t, files)
@@ -377,7 +380,7 @@ func TestNestedConfigInScope(t *testing.T) {
 		"go.work":             "go 1.24\nuse (\n\t./api\n\t./worker\n)\n",
 		"api/go.mod":          "module a\n",
 		"api/.DS_Store":       "x",
-		"api/.fleetlint.yaml": "version: 1\nexceptions:\n  - rule: repo/no-tracked-junk\n    reason: \"api fixture\"\nrules:\n  lint/go-config: {enabled: false, reason: \"api uses the root config\"}\n",
+		"api/.fleetlint.yaml": "version: 1\nexceptions:\n  - rule: repo/no-tracked-junk\n    reason: \"api fixture\"\noverrides:\n  lint/go-config: {enabled: false, reason: \"api uses the root config\"}\n",
 		"worker/go.mod":       "module w\n",
 		"worker/.DS_Store":    "x",
 		".golangci.yml":       "version: \"2\"\n",
@@ -404,11 +407,11 @@ func TestNestedConfigInScope(t *testing.T) {
 	}
 	bad := map[string]string{
 		"go.work": "go 1.24\nuse ./api\n", "api/go.mod": "module a\n",
-		"api/.fleetlint.yaml": "version: 1\nrules:\n  x/y: {kind: expr, expr: 'true'}\n",
+		"api/.fleetlint.yaml": "version: 1\nrules:\n  - {id: x/y, kind: expr, expr: 'true'}\n",
 	}
 	r := testutil.GitFixture(t, bad)
 	eff, _ := config.Load(r.Root, config.Options{Loader: catalog.Loader{}})
-	if _, err := engine.Evaluate(context.Background(), r, eff); err == nil || !strings.Contains(err.Error(), "cannot define rules") {
+	if _, err := engine.Evaluate(context.Background(), r, eff); err == nil || !strings.Contains(err.Error(), "unknown field \"rules\"") {
 		t.Fatalf("nested config defining a rule must be rejected, got %v", err)
 	}
 }
@@ -418,8 +421,9 @@ func TestWhenCompileErrorIsRuleError(t *testing.T) {
 	cfg := `version: 1
 extends: [fleetlint:minimal]
 rules:
-  repo/guarded:
+  - id: repo/guarded
     kind: expr
+    severity: warning
     when: nosuchfn()
     expr: "true"
     message: x
@@ -433,7 +437,7 @@ rules:
 
 func TestMalformedBudgetIsRuleError(t *testing.T) {
 	t.Parallel()
-	cfg := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\nrules:\n  quality/check-passes: {params: {budget: soon}}\n"
+	cfg := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\noverrides:\n  quality/check-passes: {params: {budget: soon}}\n"
 	files := map[string]string{"go.mod": "module x\n", "Makefile": "check:\n\ttrue\n", config.FileName: cfg}
 	r := testutil.GitFixture(t, files)
 	eff, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}})

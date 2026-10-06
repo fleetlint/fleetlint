@@ -48,7 +48,7 @@ func TestSourcesResolveInLayerOrder(t *testing.T) {
 	t.Parallel()
 	// team is written before org; the fixed order must still let team override org.
 	eff, err := loadLayered(t, map[string]string{
-		config.FileName:               "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, org, fleetlint:minimal]\nrules:\n  repo/own: {kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\n  org/kept: {severity: warning, reason: local tooling}\n",
+		config.FileName:               "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, org, fleetlint:minimal]\nrules:\n  - {id: repo/own, kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\noverrides:\n  org/kept: {severity: warning, reason: local tooling}\n",
 		"standards/sources.yaml":      "version: 1\ncatalogs:\n  org: org.yaml\n  team/mobile: teams/mobile.yaml\n",
 		"standards/org.yaml":          layerCatalog("acme", "org/kept", "error", "org/lowered", "error"),
 		"standards/teams/mobile.yaml": layerCatalog("mobile", "org/lowered", "warning", "team/own", "error"),
@@ -142,7 +142,7 @@ func TestFloorHoldsAcrossCatalogs(t *testing.T) {
 		t.Fatalf("a team catalog at the floor is allowed: %v", err)
 	}
 	// The floor survives the team's redefinition: the repository still cannot go below it.
-	if _, err := loadLayered(t, files("warning", "rules:\n  org/floored: {severity: info, reason: r}\n")); err == nil {
+	if _, err := loadLayered(t, files("warning", "overrides:\n  org/floored: {severity: info, reason: r}\n")); err == nil {
 		t.Fatal("the org floor must still bind the repository after a team redefinition")
 	}
 }
@@ -154,7 +154,7 @@ func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
 	digest := strings.Repeat("a", 64)
 	fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
 		return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{
-			"catalog.yaml":          []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: acme, version: 1.0.0, includes: [\"fleetlint:minimal\"]}\nrules: []\n"),
+			"catalog.yaml":          []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: acme, version: 1.0.0, includes: [\"fleetlint:minimal\"], catalog: {version: " + catalog.ModuleVersion() + "}}\nrules: []\n"),
 			"templates/SECURITY.md": []byte("acme policy\n"),
 		}, Bundles: [][]byte{[]byte("sig")}}, nil
 	}

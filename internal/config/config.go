@@ -33,30 +33,30 @@ const LegacyFileName = "fleetlint.yaml"
 // DefaultExtends is used when no config file exists.
 var DefaultExtends = []string{"fleetlint:recommended"}
 
-// File is the on-disk shape of .fleetlint.yaml.
+// File is the on-disk shape of .fleetlint.yaml. Its rules, overrides and
+// exceptions have the same shape as a catalog's: the repository is the last
+// catalog of the run, at the repository layer.
 type File struct {
 	Version int `yaml:"version"`
 	// Catalog pins the version of the fleetlint catalog that `fleetlint:`
-	// presets and fix templates come from, instead of the built-in one.
-	Catalog *CatalogPin `yaml:"catalog,omitempty"`
-	// Sources names a sources file; its catalog names become usable in Extends.
+	// presets, the library and fix templates come from, instead of the
+	// built-in one. One version holds for a whole run.
+	Catalog *catalog.Pin `yaml:"catalog,omitempty"`
+	// Sources names a sources file; its catalog names become usable in Extends
+	// and its own extends come first.
 	Sources string        `yaml:"sources,omitempty"`
 	Extends []string      `yaml:"extends,omitempty"`
 	Facts   FactOverrides `yaml:"facts,omitempty"`
 	// Scopes nil = discover workspace members; empty list = no scopes.
-	Scopes     *[]Scope            `yaml:"scopes,omitempty"`
-	Rules      map[string]RuleConf `yaml:"rules,omitempty"`
-	Exceptions []model.Exception   `yaml:"exceptions,omitempty"`
-	Baseline   string              `yaml:"baseline,omitempty"`
-}
-
-// CatalogPin selects a version of the fleetlint catalog.
-type CatalogPin struct {
-	// Version is a tag or a full commit SHA of the catalog repository.
-	Version string `yaml:"version"`
-	// Repo is the catalog repository (https or ssh); default: the fleetlint
-	// project's.
-	Repo string `yaml:"repo,omitempty"`
+	Scopes *[]Scope `yaml:"scopes,omitempty"`
+	// Rules defines the repository's own rules (full definitions) or selects
+	// library rules with `use:`; Overrides adjusts rules the catalogs brought
+	// in. Policy keys (locked, min_severity, exceptions) are not the
+	// repository's to set.
+	Overrides  map[string]catalog.Override `yaml:"overrides,omitempty"`
+	Rules      []model.Rule                `yaml:"rules,omitempty"`
+	Exceptions []model.Exception           `yaml:"exceptions,omitempty"`
+	Baseline   string                      `yaml:"baseline,omitempty"`
 }
 
 // FactOverrides pins discovered facts.
@@ -75,36 +75,22 @@ type FactOverrides struct {
 
 // Scope is a sub-directory evaluated as its own repository.
 type Scope struct {
-	Path  string              `yaml:"path"`
-	Facts FactOverrides       `yaml:"facts,omitempty"`
-	Rules map[string]RuleConf `yaml:"rules,omitempty"`
+	Path  string        `yaml:"path"`
+	Facts FactOverrides `yaml:"facts,omitempty"`
+	// Overrides adjust the effective rules for this scope: severity, params,
+	// accept, enabled; never policy or applicability.
+	Overrides map[string]catalog.Override `yaml:"overrides,omitempty"`
 	// Exceptions scoped to this path; filled from a nested .fleetlint.yaml.
 	Exceptions []model.Exception `yaml:"exceptions,omitempty"`
 }
 
-// RuleConf configures one rule: a catalog override or an inline definition.
+// RuleConf is the adjustment part of an override, as applyOverride hands it on.
 type RuleConf struct {
-	Enabled  *bool            `yaml:"enabled,omitempty"`
-	Reason   string           `yaml:"reason,omitempty"`
-	Severity string           `yaml:"severity,omitempty"`
-	Params   map[string]any   `yaml:"params,omitempty"`
-	Accept   []map[string]any `yaml:"accept,omitempty"`
-
-	// Inline definition fields (only valid for ids not in any catalog).
-	Kind        string            `yaml:"kind,omitempty"`
-	Title       string            `yaml:"title,omitempty"`
-	When        string            `yaml:"when,omitempty"`
-	Foreach     string            `yaml:"foreach,omitempty"`
-	Expr        string            `yaml:"expr,omitempty"`
-	Satisfiers  []model.Satisfier `yaml:"satisfiers,omitempty"`
-	Partials    []model.Partial   `yaml:"partials,omitempty"`
-	Run         string            `yaml:"run,omitempty"`
-	Message     string            `yaml:"message,omitempty"`
-	Requirement string            `yaml:"requirement,omitempty"`
-	Rationale   string            `yaml:"rationale,omitempty"`
-	Fix         model.Fix         `yaml:"fix,omitempty"`
-	Tiers       []int             `yaml:"tiers,omitempty"`
-	Stacks      []string          `yaml:"stacks,omitempty"`
+	Enabled  *bool
+	Reason   string
+	Severity string
+	Params   map[string]any
+	Accept   []map[string]any
 }
 
 // Disabled records a rule switched off (or lowered) and why, for the report.
@@ -128,6 +114,9 @@ type Effective struct {
 	Exceptions []model.Exception
 	// Weakened lists severity reductions with their reasons.
 	Weakened []Disabled
+	// Pin is the catalog version this run uses; nil is the built-in one.
+	Pin *catalog.Pin
+	raw []byte
 }
 
 // FixTemplates returns the templates for `fix`: files shipped with the
@@ -182,16 +171,8 @@ func Load(root string, opts Options) (*Effective, error) {
 	if err := validateFile(&eff.File); err != nil {
 		return nil, fmt.Errorf("%s: %w", FileName, err)
 	}
-	if len(eff.File.Extends) == 0 {
-		eff.File.Extends = DefaultExtends
-	}
+	eff.raw = b
 	opts.Loader.BaseDir = root
-	eff.Source = catalog.Builtin()
-	if pin := eff.File.Catalog; pin != nil {
-		if eff.Source, err = opts.Loader.Pin(pin.Repo, pin.Version); err != nil {
-			return nil, fmt.Errorf("%s: %w", FileName, err)
-		}
-	}
 	if err := eff.resolve(opts); err != nil {
 		return nil, err
 	}
@@ -211,10 +192,10 @@ func (e *Effective) validateScopeRules() error {
 	disabled, weakened := e.Disabled, e.Weakened
 	defer func() { e.Disabled, e.Weakened = disabled, weakened }()
 	for _, s := range *e.File.Scopes {
-		if len(s.Rules) == 0 {
+		if len(s.Overrides) == 0 {
 			continue
 		}
-		if _, err := e.ScopeRules(s.Path, s.Rules); err != nil {
+		if _, err := e.ScopeRules(s.Path, s.Overrides); err != nil {
 			return err
 		}
 	}
@@ -289,11 +270,11 @@ func validateExceptions(exs []model.Exception) error {
 	return nil
 }
 
-// ScopeRules applies a scope's (or nested file's) rule configuration to copies
-// of the effective rules. Ids must exist, disabling and lowering need a reason,
-// inline definitions are not allowed, and every weakening is recorded with the
-// scope path so reports show it. It never mutates the root rules.
-func (e *Effective) ScopeRules(scopePath string, confs map[string]RuleConf) ([]model.Rule, error) {
+// ScopeRules applies a scope's (or nested file's) overrides to copies of the
+// effective rules. Ids must exist, disabling and lowering need a reason, and
+// every weakening is recorded with the scope path so reports show it. A
+// scope adjusts: no policy, no applicability. It never mutates the root rules.
+func (e *Effective) ScopeRules(scopePath string, overrides map[string]catalog.Override) ([]model.Rule, error) {
 	where := scopePath + "/" + FileName
 	byID := make(map[string]*model.Rule, len(e.Rules))
 	order := make([]string, 0, len(e.Rules))
@@ -303,22 +284,19 @@ func (e *Effective) ScopeRules(scopePath string, confs map[string]RuleConf) ([]m
 		byID[r.ID] = &r
 		order = append(order, r.ID)
 	}
-	ids := make([]string, 0, len(confs))
-	for id := range confs {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		rc := confs[id]
-		if rc.Kind != "" {
-			return nil, fmt.Errorf("%s: rules.%s: a scope cannot define rules, only configure them", where, id)
-		}
-		r, ok := byID[id]
-		if !ok {
-			return nil, fmt.Errorf("%s: rules.%s: unknown rule", where, id)
-		}
-		if err := e.override(r, rc, where, byID); err != nil {
+	for _, key := range overrideKeys(overrides) {
+		ov := overrides[key]
+		if err := adjustmentOnly(ov, where, key); err != nil {
 			return nil, err
+		}
+		ids, err := matchRuleIDs(key, byID, where)
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			if err := e.applyOverride(byID[id], ov, where, catalog.LayerRepo, where, byID); err != nil {
+				return nil, err
+			}
 		}
 	}
 	out := make([]model.Rule, 0, len(order))
@@ -328,6 +306,19 @@ func (e *Effective) ScopeRules(scopePath string, confs map[string]RuleConf) ([]m
 		}
 	}
 	return out, nil
+}
+
+// adjustmentOnly refuses the override keys the repository and its scopes
+// may not use: policy binds lower layers, and the repository is the lowest;
+// applicability changes would switch a rule off without a reason.
+func adjustmentOnly(ov catalog.Override, where, key string) error {
+	switch {
+	case ov.Locked != nil || ov.MinSeverity != "" || ov.Exceptions != nil:
+		return fmt.Errorf("%s: overrides.%s: locked, min_severity and exceptions are policy a catalog sets; the repository adjusts", where, key)
+	case ov.When != nil || len(ov.Tiers) > 0:
+		return fmt.Errorf("%s: overrides.%s: when and tiers are set by catalogs; to switch a rule off here use enabled: false with a reason", where, key)
+	}
+	return nil
 }
 
 func copyParams(in map[string]any) map[string]any {
@@ -341,14 +332,14 @@ func copyParams(in map[string]any) map[string]any {
 	return out
 }
 
-// Nested is a scope-local .fleetlint.yaml. It may override facts, configure
+// Nested is a scope-local .fleetlint.yaml. It may override facts, adjust
 // rules and add exceptions for its scope; it cannot extend catalogs or define
 // new rules, which keeps policy resolution in one place.
 type Nested struct {
-	Version    int                 `yaml:"version"`
-	Facts      FactOverrides       `yaml:"facts,omitempty"`
-	Rules      map[string]RuleConf `yaml:"rules,omitempty"`
-	Exceptions []model.Exception   `yaml:"exceptions,omitempty"`
+	Version    int                         `yaml:"version"`
+	Facts      FactOverrides               `yaml:"facts,omitempty"`
+	Overrides  map[string]catalog.Override `yaml:"overrides,omitempty"`
+	Exceptions []model.Exception           `yaml:"exceptions,omitempty"`
 }
 
 // LoadNested reads <dir>/.fleetlint.yaml for a scope. A missing file yields nil.
@@ -397,48 +388,146 @@ func (f FactOverrides) ToFacts() facts.Overrides {
 }
 
 func (e *Effective) resolve(opts Options) error {
-	byID := map[string]*model.Rule{}
-	var order []string
-	entries, err := e.extendsEntries(&opts.Loader)
+	entries, src, err := e.extendsEntries(&opts.Loader)
 	if err != nil {
 		return err
 	}
-	for _, en := range entries {
-		if err := e.addEntry(opts.Loader, en, byID, &order); err != nil {
+	if err := e.choosePin(src, &opts.Loader); err != nil {
+		return err
+	}
+	loaded, err := e.loadEntries(opts.Loader, entries)
+	if err != nil {
+		return err
+	}
+	// Layer order is fixed whatever extends says; within a layer, written order.
+	sort.SliceStable(loaded, func(i, j int) bool {
+		return catalog.LayerRank(loaded[i].Layer) < catalog.LayerRank(loaded[j].Layer)
+	})
+	own, err := catalog.Local(FileName, e.raw, e.File.Rules, e.File.Overrides, e.File.Exceptions)
+	if err != nil {
+		return fmt.Errorf("%s: %w", FileName, err)
+	}
+	if err := opts.Loader.Expand(own); err != nil {
+		return fmt.Errorf("%s: %w", FileName, err)
+	}
+	loaded = append(loaded, own)
+	byID := map[string]*model.Rule{}
+	var order []string
+	for _, c := range loaded {
+		if err := e.addCatalog(c, byID, &order, opts.Now); err != nil {
 			return err
 		}
-	}
-	if err := e.applyRuleConf(byID, &order, e.File.Rules, FileName); err != nil {
-		return err
 	}
 	for _, id := range order {
 		if r, ok := byID[id]; ok {
 			e.Rules = append(e.Rules, *r)
 		}
 	}
-	return e.resolveExceptions(byID, opts.Now)
+	return nil
 }
 
-// addEntry loads one `extends` item with the catalogs it includes and marks
-// each with its layer.
-func (e *Effective) addEntry(l catalog.Loader, en extendsEntry, byID map[string]*model.Rule, order *[]string) error {
-	cats, err := l.Load(en.ref)
-	if err != nil {
-		return err
+// choosePin settles the one catalog version of the run: the sources file's
+// and the repository's must agree when both speak, and the loader's source
+// follows it.
+func (e *Effective) choosePin(src *catalog.Sources, l *catalog.Loader) error {
+	e.Pin = e.File.Catalog
+	if src != nil && src.Catalog != nil {
+		if e.Pin != nil && !e.Pin.Same(src.Catalog) {
+			return fmt.Errorf("%s pins %s, the sources file %s: one catalog version per run; drop the repository's pin or make them agree", FileName, e.Pin, src.Catalog)
+		}
+		e.Pin = src.Catalog
 	}
-	for _, c := range cats {
-		c.Layer = en.layer
-		if catalog.RefLayer(c.Ref) == catalog.LayerPreset {
-			c.Layer = catalog.LayerPreset
-		}
-		if c.Ref == en.ref {
-			c.Alias = en.alias
-		}
-		if err := e.addCatalog(c, byID, order); err != nil {
-			return err
-		}
+	e.Source = catalog.Builtin()
+	if e.Pin == nil {
+		return nil
+	}
+	var err error
+	if e.Source, err = l.Pin(e.Pin.Repo, e.Pin.Version); err != nil {
+		return fmt.Errorf("%s: %w", FileName, err)
 	}
 	return nil
+}
+
+// loadEntries loads every extends entry with its includes, settles each
+// catalog's layer and checks that it builds on the run's catalog version.
+func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*catalog.Catalog, error) {
+	var out []*catalog.Catalog
+	for _, en := range entries {
+		cats, err := l.Load(en.ref)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range cats {
+			if err := settleLayer(c, en); err != nil {
+				return nil, err
+			}
+			if err := e.checkBuildsOn(c); err != nil {
+				return nil, err
+			}
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+// settleLayer gives a catalog its layer: presets are the preset layer; a
+// catalog says org or team in its metadata, and a sources-file alias it is
+// loaded under must agree; anything else is the repository's.
+func settleLayer(c *catalog.Catalog, en extendsEntry) error {
+	declared := c.Metadata.Layer
+	switch {
+	case catalog.RefLayer(c.Ref) == catalog.LayerPreset:
+		c.Layer = catalog.LayerPreset
+	case c.Ref != en.ref:
+		// An include of the entry: it takes the entry's layer unless it says otherwise.
+		c.Layer = firstNonEmpty(declared, en.layer)
+	case en.alias != "" && declared != "" && declared != en.layer:
+		return fmt.Errorf("sources file names %s as %q but its metadata.layer is %q", c.Ref, en.alias, declared)
+	case en.alias != "":
+		c.Layer, c.Alias = en.layer, en.alias
+	default:
+		c.Layer = firstNonEmpty(declared, catalog.LayerRepo)
+	}
+	return nil
+}
+
+// checkBuildsOn holds a catalog to the run's catalog version: what it
+// declares must be the version in use, and a remote catalog that includes
+// presets or selects library rules must declare one, or its content would
+// depend on whichever fleetlint reads it.
+func (e *Effective) checkBuildsOn(c *catalog.Catalog) error {
+	if catalog.RefLayer(c.Ref) == catalog.LayerPreset {
+		return nil
+	}
+	declared := c.Metadata.Catalog
+	if declared == nil {
+		if !c.Trusted && (c.UsesLibrary() || includesPreset(c)) {
+			return fmt.Errorf("catalog %s builds on presets or the library but states no metadata.catalog version; without it the rules it resolves to depend on the reader's fleetlint", c.Ref)
+		}
+		return nil
+	}
+	if declared.Same(e.Pin) || (e.Pin == nil && declared.Same(&catalog.Pin{Version: catalog.ModuleVersion()})) {
+		return nil
+	}
+	return fmt.Errorf("catalog %s builds on %s; this run uses %s (%s). Pin that version in %s (catalog:) or in the sources file so every repository runs the same rules", c.Ref, declared, e.Pin, e.Source.Version, FileName)
+}
+
+func includesPreset(c *catalog.Catalog) bool {
+	for _, inc := range c.Metadata.Includes {
+		if catalog.RefLayer(inc) == catalog.LayerPreset {
+			return true
+		}
+	}
+	return false
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // extendsEntry is one `extends` item with its alias resolved.
@@ -446,43 +535,50 @@ type extendsEntry struct {
 	ref, alias, layer string
 }
 
-// extendsEntries resolves sources-file names in `extends`. With a sources
-// file the layer order is fixed (presets, org, teams, repo) however the
-// entries are written; without one the written order is kept. The sources
-// file's signers become the loader's, so oci catalogs it names can be
-// verified.
-func (e *Effective) extendsEntries(l *catalog.Loader) ([]extendsEntry, error) {
-	entries := make([]extendsEntry, 0, len(e.File.Extends))
-	if e.File.Sources == "" {
-		for _, ref := range e.File.Extends {
-			entries = append(entries, extendsEntry{ref: ref, layer: catalog.RefLayer(ref)})
+// extendsEntries lists what the run extends: the sources file's extends
+// first, then the repository's, each alias resolved; a repository without
+// extends gets the default. The sources file's signers become the loader's.
+func (e *Effective) extendsEntries(l *catalog.Loader) ([]extendsEntry, *catalog.Sources, error) {
+	var src *catalog.Sources
+	refs := e.File.Extends
+	if e.File.Sources != "" {
+		var err error
+		if src, err = l.LoadSources(e.File.Sources); err != nil {
+			return nil, nil, fmt.Errorf("%s: %w", FileName, err)
 		}
-		return entries, nil
+		l.Signers = src.Signers
+		refs = append(append([]string{}, src.Extends...), refs...)
 	}
-	src, err := l.LoadSources(e.File.Sources)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", FileName, err)
+	if len(refs) == 0 {
+		refs = DefaultExtends
 	}
-	l.Signers = src.Signers
-	for _, ref := range e.File.Extends {
+	entries := make([]extendsEntry, 0, len(refs))
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
 		layer, isAlias := catalog.AliasLayer(ref)
-		target, known := src.Catalogs[ref]
+		target, known := "", false
+		if src != nil {
+			target, known = src.Catalogs[ref]
+		}
 		switch {
 		case known:
 			entries = append(entries, extendsEntry{ref: target, alias: ref, layer: layer})
+		case isAlias && src == nil:
+			return nil, nil, fmt.Errorf("%s: extends: %q is a sources-file name but no sources file is set", FileName, ref)
 		case isAlias:
-			return nil, fmt.Errorf("%s: extends: %q is not in the sources file (it has: %s)", FileName, ref, strings.Join(src.Aliases(), ", "))
+			return nil, nil, fmt.Errorf("%s: extends: %q is not in the sources file (it has: %s)", FileName, ref, strings.Join(src.Aliases(), ", "))
 		default:
 			entries = append(entries, extendsEntry{ref: ref, layer: catalog.RefLayer(ref)})
 		}
 	}
-	sort.SliceStable(entries, func(i, j int) bool {
-		return catalog.LayerRank(entries[i].layer) < catalog.LayerRank(entries[j].layer)
-	})
-	return entries, nil
+	return entries, src, nil
 }
 
-func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, order *[]string) error {
+func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, order *[]string, now time.Time) error {
 	if e.hasCatalog(c) {
 		return nil
 	}
@@ -499,6 +595,8 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 			*order = append(*order, r.ID)
 		case c.Selected(r.ID):
 			continue // the same library rule, already loaded: the first catalog keeps it
+		case c.Ref == FileName:
+			return fmt.Errorf("%s: rules: %s is a catalog rule; the repository adjusts it under overrides, it does not redefine it", FileName, r.ID)
 		default:
 			if err := e.redefine(c, prev, &r); err != nil {
 				return err
@@ -506,7 +604,30 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 		}
 		byID[r.ID] = &r
 	}
-	return e.applyCatalogOverrides(c, byID)
+	if err := e.applyCatalogOverrides(c, byID); err != nil {
+		return err
+	}
+	return e.addExceptions(c, byID, now)
+}
+
+// addExceptions takes a catalog's exceptions into the run, attributed to the
+// catalog and bound by the policy set before it.
+func (e *Effective) addExceptions(c *catalog.Catalog, byID map[string]*model.Rule, now time.Time) error {
+	if err := validateExceptions(c.Exceptions); err != nil {
+		return fmt.Errorf("%s: %w", c.Ref, err)
+	}
+	for _, ex := range c.Exceptions {
+		r, known := byID[ex.Rule]
+		if !known && !e.isDisabled(ex.Rule) {
+			return fmt.Errorf("%s: exceptions: rule %q is not loaded", c.Ref, ex.Rule)
+		}
+		if known && !r.ExceptionsAllowed() {
+			return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", c.Ref, r.ID, r.PolicySource())
+		}
+		ex.Layer, ex.Where, ex.Expired = c.Layer, c.Ref, expired(ex.Until, now)
+		e.Exceptions = append(e.Exceptions, ex)
+	}
+	return nil
 }
 
 // applyCatalogOverrides applies a catalog's `overrides:` to the rules its
@@ -514,29 +635,53 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 // before it, like a repository is, and may tighten that policy further.
 func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*model.Rule) error {
 	where := "catalog " + c.Ref + " (overrides)"
-	by := c.Metadata.Name + "@" + c.Metadata.Version
-	inline := map[string]bool{}
-	for _, r := range c.Rules {
-		if !c.Selected(r.ID) {
-			inline[r.ID] = true
-		}
+	if c.Ref == FileName {
+		where = FileName
 	}
+	by := c.Metadata.Name + "@" + c.Metadata.Version
+	inline := inlineIDs(c)
 	for _, key := range overrideKeys(c.Overrides) {
 		ov := c.Overrides[key]
+		if c.Ref == FileName {
+			if err := adjustmentOnly(ov, FileName, key); err != nil {
+				return err
+			}
+		}
 		ids, err := matchRuleIDs(key, byID, where)
 		if err != nil {
 			return err
 		}
-		for _, id := range ids {
-			if inline[id] {
-				continue // a catalog's own definition is written as intended; overrides adjust what it took in
-			}
-			if err := e.applyOverride(byID[id], ov, where, c.Layer, by, byID); err != nil {
-				return err
-			}
+		if err := e.applyToAll(ids, inline, ov, where, c.Layer, by, byID); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+// applyToAll applies one override to the matched rules, skipping the
+// catalog's own definitions: those are written as intended, overrides adjust
+// what the catalog took in.
+func (e *Effective) applyToAll(ids []string, inline map[string]bool, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+	for _, id := range ids {
+		if inline[id] {
+			continue
+		}
+		if err := e.applyOverride(byID[id], ov, where, layer, by, byID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// inlineIDs are the rules a catalog defines itself, as opposed to selects.
+func inlineIDs(c *catalog.Catalog) map[string]bool {
+	out := map[string]bool{}
+	for _, r := range c.Rules {
+		if !c.Selected(r.ID) {
+			out[r.ID] = true
+		}
+	}
+	return out
 }
 
 // overrideKeys orders a catalog's override keys: patterns first, then exact
@@ -693,26 +838,11 @@ func (e *Effective) redefine(c *catalog.Catalog, prev, r *model.Rule) error {
 			r.MinSeverity = prev.MinSeverity
 		}
 	}
-	if r.Severity < prev.Severity && r.Layer != prev.Layer {
+	if r.Severity < prev.Severity {
 		e.Weakened = append(e.Weakened, Disabled{
 			ID: r.ID, Where: c.Ref, Layer: r.Layer,
 			Reason: fmt.Sprintf("%s lowers %s to %s", r.Source, prev.Severity, r.Severity),
 		})
-	}
-	return nil
-}
-
-func (e *Effective) resolveExceptions(byID map[string]*model.Rule, now time.Time) error {
-	e.Exceptions = e.File.Exceptions
-	for i := range e.Exceptions {
-		r, known := byID[e.Exceptions[i].Rule]
-		if !known && !e.isDisabled(e.Exceptions[i].Rule) {
-			return fmt.Errorf("%s: exceptions: rule %q is not loaded", FileName, e.Exceptions[i].Rule)
-		}
-		if known && !r.ExceptionsAllowed() {
-			return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", FileName, r.ID, r.PolicySource())
-		}
-		e.Exceptions[i].Expired = expired(e.Exceptions[i].Until, now)
 	}
 	return nil
 }
@@ -770,46 +900,14 @@ func (e *Effective) isDisabled(id string) bool {
 	return false
 }
 
-func (e *Effective) applyRuleConf(byID map[string]*model.Rule, order *[]string, confs map[string]RuleConf, where string) error {
-	ids := make([]string, 0, len(confs))
-	for id := range confs {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	for _, id := range ids {
-		rc := confs[id]
-		existing, known := byID[id]
-		switch {
-		case known && rc.Kind != "":
-			return fmt.Errorf("%s: rules.%s: cannot redefine a catalog rule; override its fields instead", where, id)
-		case !known && rc.Kind == "":
-			return fmt.Errorf("%s: rules.%s: unknown rule (not in any catalog) and no inline definition", where, id)
-		case !known:
-			r, err := inlineRule(id, rc, where)
-			if err != nil {
-				return err
-			}
-			r.Layer = catalog.LayerRepo
-			byID[id] = r
-			*order = append(*order, id)
-			existing = r
-		}
-		if err := e.override(existing, rc, where, byID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (e *Effective) override(r *model.Rule, rc RuleConf, where string, byID map[string]*model.Rule) error {
-	return e.overrideAs(r, rc, where, catalog.LayerRepo, byID)
-}
-
 // overrideAs applies an override made by the given layer.
 func (e *Effective) overrideAs(r *model.Rule, rc RuleConf, where, layer string, byID map[string]*model.Rule) error {
 	if rc.Enabled != nil && !*rc.Enabled {
 		if r.Locked {
 			return fmt.Errorf("%s: rules.%s: rule is locked by %s and cannot be disabled", where, r.ID, r.PolicySource())
+		}
+		if r.MinSeverity != "" {
+			return fmt.Errorf("%s: rules.%s: %s set a severity floor of %s; off is below every floor", where, r.ID, r.PolicySource(), r.MinSeverity)
 		}
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: disabling a rule requires a reason", where, r.ID)
@@ -897,49 +995,6 @@ func validateAccept(id string, rc RuleConf, where string) error {
 		}
 	}
 	return nil
-}
-
-func inlineRule(id string, rc RuleConf, where string) (*model.Rule, error) {
-	sev := model.SeverityWarning
-	if rc.Severity != "" {
-		var err error
-		if sev, err = model.ParseSeverity(rc.Severity); err != nil {
-			return nil, fmt.Errorf("%s: rules.%s: %w", where, id, err)
-		}
-	}
-	r := &model.Rule{
-		ID: id, Title: rc.Title, Kind: model.Kind(rc.Kind), Severity: sev, Tiers: rc.Tiers, Stacks: rc.Stacks,
-		When: rc.When, Foreach: rc.Foreach, Expr: rc.Expr, Satisfiers: rc.Satisfiers, Partials: rc.Partials, Run: rc.Run, Message: rc.Message, Requirement: rc.Requirement,
-		Rationale: rc.Rationale, Fix: rc.Fix, Params: rc.Params, Source: where,
-	}
-	if r.Title == "" {
-		r.Title = id
-	}
-	if r.Requirement == "" {
-		r.Requirement = rc.Message
-	}
-	if r.Fix.Human == "" {
-		r.Fix.Human = "See the rule's message."
-	}
-	switch r.Kind {
-	case model.KindExpr:
-		if r.Expr == "" {
-			return nil, fmt.Errorf("%s: rules.%s: kind expr needs expr", where, id)
-		}
-	case model.KindCommand:
-		if r.Run == "" {
-			return nil, fmt.Errorf("%s: rules.%s: kind command needs run", where, id)
-		}
-	case model.KindOutcome:
-		if len(r.Satisfiers) == 0 {
-			return nil, fmt.Errorf("%s: rules.%s: kind outcome needs satisfiers", where, id)
-		}
-	case model.KindGo:
-		return nil, fmt.Errorf("%s: rules.%s: kind go cannot be declared inline", where, id)
-	default:
-		return nil, fmt.Errorf("%s: rules.%s: unknown kind %q", where, id, rc.Kind)
-	}
-	return r, nil
 }
 
 func expired(until string, now time.Time) bool {

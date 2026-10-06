@@ -172,8 +172,12 @@ func writeJSON(w io.Writer, v any) error {
 func writeRule(w io.Writer, r model.Rule) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s\n", r.ID, r.Title)
-	fmt.Fprintf(&b, "severity: %s   kind: %s   tiers: %s   stacks: %s   source: %s   layer: %s\n\n",
+	fmt.Fprintf(&b, "severity: %s   kind: %s   tiers: %s   stacks: %s   source: %s   layer: %s\n",
 		r.Severity, r.Kind, orAll(r.Tiers), orAny(r.Stacks), r.Source, r.Layer)
+	if r.SelectedBy != "" {
+		fmt.Fprintf(&b, "selected by: %s\n", r.SelectedBy)
+	}
+	b.WriteString("\n")
 	if policy := policyLine(r); policy != "" {
 		fmt.Fprintf(&b, "Policy\n  %s\n\n", policy)
 	}

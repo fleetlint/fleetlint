@@ -30,6 +30,12 @@ var teamAliasRe = regexp.MustCompile(`^team/[a-z0-9][a-z0-9._-]*$`)
 // references, so that URLs and pins live in one file per organization.
 type Sources struct {
 	Version int `yaml:"version"`
+	// Catalog pins the fleetlint catalog version every repository using this
+	// file runs with; a repository may repeat it, not change it.
+	Catalog *Pin `yaml:"catalog,omitempty"`
+	// Extends is the baseline every repository gets, in front of its own
+	// extends; names from Catalogs or fleetlint:<preset>.
+	Extends []string `yaml:"extends,omitempty"`
 	// Signers are the identities whose cosign signature makes an oci catalog
 	// trustworthy without a digest pin.
 	Signers  []Signer          `yaml:"signers,omitempty"`
@@ -107,10 +113,8 @@ func (s *Sources) validate(local string) error {
 	if len(s.Catalogs) == 0 {
 		return errors.New("catalogs is empty")
 	}
-	for i, sg := range s.Signers {
-		if err := sg.validate(); err != nil {
-			return fmt.Errorf("signers[%d]: %w", i, err)
-		}
+	if err := s.validateBaseline(); err != nil {
+		return err
 	}
 	for _, alias := range s.Aliases() {
 		target := s.Catalogs[alias]
@@ -125,6 +129,25 @@ func (s *Sources) validate(local string) error {
 			return fmt.Errorf("catalogs.%s: a remote sources file cannot name the local path %q", alias, target)
 		case !filepath.IsAbs(target):
 			s.Catalogs[alias] = filepath.Join(filepath.Dir(local), target)
+		}
+	}
+	return nil
+}
+
+// validateBaseline checks the parts that apply to every repository using the
+// file: signers, the catalog pin and the baseline extends.
+func (s *Sources) validateBaseline() error {
+	for i, sg := range s.Signers {
+		if err := sg.validate(); err != nil {
+			return fmt.Errorf("signers[%d]: %w", i, err)
+		}
+	}
+	if s.Catalog != nil && s.Catalog.Version == "" {
+		return errors.New("catalog.version is required: a tag or a full commit SHA")
+	}
+	for _, ref := range s.Extends {
+		if _, isAlias := s.Catalogs[ref]; !isAlias && !strings.HasPrefix(ref, presetPrefix) {
+			return fmt.Errorf("extends: %q must be a preset or a name from catalogs", ref)
 		}
 	}
 	return nil

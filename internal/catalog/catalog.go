@@ -163,6 +163,9 @@ type Catalog struct {
 	// A key is a rule id or a glob over ids ("*", "release/*"); globs apply
 	// first, so an exact key refines them.
 	Overrides map[string]Override `yaml:"overrides,omitempty"`
+	// Exceptions are per-finding exceptions the catalog grants to every
+	// repository that extends it, bound by `exceptions: false` set earlier.
+	Exceptions []model.Exception `yaml:"exceptions,omitempty"`
 	// Ref is how the catalog was referenced; Digest is its sha256 (hex).
 	Ref    string `yaml:"-"`
 	Digest string `yaml:"-"`
@@ -189,6 +192,9 @@ type Catalog struct {
 // Selected reports whether the rule came into the catalog through `use:`
 // rather than an inline definition.
 func (c *Catalog) Selected(id string) bool { return c.used[id] }
+
+// UsesLibrary reports whether the catalog selected anything with `use:`.
+func (c *Catalog) UsesLibrary() bool { return len(c.used) > 0 }
 
 const presetPrefix = "fleetlint:"
 
@@ -229,6 +235,48 @@ type Metadata struct {
 	// Engine is the engine level the catalog was written for; 0 means it
 	// does not say. See EngineLevel.
 	Engine int `yaml:"engine,omitempty"`
+	// Layer is who owns the catalog: org or team. Presets are the preset
+	// layer, a catalog that says nothing is the repository's.
+	Layer string `yaml:"layer,omitempty"`
+	// Catalog is the version of the fleetlint catalog this one builds on:
+	// the presets it includes and the library it selects from come from
+	// it. Required for a remote catalog that does either; one version holds
+	// for a whole run.
+	Catalog *Pin `yaml:"catalog,omitempty"`
+}
+
+// Pin names a version of the fleetlint catalog: a tag or a full commit SHA,
+// and the repository when it is not the project's.
+type Pin struct {
+	Version string `yaml:"version"`
+	Repo    string `yaml:"repo,omitempty"`
+}
+
+// Same reports whether two pins name the same version; a nil pin is the
+// built-in catalog.
+func (p *Pin) Same(o *Pin) bool {
+	if p == nil || o == nil {
+		return p == nil && o == nil
+	}
+	return p.Version == o.Version && repoOrDefault(p.Repo) == repoOrDefault(o.Repo)
+}
+
+func repoOrDefault(repo string) string {
+	if repo == "" {
+		return DefaultRepo
+	}
+	return repo
+}
+
+// String names the pin in messages.
+func (p *Pin) String() string {
+	if p == nil {
+		return "the built-in catalog"
+	}
+	if p.Repo == "" || p.Repo == DefaultRepo {
+		return "catalog " + p.Version
+	}
+	return "catalog " + p.Version + " from " + p.Repo
 }
 
 // ErrDigestRequired is returned for a remote reference without a digest.
@@ -578,6 +626,14 @@ func Parse(b []byte) (*Catalog, error) {
 	if c.Metadata.Name == "" || c.Metadata.Version == "" {
 		return nil, errors.New("metadata.name and metadata.version are required")
 	}
+	switch c.Metadata.Layer {
+	case "", LayerOrg, LayerTeam:
+	default:
+		return nil, fmt.Errorf("metadata.layer must be org or team (got %q); presets and the repository are implied", c.Metadata.Layer)
+	}
+	if c.Metadata.Catalog != nil && c.Metadata.Catalog.Version == "" {
+		return nil, errors.New("metadata.catalog.version is required: a tag or a full commit SHA")
+	}
 	if err := checkEngine(&c); err != nil {
 		return nil, err
 	}
@@ -614,6 +670,54 @@ func validateRules(c *Catalog) error {
 	}
 	return nil
 }
+
+// Local builds the catalog a repository's own configuration amounts to:
+// its inline rules, selections, overrides and exceptions, at the repository
+// layer and trusted. raw is the configuration file, for the checks that
+// read the document itself.
+func Local(name string, raw []byte, rules []model.Rule, overrides map[string]Override, exceptions []model.Exception) (*Catalog, error) {
+	c := &Catalog{
+		APIVersion: APIVersion, Kind: "Catalog",
+		Metadata: Metadata{Name: name, Version: "local"},
+		Rules:    rules, Overrides: overrides, Exceptions: exceptions,
+		Ref: name, Trusted: true, Layer: LayerRepo,
+	}
+	if err := requireSeverity(raw); err != nil {
+		return nil, err
+	}
+	if err := validatePolicy(c.Rules); err != nil {
+		return nil, err
+	}
+	if err := validateOverrides(c); err != nil {
+		return nil, err
+	}
+	splitUses(c)
+	// A repository's own rule may stay terse: the id serves as title, the
+	// message as requirement.
+	for i := range c.Rules {
+		r := &c.Rules[i]
+		r.Title = firstNonEmpty(r.Title, r.ID)
+		r.Requirement = firstNonEmpty(r.Requirement, r.Message)
+		r.Fix.Human = firstNonEmpty(r.Fix.Human, "See the rule's message.")
+	}
+	if err := validateRules(c); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// Expand resolves a catalog's `use:` entries against the loader's library;
+// Local catalogs call it since they do not pass through Load.
+func (l Loader) Expand(c *Catalog) error { return l.expand(c) }
 
 // splitUses takes the `use:` entries out of the rules list, remembering
 // where they stood so expansion keeps the order; requireSeverity already

@@ -6,7 +6,7 @@ extends:
 facts:
   tier: 1
   visibility: public
-rules:
+overrides:
   slop/escape-hatches:
     enabled: false
     reason: "nolintlint already requires a specific linter and an explanation on every suppression"

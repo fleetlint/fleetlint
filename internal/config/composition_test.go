@@ -86,8 +86,8 @@ func TestSelectedRuleKeepsItsFirstCatalog(t *testing.T) {
 	})
 	eff := loadDir(t, dir)
 	r, _ := ruleByID(eff, "lint/go-config")
-	if r.Source != "fleetlint-recommended@0.1.0" || r.Layer != catalog.LayerPreset {
-		t.Errorf("a rule already loaded is not re-attributed by a later use: source=%s layer=%s", r.Source, r.Layer)
+	if r.SelectedBy != "fleetlint-recommended@0.1.0" || r.Layer != catalog.LayerPreset {
+		t.Errorf("a rule already loaded is not re-attributed by a later use: selected_by=%s layer=%s", r.SelectedBy, r.Layer)
 	}
 	n := 0
 	for _, x := range eff.Rules {
@@ -136,8 +136,8 @@ func TestSelectAndTightenInOneCatalog(t *testing.T) {
 	if g.Severity != model.SeverityError || !g.Locked || p.Severity != model.SeverityError {
 		t.Errorf("overrides adjust the catalog's own selections: %+v / %+v", g, p)
 	}
-	if g.Source != "org@1.0.0" {
-		t.Errorf("a selected rule is attributed to the selecting catalog: %s", g.Source)
+	if g.SelectedBy != "org@1.0.0" || !strings.HasPrefix(g.Source, "library ") {
+		t.Errorf("a selected rule names the library as source and the catalog as selector: %s / %s", g.Source, g.SelectedBy)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 	ownerRule := strings.ReplaceAll(strings.Replace(inlineRule("acme/owner-file", "owner", "error"), "  - id:", "id:", 1), "\n    ", "\n")
 	fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
 		return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{
-			"catalog.yaml":               []byte(catHead("acme", "") + "rules:\n  - use: acme/*\n  - use: lint/go-config\n  - use: repo/readme-present\n"),
+			"catalog.yaml":               []byte(catHead("acme", ", catalog: {version: "+catalog.ModuleVersion()+"}") + "rules:\n  - use: acme/*\n  - use: lint/go-config\n  - use: repo/readme-present\n"),
 			"rules/acme/owner-file.yaml": []byte(ownerRule),
 			"rules/lint/go-config.yaml":  []byte(own),
 			"templates/SECURITY.md":      []byte("acme\n"),
@@ -187,7 +187,7 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 	if r, _ := ruleByID(eff, "lint/go-config"); r.Title != "acme's go config" {
 		t.Errorf("own library wins over the source's for the same id: %q", r.Title)
 	}
-	if r, ok := ruleByID(eff, "repo/readme-present"); !ok || r.Source != "acme@1.0.0" {
+	if r, ok := ruleByID(eff, "repo/readme-present"); !ok || r.SelectedBy != "acme@1.0.0" || !strings.HasPrefix(r.Source, "library ") {
 		t.Errorf("the source library still serves the rest: %+v", r)
 	}
 }
@@ -198,8 +198,8 @@ func TestLockFreezesParamsAndAccept(t *testing.T) {
 	t.Parallel()
 	org := catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  deps/vulnerability-scan: {locked: true, accept: [{name: ours, expr: \"true\"}]}\n  lint/go-linters-enabled: {locked: true, params: {required: [errcheck]}}\n"
 	for name, repoRules := range map[string]string{
-		"accept": "rules:\n  deps/vulnerability-scan:\n    accept: [{name: mine, expr: \"true\"}]\n",
-		"params": "rules:\n  lint/go-linters-enabled:\n    params: {required: []}\n",
+		"accept": "overrides:\n  deps/vulnerability-scan:\n    accept: [{name: mine, expr: \"true\"}]\n",
+		"params": "overrides:\n  lint/go-linters-enabled:\n    params: {required: []}\n",
 	} {
 		dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\n" + repoRules})
 		if _, err := config.Load(dir, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "params and accept cannot change") {
@@ -207,7 +207,7 @@ func TestLockFreezesParamsAndAccept(t *testing.T) {
 		}
 	}
 	// The locking catalog's own params and accept apply, and raising stays allowed below.
-	dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\nrules:\n  lint/go-linters-enabled: {severity: error}\n"})
+	dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\noverrides:\n  lint/go-linters-enabled: {severity: error}\n"})
 	eff := loadDir(t, dir)
 	r, _ := ruleByID(eff, "lint/go-linters-enabled")
 	if req, _ := r.Params["required"].([]any); len(req) != 1 || r.Severity != model.SeverityError || !r.Locked {

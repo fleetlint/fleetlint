@@ -84,8 +84,8 @@ func TestUseEntries(t *testing.T) {
 	if !strings.HasPrefix(joined, "lint/go-config lint/go-linters-enabled own/rule repo/readme-present") {
 		t.Errorf("order and expansion: %s", joined)
 	}
-	if cats[0].Rules[0].Source != "t@1.0.0" {
-		t.Errorf("a selected rule carries the selecting catalog as source: %s", cats[0].Rules[0].Source)
+	if r := cats[0].Rules[0]; r.SelectedBy != "t@1.0.0" || !strings.HasPrefix(r.Source, "library ") {
+		t.Errorf("a selected rule names the library as source and the catalog as selector: %+v", r)
 	}
 	for name, body := range map[string]string{
 		"unknown id":       head + "rules:\n  - use: lint/nothing\n",

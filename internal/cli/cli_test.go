@@ -99,7 +99,7 @@ func TestInitWritesConfigAndRefusesOverwrite(t *testing.T) {
 
 func TestConfigErrorsExitTwo(t *testing.T) {
 	t.Parallel()
-	r := testutil.Fixture(t, map[string]string{".fleetlint.yaml": "version: 1\nrules:\n  hooks/config-present: {enabled: false}\n"})
+	r := testutil.Fixture(t, map[string]string{".fleetlint.yaml": "version: 1\noverrides:\n  hooks/config-present: {enabled: false}\n"})
 	code, _, errOut := runCLI(t, r.Root, "check")
 	if code != cli.ExitConfig || !strings.Contains(errOut, "requires a reason") {
 		t.Fatalf("code=%d err=%s", code, errOut)

@@ -20,7 +20,7 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 	})
 	messy := testutil.GitFixture(t, map[string]string{
 		"go.mod": "module y\n", ".DS_Store": "x",
-		".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\nrules:\n  repo/gitignore-present: {enabled: false, reason: \"demo\"}\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\noverrides:\n  repo/gitignore-present: {enabled: false, reason: \"demo\"}\n",
 	})
 	spec := &fleet.Spec{Version: 1, Repos: []fleet.Entry{
 		{Path: clean.Root, Name: "clean", Team: "a"},
