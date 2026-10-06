@@ -25,7 +25,7 @@
     },
     "extends": {
       "type": "array",
-      "description": "Catalogs in order; later entries override earlier ones field by field. Presets: fleetlint:minimal, fleetlint:recommended, and the add-on fleetlint:slop. Remote: https://…#sha256-<digest> or git+<url>//<path>@<tag or commit>. Local: a file or directory path. Names from the sources file: org, team/<name>.",
+      "description": "Catalogs in order; later entries override earlier ones field by field. Presets: fleetlint:minimal, fleetlint:recommended, fleetlint:strict, fleetlint:oss, and the add-on fleetlint:slop. Remote: https://…#sha256-<digest> or git+<url>//<path>@<tag or commit>. Local: a file or directory path. Names from the sources file: org, team/<name>.",
       "items": { "type": "string", "minLength": 1 }
     },
     "facts": { "$ref": "#/$defs/factOverrides" },

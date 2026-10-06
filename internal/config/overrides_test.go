@@ -107,3 +107,79 @@ func TestCatalogOverridesAreHeldToEarlierPolicy(t *testing.T) {
 		t.Errorf("overriding a rule of the same catalog must be refused, got %v", err)
 	}
 }
+
+// strict and oss are recommended plus overrides: strict raises every
+// severity one step and forbids exceptions on the security rules; oss runs
+// the public family whatever the visibility.
+func TestStrictAndOssPresets(t *testing.T) {
+	t.Parallel()
+	strict, err := load(t, "version: 1\nextends: [fleetlint:strict]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, err := load(t, "version: 1\nextends: [fleetlint:recommended]\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(strict.Rules) != len(rec.Rules) {
+		t.Fatalf("strict has %d rules, recommended %d: strict only raises, never adds or drops", len(strict.Rules), len(rec.Rules))
+	}
+	for _, r := range rec.Rules {
+		s, ok := ruleByID(strict, r.ID)
+		if !ok {
+			t.Fatalf("%s missing from strict", r.ID)
+		}
+		if r.Severity == model.SeverityError && s.Severity != model.SeverityError {
+			t.Errorf("%s: error must stay error, got %s", r.ID, s.Severity)
+		}
+		if r.Severity != model.SeverityError && s.Severity <= r.Severity {
+			t.Errorf("%s: %s not raised (strict: %s)", r.ID, r.Severity, s.Severity)
+		}
+	}
+	if s, _ := ruleByID(strict, "hooks/secret-scan"); s.ExceptionsAllowed() {
+		t.Error("strict forbids exceptions on secret scanning")
+	}
+	if _, err := load(t, "version: 1\nextends: [fleetlint:strict]\nexceptions:\n  - {rule: hooks/secret-scan, reason: x}\n"); err == nil || !strings.Contains(err.Error(), "forbids exceptions") {
+		t.Errorf("an exception on a strict security rule is refused: %v", err)
+	}
+
+	oss, err := load(t, "version: 1\nextends: [fleetlint:oss]\nfacts: {visibility: private}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for id, want := range map[string]string{"public/license": "true", "public/no-ai-attribution": "repo.has_git", "public/security-policy": "repo.tier == 1"} {
+		if r, _ := ruleByID(oss, id); r.When != want {
+			t.Errorf("%s: when = %q, want %q", id, r.When, want)
+		}
+	}
+}
+
+// when and tiers overrides change applicability, so a locked rule refuses them.
+func TestOverridesCannotRescopeLockedRules(t *testing.T) {
+	t.Parallel()
+	team := `apiVersion: fleetlint.org/v1
+kind: Catalog
+metadata: {name: team-a, version: 1.0.0}
+rules: []
+overrides:
+  repo/no-tracked-env: {when: "false"}
+`
+	_, err := loadLayered(t, layered("", orgOverrides, team))
+	if err == nil || !strings.Contains(err.Error(), "when and tiers cannot change") {
+		t.Errorf("rescoping a locked rule must fail: %v", err)
+	}
+	bad := strings.Replace(team, `{when: "false"}`, "{tiers: [4]}", 1)
+	bad = strings.Replace(bad, "repo/no-tracked-env", "repo/gitignore-present", 1)
+	org := strings.Replace(orgOverrides, "  repo/gitignore-present: {enabled: false, reason: \"generated repositories have none\"}\n", "", 1)
+	if _, err := loadLayered(t, layered("", org, bad)); err == nil || !strings.Contains(err.Error(), "tiers must be 1, 2 or 3") {
+		t.Errorf("tier 4 is refused: %v", err)
+	}
+	ok := strings.Replace(bad, "[4]", "[1, 2, 3]", 1)
+	eff, err := loadLayered(t, layered("", org, ok))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := ruleByID(eff, "repo/gitignore-present"); len(r.Tiers) != 3 {
+		t.Errorf("tiers override applies: %+v", r.Tiers)
+	}
+}

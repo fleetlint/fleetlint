@@ -20,8 +20,8 @@ func TestPresetsParse(t *testing.T) {
 			t.Fatalf("preset %s: no catalogs", name)
 		}
 		own := cats[len(cats)-1]
-		if own.Ref != "fleetlint:"+name || len(own.Rules) == 0 {
-			t.Fatalf("preset %s: last catalog should be the preset itself with rules, got %s", name, own.Ref)
+		if own.Ref != "fleetlint:"+name || (len(own.Rules) == 0 && len(own.Overrides) == 0) {
+			t.Fatalf("preset %s: last catalog should be the preset itself with rules or overrides, got %s", name, own.Ref)
 		}
 		for _, r := range own.Rules {
 			if r.Fix.Agent == "" {

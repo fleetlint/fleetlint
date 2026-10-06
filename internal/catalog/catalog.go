@@ -162,6 +162,10 @@ type Override struct {
 	Severity string           `yaml:"severity,omitempty"`
 	Params   map[string]any   `yaml:"params,omitempty"`
 	Accept   []map[string]any `yaml:"accept,omitempty"`
+	// When and Tiers replace the rule's applicability; "true" for When
+	// makes a conditional rule unconditional. Neither may change a locked rule.
+	When  *string `yaml:"when,omitempty"`
+	Tiers []int   `yaml:"tiers,omitempty"`
 	// Locked, MinSeverity and Exceptions have the meaning they have on a rule.
 	Locked      *bool  `yaml:"locked,omitempty"`
 	MinSeverity string `yaml:"min_severity,omitempty"`

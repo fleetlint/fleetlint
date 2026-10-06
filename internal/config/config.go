@@ -505,9 +505,35 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 		if _, still := byID[id]; !still {
 			continue
 		}
+		if err := applyScope(r, ov, where); err != nil {
+			return err
+		}
 		if err := tightenPolicy(r, ov, where, by); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// applyScope replaces a rule's `when` and `tiers` from a catalog override.
+// A locked rule keeps its applicability: narrowing either would weaken it.
+func applyScope(r *model.Rule, ov catalog.Override, where string) error {
+	if ov.When == nil && len(ov.Tiers) == 0 {
+		return nil
+	}
+	if r.Locked {
+		return fmt.Errorf("%s: rules.%s: rule is locked by %s; when and tiers cannot change", where, r.ID, r.PolicySource())
+	}
+	if ov.When != nil {
+		r.When = *ov.When
+	}
+	if len(ov.Tiers) > 0 {
+		for _, t := range ov.Tiers {
+			if t < 1 || t > 3 {
+				return fmt.Errorf("%s: rules.%s: tiers must be 1, 2 or 3 (got %d)", where, r.ID, t)
+			}
+		}
+		r.Tiers = ov.Tiers
 	}
 	return nil
 }
