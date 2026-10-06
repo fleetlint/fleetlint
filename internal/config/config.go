@@ -515,6 +515,12 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*model.Rule) error {
 	where := "catalog " + c.Ref + " (overrides)"
 	by := c.Metadata.Name + "@" + c.Metadata.Version
+	inline := map[string]bool{}
+	for _, r := range c.Rules {
+		if !c.Selected(r.ID) {
+			inline[r.ID] = true
+		}
+	}
 	for _, key := range overrideKeys(c.Overrides) {
 		ov := c.Overrides[key]
 		ids, err := matchRuleIDs(key, byID, where)
@@ -522,6 +528,9 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 			return err
 		}
 		for _, id := range ids {
+			if inline[id] {
+				continue // a catalog's own definition is written as intended; overrides adjust what it took in
+			}
 			if err := e.applyOverride(byID[id], ov, where, c.Layer, by, byID); err != nil {
 				return err
 			}
@@ -814,16 +823,29 @@ func (e *Effective) overrideAs(r *model.Rule, rc RuleConf, where, layer string, 
 			return err
 		}
 	}
-	if len(rc.Accept) > 0 {
-		if r.Kind != model.KindOutcome {
-			return fmt.Errorf("%s: rules.%s: accept only applies to outcome rules", where, r.ID)
-		}
-		if err := validateAccept(r.ID, rc, where); err != nil {
-			return err
-		}
+	if err := checkParamsAndAccept(r, rc, where); err != nil {
+		return err
 	}
 	mergeParams(r, rc)
 	return nil
+}
+
+// checkParamsAndAccept refuses what would reshape a locked rule and
+// validates accept entries; both can only widen what satisfies the rule.
+func checkParamsAndAccept(r *model.Rule, rc RuleConf, where string) error {
+	if len(rc.Params) == 0 && len(rc.Accept) == 0 {
+		return nil
+	}
+	if r.Locked {
+		return fmt.Errorf("%s: rules.%s: rule is locked by %s; params and accept cannot change (the locking catalog sets them)", where, r.ID, r.PolicySource())
+	}
+	if len(rc.Accept) == 0 {
+		return nil
+	}
+	if r.Kind != model.KindOutcome {
+		return fmt.Errorf("%s: rules.%s: accept only applies to outcome rules", where, r.ID)
+	}
+	return validateAccept(r.ID, rc, where)
 }
 
 func (e *Effective) applySeverity(r *model.Rule, rc RuleConf, where, layer string) error {

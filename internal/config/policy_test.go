@@ -67,22 +67,23 @@ func TestPolicyLocksAndFloors(t *testing.T) {
 		"disable locked in scope": "version: 1\nextends: [$ORG]\nscopes:\n  - path: api\n    rules:\n      org/locked: {enabled: false, reason: r}\n",
 		"repo cannot set lock":    "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {locked: true}\n",
 		"redefine locked inline":  "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {kind: expr, expr: 'true', message: m, fix: {human: h}}\n",
+		"params on locked":        "version: 1\nextends: [$ORG]\nrules:\n  org/locked: {params: {x: 1}}\n",
 	}
 	for name, cfg := range rejected {
 		if _, err := loadWithOrg(t, cfg); err == nil {
 			t.Errorf("%s: expected a config error", name)
 		}
 	}
-	allowed := "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {severity: warning, reason: \"team decision\"}\n  org/locked: {params: {x: 1}}\nexceptions:\n  - {rule: org/locked, reason: \"legacy service\", until: 2027-01-01}\n"
+	allowed := "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {severity: warning, reason: \"team decision\"}\n  org/locked: {severity: error}\nexceptions:\n  - {rule: org/locked, reason: \"legacy service\", until: 2027-01-01}\n"
 	eff, err := loadWithOrg(t, allowed)
 	if err != nil {
-		t.Fatalf("lowering to the floor, params and reasoned exceptions on a locked rule are allowed: %v", err)
+		t.Fatalf("lowering to the floor, raising a locked rule and reasoned exceptions on it are allowed: %v", err)
 	}
 	if r, _ := ruleByID(eff, "org/floored"); r.Severity != model.SeverityWarning || len(eff.Weakened) != 1 {
 		t.Fatalf("floor-respecting weakening must apply and be recorded: %+v %+v", r.Severity, eff.Weakened)
 	}
-	if r, _ := ruleByID(eff, "org/locked"); !r.Locked || r.Params["x"] == nil {
-		t.Fatalf("locked rule keeps its lock and takes params: %+v", r)
+	if r, _ := ruleByID(eff, "org/locked"); !r.Locked || r.Severity != model.SeverityError {
+		t.Fatalf("locked rule keeps its lock and may be raised: %+v", r)
 	}
 	// Disabling a floored (but not locked) rule with a reason is allowed.
 	if _, err := loadWithOrg(t, "version: 1\nextends: [$ORG]\nrules:\n  org/floored: {enabled: false, reason: r}\n"); err != nil {

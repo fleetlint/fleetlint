@@ -17,7 +17,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 
@@ -592,9 +591,7 @@ func Parse(b []byte) (*Catalog, error) {
 	if err := validateOverrides(&c); err != nil {
 		return nil, err
 	}
-	if err := splitUses(&c); err != nil {
-		return nil, err
-	}
+	splitUses(&c)
 	if err := validateRules(&c); err != nil {
 		return nil, err
 	}
@@ -619,8 +616,9 @@ func validateRules(c *Catalog) error {
 }
 
 // splitUses takes the `use:` entries out of the rules list, remembering
-// where they stood so expansion keeps the order.
-func splitUses(c *Catalog) error {
+// where they stood so expansion keeps the order; requireSeverity already
+// refused entries with other keys.
+func splitUses(c *Catalog) {
 	c.used = map[string]bool{}
 	var rules []model.Rule
 	for _, r := range c.Rules {
@@ -628,15 +626,9 @@ func splitUses(c *Catalog) error {
 			rules = append(rules, r)
 			continue
 		}
-		bare := r
-		bare.Use = ""
-		if !reflect.DeepEqual(bare, model.Rule{}) {
-			return fmt.Errorf("rules: a `use: %s` entry selects a library rule and takes no other keys (adjust it under overrides:)", r.Use)
-		}
 		c.uses = append(c.uses, useEntry{Pattern: r.Use, Index: len(rules)})
 	}
 	c.Rules = rules
-	return nil
 }
 
 // probeEngine reads the engine level before the strict decode, so a catalog
@@ -781,7 +773,10 @@ func requireSeverity(b []byte) error {
 		return fmt.Errorf("parse: %w", err)
 	}
 	for _, r := range raw.Rules {
-		if _, isUse := r["use"]; isUse {
+		if use, isUse := r["use"]; isUse {
+			if len(r) != 1 {
+				return fmt.Errorf("rules: a `use: %v` entry selects a library rule and takes no other keys (adjust it under overrides:)", use)
+			}
 			continue
 		}
 		id, _ := r["id"].(string)

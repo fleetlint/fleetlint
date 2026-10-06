@@ -191,3 +191,81 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 		t.Errorf("the source library still serves the rest: %+v", r)
 	}
 }
+
+// A lock freezes everything a lower layer could loosen: disabling, lowering,
+// rescoping, and the params and accept that shape what the rule demands.
+func TestLockFreezesParamsAndAccept(t *testing.T) {
+	t.Parallel()
+	org := catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  deps/vulnerability-scan: {locked: true, accept: [{name: ours, expr: \"true\"}]}\n  lint/go-linters-enabled: {locked: true, params: {required: [errcheck]}}\n"
+	for name, repoRules := range map[string]string{
+		"accept": "rules:\n  deps/vulnerability-scan:\n    accept: [{name: mine, expr: \"true\"}]\n",
+		"params": "rules:\n  lint/go-linters-enabled:\n    params: {required: []}\n",
+	} {
+		dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\n" + repoRules})
+		if _, err := config.Load(dir, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "params and accept cannot change") {
+			t.Errorf("%s on a locked rule: %v", name, err)
+		}
+	}
+	// The locking catalog's own params and accept apply, and raising stays allowed below.
+	dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\nrules:\n  lint/go-linters-enabled: {severity: error}\n"})
+	eff := loadDir(t, dir)
+	r, _ := ruleByID(eff, "lint/go-linters-enabled")
+	if req, _ := r.Params["required"].([]any); len(req) != 1 || r.Severity != model.SeverityError || !r.Locked {
+		t.Errorf("locking catalog sets params; the repository may still raise: %+v", r)
+	}
+}
+
+// Overrides adjust what a catalog took in, never what it defines itself:
+// a pattern skips the catalog's inline rules, an exact key is refused.
+func TestOverridesNeverTargetOwnInlineRules(t *testing.T) {
+	t.Parallel()
+	dir := writeAll(t, map[string]string{
+		"org.yaml":      catHead("org", ", includes: [\"fleetlint:minimal\"]") + "rules:\n" + inlineRule("acme/own", "own", "info") + "overrides:\n  \"*\": {raise: 1}\n",
+		config.FileName: "version: 1\nextends: [org.yaml]\n",
+	})
+	eff := loadDir(t, dir)
+	own, _ := ruleByID(eff, "acme/own")
+	inc, _ := ruleByID(eff, "repo/gitignore-present")
+	if own.Severity != model.SeverityInfo || inc.Severity != model.SeverityError {
+		t.Errorf("pattern raised own=%s included=%s", own.Severity, inc.Severity)
+	}
+	exact := writeAll(t, map[string]string{
+		"org.yaml":      catHead("org", "") + "rules:\n" + inlineRule("acme/own", "own", "info") + "overrides:\n  acme/own: {severity: error}\n",
+		config.FileName: "version: 1\nextends: [org.yaml]\n",
+	})
+	if _, err := config.Load(exact, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "defined in this catalog") {
+		t.Errorf("exact key on an own rule: %v", err)
+	}
+}
+
+// An override is an adjustment of a definition; a later inline redefinition
+// starts from its own text. What must survive a redefinition is a floor or
+// a lock, not a severity.
+func TestOverrideDoesNotSurviveRedefinitionButFloorDoes(t *testing.T) {
+	t.Parallel()
+	dir := writeAll(t, map[string]string{
+		"org.yaml":      catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  repo/editorconfig: {severity: error}\n  repo/gitattributes: {severity: error, min_severity: warning}\n",
+		"team.yaml":     catHead("team", "") + "rules:\n" + inlineRule("repo/editorconfig", "team's", "info") + inlineRule("repo/gitattributes", "team's", "warning"),
+		config.FileName: "version: 1\nsources: s.yaml\nextends: [org, team/a]\n",
+		"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n  team/a: team.yaml\n",
+	})
+	eff := loadDir(t, dir)
+	ec, _ := ruleByID(eff, "repo/editorconfig")
+	ga, _ := ruleByID(eff, "repo/gitattributes")
+	if ec.Severity != model.SeverityInfo || ga.Severity != model.SeverityWarning || ga.MinSeverity != "warning" {
+		t.Errorf("redefinition replaces severity, floor is inherited: %+v / %+v", ec, ga)
+	}
+	if len(eff.Weakened) != 2 {
+		t.Errorf("both lowerings across layers are recorded: %+v", eff.Weakened)
+	}
+	below := strings.Replace(inlineRule("repo/gitattributes", "team's", "info"), "", "", 1)
+	dir2 := writeAll(t, map[string]string{
+		"org.yaml":      catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  repo/gitattributes: {min_severity: warning}\n",
+		"team.yaml":     catHead("team", "") + "rules:\n" + below,
+		config.FileName: "version: 1\nsources: s.yaml\nextends: [org, team/a]\n",
+		"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n  team/a: team.yaml\n",
+	})
+	if _, err := config.Load(dir2, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "floor") {
+		t.Errorf("a redefinition below the floor is refused: %v", err)
+	}
+}
