@@ -167,6 +167,35 @@ func GlobRegexp(pattern string) string {
 	return b.String()
 }
 
+// libraryFor is the library a catalog's `use:` entries search: the rules/
+// tree shipped with the catalog, then the source's; the catalog's own rule
+// wins when both spell the same id.
+func (l Loader) libraryFor(c *Catalog) (*Library, error) {
+	shared, err := l.source().Library()
+	if err != nil {
+		return nil, err
+	}
+	if c.Library == nil {
+		return shared, nil
+	}
+	own, err := loadLibrary(c.Library)
+	if err != nil {
+		return nil, fmt.Errorf("catalog %s: %w", c.Metadata.Name, err)
+	}
+	merged := &Library{rules: map[string]model.Rule{}}
+	for id, r := range shared.rules {
+		merged.rules[id] = r
+	}
+	for id, r := range own.rules {
+		merged.rules[id] = r
+	}
+	for id := range merged.rules {
+		merged.ids = append(merged.ids, id)
+	}
+	sort.Strings(merged.ids)
+	return merged, nil
+}
+
 // expand replaces the catalog's `use:` entries with the library rules they
 // select, in place, keeping the order of the list. Each rule carries the
 // catalog as its source, like an inline rule.
@@ -174,12 +203,12 @@ func (l Loader) expand(c *Catalog) error {
 	if len(c.uses) == 0 {
 		return nil
 	}
-	lib, err := l.source().Library()
+	lib, err := l.libraryFor(c)
 	if err != nil {
 		return err
 	}
 	if len(lib.ids) == 0 {
-		return errors.New("`use:` needs a catalog source with a rules/ library")
+		return errors.New("`use:` needs a rules/ library: shipped with the catalog or in the catalog source")
 	}
 	have := map[string]bool{}
 	for _, r := range c.Rules {

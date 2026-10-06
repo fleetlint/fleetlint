@@ -493,10 +493,16 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 			return fmt.Errorf("catalog %s: rule %s: command rules are only allowed in the repository's own config", c.Ref, r.ID)
 		}
 		r.Layer = c.Layer
-		if prev, seen := byID[r.ID]; !seen {
+		prev, seen := byID[r.ID]
+		switch {
+		case !seen:
 			*order = append(*order, r.ID)
-		} else if err := e.redefine(c, prev, &r); err != nil {
-			return err
+		case c.Selected(r.ID):
+			continue // the same library rule, already loaded: the first catalog keeps it
+		default:
+			if err := e.redefine(c, prev, &r); err != nil {
+				return err
+			}
 		}
 		byID[r.ID] = &r
 	}

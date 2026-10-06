@@ -177,11 +177,19 @@ type Catalog struct {
 	// sources-file name it was referenced by, if any. Both are set by config.
 	Layer string `yaml:"-"`
 	Alias string `yaml:"-"`
+	// Library holds rules/<family>/<name>.yaml shipped with the catalog (a
+	// git tree or an OCI artifact); its `use:` entries search it before the
+	// source's library. nil when the catalog brings none.
+	Library fs.FS `yaml:"-"`
 	// uses are the `use:` entries awaiting expansion; used are the ids they
-	// brought in, which an included catalog defining the same rule supersedes.
+	// brought in, which the same rule loaded earlier supersedes.
 	uses []useEntry
 	used map[string]bool
 }
+
+// Selected reports whether the rule came into the catalog through `use:`
+// rather than an inline definition.
+func (c *Catalog) Selected(id string) bool { return c.used[id] }
 
 const presetPrefix = "fleetlint:"
 
@@ -433,12 +441,12 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 		return l.loadOCI(ref)
 	}
 	var (
-		b         []byte
-		templates fs.FS
-		err       error
+		b                  []byte
+		templates, library fs.FS
+		err                error
 	)
 	if strings.HasPrefix(ref, gitPrefix) && l.FetchGitTree != nil {
-		b, templates, err = l.readGitTree(ref)
+		b, templates, library, err = l.readGitTree(ref)
 	} else {
 		b, err = l.readPinned(ref)
 	}
@@ -449,6 +457,7 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
+	c.Library = library
 	if err := l.expand(c); err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
@@ -459,38 +468,51 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 // readGitTree reads a git catalog with the templates/ directory next to it.
 // Templates are taken only from a commit-pinned reference: the digest of a
 // tag reference covers the catalog file, not the files around it.
-func (l Loader) readGitTree(ref string) ([]byte, fs.FS, error) {
+func (l Loader) readGitTree(ref string) ([]byte, fs.FS, fs.FS, error) {
 	g, err := parseGitRef(ref)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	dir, file := path.Split(g.Path)
 	files, err := l.FetchGitTree(g.URL, g.Rev, strings.TrimSuffix(dir, "/"))
 	if err != nil {
-		return nil, nil, fmt.Errorf("fetch %s: %w", ref, err)
+		return nil, nil, nil, fmt.Errorf("fetch %s: %w", ref, err)
 	}
 	b, ok := files[file]
 	if !ok {
-		return nil, nil, fmt.Errorf("fetch %s: %s has no file %s", ref, g.URL, g.Path)
+		return nil, nil, nil, fmt.Errorf("fetch %s: %s has no file %s", ref, g.URL, g.Path)
 	}
 	if g.Digest != "" {
 		if err := VerifyDigest(b, g.Digest); err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", ref, err)
+			return nil, nil, nil, fmt.Errorf("%s: %w", ref, err)
 		}
 	}
 	if !g.isCommit() {
-		return b, nil, nil
+		return b, nil, nil, nil
 	}
-	templates := memFS{}
+	templates, library := shippedFiles(files)
+	return b, templates, library, nil
+}
+
+// shippedFiles sorts a catalog's companion files into its templates/ and
+// rules/ trees; either is nil when empty.
+func shippedFiles(files map[string][]byte) (templates, library fs.FS) {
+	t, r := memFS{}, memFS{}
 	for name, body := range files {
-		if strings.HasPrefix(name, templatesDir) {
-			templates[name] = body
+		switch {
+		case strings.HasPrefix(name, templatesDir):
+			t[name] = body
+		case strings.HasPrefix(name, "rules/"):
+			r[name] = body
 		}
 	}
-	if len(templates) == 0 {
-		return b, nil, nil
+	if len(t) > 0 {
+		templates = t
 	}
-	return b, templates, nil
+	if len(r) > 0 {
+		library = r
+	}
+	return templates, library
 }
 
 // readPinned returns the body of an https or git reference after checking

@@ -248,13 +248,10 @@ func (l Loader) loadOCI(ref string) ([]*Catalog, error) {
 }
 
 func catalogsFromArtifact(ref string, art *OCIArtifact) ([]*Catalog, error) {
-	templates := memFS{}
+	templates, library := shippedFiles(art.Files)
 	var names []string
-	for name, b := range art.Files {
-		switch {
-		case strings.HasPrefix(name, templatesDir):
-			templates[name] = b
-		case !strings.Contains(name, "/") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")):
+	for name := range art.Files {
+		if !strings.Contains(name, "/") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
 			names = append(names, name)
 		}
 	}
@@ -268,10 +265,7 @@ func catalogsFromArtifact(ref string, art *OCIArtifact) ([]*Catalog, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s (%s): %w", ref, name, err)
 		}
-		c.Ref, c.Digest = ref, art.Digest
-		if len(templates) > 0 {
-			c.Templates = templates
-		}
+		c.Ref, c.Digest, c.Templates, c.Library = ref, art.Digest, templates, library
 		out = append(out, c)
 	}
 	return out, nil
@@ -290,6 +284,37 @@ func (m memFS) Open(name string) (fs.File, error) {
 		}
 	}
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
+// ReadDir lists the immediate children of a directory, so fs.WalkDir works.
+func (m memFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	prefix := name + "/"
+	if name == "." {
+		prefix = ""
+	}
+	seen := map[string]bool{}
+	var out []fs.DirEntry
+	for k, b := range m {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		rest := strings.TrimPrefix(k, prefix)
+		child, _, isDir := strings.Cut(rest, "/")
+		if seen[child] {
+			continue
+		}
+		seen[child] = true
+		entry := &memFile{name: prefix + child, dir: isDir}
+		if !isDir {
+			entry.data = b
+		}
+		out = append(out, entry)
+	}
+	if len(out) == 0 {
+		return nil, &fs.PathError{Op: "readdir", Path: name, Err: fs.ErrNotExist}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name() < out[j].Name() })
+	return out, nil
 }
 
 type memFile struct {
