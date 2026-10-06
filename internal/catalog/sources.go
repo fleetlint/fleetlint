@@ -29,7 +29,10 @@ var teamAliasRe = regexp.MustCompile(`^team/[a-z0-9][a-z0-9._-]*$`)
 // Sources maps the names repositories write in `extends` to catalog
 // references, so that URLs and pins live in one file per organization.
 type Sources struct {
-	Version  int               `yaml:"version"`
+	Version int `yaml:"version"`
+	// Signers are the identities whose cosign signature makes an oci catalog
+	// trustworthy without a digest pin.
+	Signers  []Signer          `yaml:"signers,omitempty"`
 	Catalogs map[string]string `yaml:"catalogs"`
 }
 
@@ -103,6 +106,11 @@ func (s *Sources) validate(local string) error {
 	}
 	if len(s.Catalogs) == 0 {
 		return errors.New("catalogs is empty")
+	}
+	for i, sg := range s.Signers {
+		if err := sg.validate(); err != nil {
+			return fmt.Errorf("signers[%d]: %w", i, err)
+		}
 	}
 	for _, alias := range s.Aliases() {
 		target := s.Catalogs[alias]

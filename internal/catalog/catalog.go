@@ -84,6 +84,31 @@ const ConfigName = ".fleetlint.yaml"
 // FixTemplates serves the source's templates to the fix planner.
 func (s *Source) FixTemplates() Templates { return Templates{fsys: s.Templates} }
 
+// FixTemplatesOver serves the source's templates with the given file
+// systems in front: the first that has a file wins.
+func (s *Source) FixTemplatesOver(layers ...fs.FS) Templates {
+	if len(layers) == 0 {
+		return s.FixTemplates()
+	}
+	return Templates{fsys: overlayFS(append(layers, s.Templates))}
+}
+
+// overlayFS reads from the first layer that has the file.
+type overlayFS []fs.FS
+
+func (o overlayFS) Open(name string) (fs.File, error) {
+	for _, layer := range o {
+		f, err := layer.Open(name)
+		if err == nil {
+			return f, nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
 // PresetNames lists the presets of the source.
 func (s *Source) PresetNames() []string {
 	entries, _ := fs.ReadDir(s.Presets, "presets")
@@ -140,6 +165,9 @@ type Catalog struct {
 	// Trusted is true only for the repo's own config and local rule files it
 	// points to; presets and remote catalogs are untrusted.
 	Trusted bool `yaml:"-"`
+	// Templates holds fix templates shipped with the catalog (templates/...),
+	// which overlay the preset ones; nil when the catalog brings none.
+	Templates fs.FS `yaml:"-"`
 	// Layer is who owns the catalog (preset, org, team or repo); Alias is the
 	// sources-file name it was referenced by, if any. Both are set by config.
 	Layer string `yaml:"-"`
@@ -150,7 +178,7 @@ const presetPrefix = "fleetlint:"
 
 // isPinnedRef reports whether ref names an https or git source.
 func isPinnedRef(ref string) bool {
-	return strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, gitPrefix)
+	return strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, gitPrefix) || strings.HasPrefix(ref, ociPrefix)
 }
 
 // Override changes a rule that came from an included catalog: its severity,
@@ -203,6 +231,14 @@ type Loader struct {
 	// FetchCatalog provides a whole catalog repository at a tag or commit as
 	// a directory, with the commit it resolved to; nil disables pinning.
 	FetchCatalog func(repoURL, rev string) (dir, commit string, err error)
+	// FetchOCI reads a catalog artifact from a registry; nil disables oci catalogs.
+	FetchOCI func(OCIRef) (*OCIArtifact, error)
+	// TrustedRoot provides sigstore trust material for signature checks;
+	// nil disables them, which makes signed sources unusable.
+	TrustedRoot TrustedRootFunc
+	// Signers are the identities the sources file trusts for oci catalogs;
+	// config sets them after reading the sources file.
+	Signers []Signer
 	// Source is the catalog `fleetlint:<preset>` resolves in; nil is the
 	// built-in one.
 	Source *Source
@@ -245,7 +281,7 @@ func (l Loader) source() *Source {
 
 // RemoteLoader is the Loader for commands that may use the network.
 func RemoteLoader(ctx context.Context) Loader {
-	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchCatalog: PinFetch(ctx, "")}
+	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchCatalog: PinFetch(ctx, ""), FetchOCI: OCIFetch(ctx), TrustedRoot: PublicTrustedRoot(ctx)}
 }
 
 // Load resolves one reference: `fleetlint:<preset>`, a local path (file or
@@ -347,6 +383,9 @@ func (l Loader) loadLocal(ref string) ([]*Catalog, error) {
 
 // loadPinned loads an https or git catalog.
 func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
+	if strings.HasPrefix(ref, ociPrefix) {
+		return l.loadOCI(ref)
+	}
 	b, err := l.readPinned(ref)
 	if err != nil {
 		return nil, err
@@ -364,6 +403,9 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 func (l Loader) readPinned(ref string) ([]byte, error) {
 	if strings.HasPrefix(ref, gitPrefix) {
 		return l.readGit(ref)
+	}
+	if strings.HasPrefix(ref, ociPrefix) {
+		return nil, fmt.Errorf("%s: a sources file cannot come from a registry; use https or git", ref)
 	}
 	url, want, ok := strings.Cut(ref, "#")
 	if !ok || !strings.HasPrefix(want, "sha256-") {

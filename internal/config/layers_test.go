@@ -96,7 +96,7 @@ func TestSourcesRejected(t *testing.T) {
 		},
 		"unknown key in sources": {
 			config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n",
-			"s.yaml":        "version: 1\nsigners: []\ncatalogs:\n  org: org.yaml\n", "org.yaml": org,
+			"s.yaml":        "version: 1\nmaintainers: []\ncatalogs:\n  org: org.yaml\n", "org.yaml": org,
 		},
 		"missing sources file": {
 			config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n",
@@ -144,5 +144,50 @@ func TestFloorHoldsAcrossCatalogs(t *testing.T) {
 	// The floor survives the team's redefinition: the repository still cannot go below it.
 	if _, err := loadLayered(t, files("warning", "rules:\n  org/floored: {severity: info, reason: r}\n")); err == nil {
 		t.Fatal("the org floor must still bind the repository after a team redefinition")
+	}
+}
+
+// A sources file hands its signers to the loader, and the templates an
+// extended catalog ships overlay the preset ones in fix.
+func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
+	t.Parallel()
+	digest := strings.Repeat("a", 64)
+	fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
+		return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{
+			"catalog.yaml":          []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: acme, version: 1.0.0, includes: [\"fleetlint:minimal\"]}\nrules: []\n"),
+			"templates/SECURITY.md": []byte("acme policy\n"),
+		}, Bundles: [][]byte{[]byte("sig")}}, nil
+	}
+	sources := "version: 1\nsigners:\n  - issuer: https://token.actions.githubusercontent.com\n    subject_regex: '^https://github\\.com/acme/'\ncatalogs:\n  org: oci://registry.example/acme/catalog:1\n"
+	write := func(t *testing.T, sources string) string {
+		t.Helper()
+		dir := t.TempDir()
+		for name, body := range map[string]string{config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n", "s.yaml": sources} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	// Signers listed: the loader verifies, and without trust material says so.
+	_, err := config.Load(write(t, sources), config.Options{Loader: catalog.Loader{FetchOCI: fetch}})
+	if err == nil || !strings.Contains(err.Error(), "signature verification is disabled") {
+		t.Fatalf("the sources file's signers reach the loader: %v", err)
+	}
+	// No signers, a digest: the catalog loads and brings its template.
+	pinned := "version: 1\ncatalogs:\n  org: oci://registry.example/acme/catalog@sha256:" + digest + "\n"
+	eff, err := config.Load(write(t, pinned), config.Options{Loader: catalog.Loader{FetchOCI: fetch}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := eff.FixTemplates()
+	if b, err := tpl.Template("SECURITY.md"); err != nil || string(b) != "acme policy\n" {
+		t.Errorf("the org catalog's template wins: %q %v", b, err)
+	}
+	if b, err := tpl.Template("editorconfig"); err != nil || len(b) == 0 {
+		t.Errorf("preset templates remain: %v", err)
+	}
+	if r, ok := ruleByID(eff, "repo/no-tracked-junk"); !ok || r.Layer != catalog.LayerPreset {
+		t.Errorf("the include came through: %+v", r)
 	}
 }

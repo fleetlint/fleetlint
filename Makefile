@@ -10,6 +10,8 @@ VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 LDFLAGS     := -s -w -X github.com/fleetlint/fleetlint/internal/cli.Version=$(VERSION)
 PKGS        := ./...
 LICENSES    ?= MIT,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,MPL-2.0
+# Apache-2.0 modules whose LICENSE sits above a nested go.mod, where go-licenses does not look (sigstore-go dependencies).
+LICENSE_IGNORE := --ignore=github.com/in-toto/attestation --ignore=github.com/in-toto/in-toto-golang --ignore=github.com/cyberphone/json-canonicalization
 # Each pin carries a `# renovate:` comment so Renovate bumps it (customManagers:makefileVersions).
 # renovate: datasource=go depName=github.com/google/go-licenses/v2
 GO_LICENSES_VERSION ?= v2.0.1
@@ -73,7 +75,7 @@ mutate: ## mutation testing on the core packages (weekly in CI, not part of chec
 
 audit: ## vulnerabilities, licenses, tidy module graph, secrets
 	govulncheck $(PKGS)
-	$(GO_LICENSES) check $(PKGS) --allowed_licenses=$(LICENSES)
+	$(GO_LICENSES) check $(PKGS) --allowed_licenses=$(LICENSES) $(LICENSE_IGNORE)
 	go mod tidy -diff
 	gitleaks git --no-banner --redact .
 

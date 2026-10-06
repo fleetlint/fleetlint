@@ -144,11 +144,11 @@ func planRule(r *repo.Repo, run *engine.Run, res model.Result) ([]fix.Change, er
 	return planned, nil
 }
 
-// templatesFor returns the templates of the catalog the run used: a pinned
-// version's when the repository pins one, the built-in ones otherwise.
+// templatesFor returns the templates of the run's configuration: files the
+// extended catalogs ship, over the pinned or built-in catalog's.
 func templatesFor(run *engine.Run) fix.Templates {
-	if run.Config != nil && run.Config.Source != nil {
-		return run.Config.Source.FixTemplates()
+	if run.Config != nil {
+		return run.Config.FixTemplates()
 	}
 	return catalog.EmbeddedTemplates{}
 }

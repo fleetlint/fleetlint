@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -126,6 +127,23 @@ type Effective struct {
 	Exceptions []model.Exception
 	// Weakened lists severity reductions with their reasons.
 	Weakened []Disabled
+}
+
+// FixTemplates returns the templates for `fix`: files shipped with the
+// catalogs the repository extends, later layers first, over the preset
+// source's templates.
+func (e *Effective) FixTemplates() catalog.Templates {
+	layers := make([]fs.FS, 0, len(e.Catalogs)+1)
+	for i := len(e.Catalogs) - 1; i >= 0; i-- {
+		if e.Catalogs[i].Templates != nil {
+			layers = append(layers, e.Catalogs[i].Templates)
+		}
+	}
+	src := e.Source
+	if src == nil {
+		src = catalog.Builtin()
+	}
+	return src.FixTemplatesOver(layers...)
 }
 
 // Options controls loading.
@@ -380,7 +398,7 @@ func (f FactOverrides) ToFacts() facts.Overrides {
 func (e *Effective) resolve(opts Options) error {
 	byID := map[string]*model.Rule{}
 	var order []string
-	entries, err := e.extendsEntries(opts.Loader)
+	entries, err := e.extendsEntries(&opts.Loader)
 	if err != nil {
 		return err
 	}
@@ -429,8 +447,10 @@ type extendsEntry struct {
 
 // extendsEntries resolves sources-file names in `extends`. With a sources
 // file the layer order is fixed (presets, org, teams, repo) however the
-// entries are written; without one the written order is kept.
-func (e *Effective) extendsEntries(l catalog.Loader) ([]extendsEntry, error) {
+// entries are written; without one the written order is kept. The sources
+// file's signers become the loader's, so oci catalogs it names can be
+// verified.
+func (e *Effective) extendsEntries(l *catalog.Loader) ([]extendsEntry, error) {
 	entries := make([]extendsEntry, 0, len(e.File.Extends))
 	if e.File.Sources == "" {
 		for _, ref := range e.File.Extends {
@@ -442,6 +462,7 @@ func (e *Effective) extendsEntries(l catalog.Loader) ([]extendsEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", FileName, err)
 	}
+	l.Signers = src.Signers
 	for _, ref := range e.File.Extends {
 		layer, isAlias := catalog.AliasLayer(ref)
 		target, known := src.Catalogs[ref]
