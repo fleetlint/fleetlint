@@ -188,3 +188,23 @@ func TestReportsNameToolAndCatalog(t *testing.T) {
 		t.Errorf("missing versions are stated, not left out:\n%s", out)
 	}
 }
+
+func TestActionsStartWithTheMechanicalFixes(t *testing.T) {
+	t.Parallel()
+	fail := func(id string, fixable bool) model.Result {
+		return model.Result{Rule: model.Rule{ID: id, Title: id}, Status: model.StatusFail, Severity: model.SeverityError, Fixable: fixable}
+	}
+	var b strings.Builder
+	if err := report.WriteActions(&b, "x", []model.Result{fail("a/b", true), fail("c/d", false)}); err != nil {
+		t.Fatal(err)
+	}
+	out := b.String()
+	if i, j := strings.Index(out, "`fleetlint fix --apply` makes the changes for the 1 rules"), strings.Index(out, "## 1."); i < 0 || i > j {
+		t.Errorf("the fix-first step comes before the list:\n%s", out)
+	}
+	b.Reset()
+	_ = report.WriteActions(&b, "x", []model.Result{fail("c/d", false)})
+	if strings.Contains(b.String(), "Start with the mechanical part") {
+		t.Error("no fix-first step when nothing is mechanical")
+	}
+}

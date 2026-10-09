@@ -7,6 +7,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Added
 
+- Action lists (`check -f agent` and the fleet's `actions/`) start with `fleetlint fix --apply` when part of the work is mechanical, before the manual steps.
 - An inferred tier says so: the tier source is `inferred` with the deciding fact (`inferred from release pipeline`) instead of `default`, which remains for the plain tier 3.
 
 ### Fixed
