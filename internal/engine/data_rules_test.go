@@ -65,3 +65,28 @@ func TestActionsPinned(t *testing.T) {
 		t.Fatalf("gitea workflows are checked too: %+v", s.Findings[1])
 	}
 }
+
+func TestTrackedEnvNamesEachFile(t *testing.T) {
+	t.Parallel()
+	out := run(t, map[string]string{
+		"go.mod": "module x\n", ".env": "K=v", "dev/.env.dev": "K=v", ".env.example": "K=", "deploy/.env.sops": "K: ENC[x]", "secrets/.env.age": "x",
+	}, tier1Public)
+	s := status(t, out, "repo/no-tracked-env")
+	paths := map[string]bool{}
+	for _, f := range s.Findings {
+		paths[f.Path] = true
+	}
+	if s.Status != model.StatusFail || len(paths) != 2 || !paths[".env"] || !paths["dev/.env.dev"] {
+		t.Fatalf("want the two plain .env files, located; templates and encrypted files pass: %+v", s.Findings)
+	}
+}
+
+func TestStrictFlagsReadTsconfigWithComments(t *testing.T) {
+	t.Parallel()
+	out := run(t, map[string]string{
+		"package.json": "{}", "tsconfig.json": "{\n  // strict on\n  \"compilerOptions\": {\"strict\": true,},\n}\n",
+	}, tier1Public)
+	if s := status(t, out, "lint/node-strict-flags"); s.Status != model.StatusFail || s.Err != "" || len(s.Findings) != 4 {
+		t.Fatalf("a commented tsconfig is read, not a rule error: %+v", s)
+	}
+}

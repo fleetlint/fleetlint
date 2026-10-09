@@ -27,6 +27,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- `json()` reads comments and trailing commas (JWCC, through `github.com/tailscale/hujson`), so a commented `tsconfig.json` no longer makes `lint/node-strict-flags` a rule error.
 - The built-in catalog reports a tracked `.env` file or agent file with its path, no longer takes a Go function called `fit` or an encrypted `.env` file for a finding, and its agent instructions lose a literal `\n`.
 
 ### Security

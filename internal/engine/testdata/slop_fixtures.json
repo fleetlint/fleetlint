@@ -1,7 +1,9 @@
 {
   "slop/focused-tests": {
     "pass": {
-      "a.test.ts": "it('adds', () => {})\n"
+      "a.test.ts": "it('adds', () => {})\n",
+      "render.go": "package a\n\nfunc draw() { fit(label, width) }\n",
+      "widget.dart": "const solo: true\n"
     },
     "fail": {
       "a.test.ts": "it.only('adds', () => {})\n"

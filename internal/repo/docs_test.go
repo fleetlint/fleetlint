@@ -50,3 +50,17 @@ a-b.c:
 		}
 	}
 }
+
+func TestJSONAcceptsCommentsAndTrailingCommas(t *testing.T) {
+	t.Parallel()
+	v, err := parseDoc(FormatJSON, "{\n  // tsconfig allows comments\n  \"compilerOptions\": { \"strict\": true, /* and these */ },\n}\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts := v.(map[string]any)["compilerOptions"].(map[string]any); opts["strict"] != true {
+		t.Fatalf("parsed %v", v)
+	}
+	if _, err := parseDoc(FormatJSON, "{\"a\": }"); err == nil {
+		t.Fatal("broken JSON is still an error")
+	}
+}

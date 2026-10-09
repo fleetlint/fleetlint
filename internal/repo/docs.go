@@ -10,6 +10,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/goccy/go-yaml"
+	"github.com/tailscale/hujson"
 )
 
 // Format names a structured document syntax.
@@ -64,7 +65,13 @@ func parseDoc(format Format, text string) (any, error) {
 		}
 		v = m
 	case FormatJSON:
-		if err := json.Unmarshal([]byte(text), &v); err != nil {
+		// Comments and trailing commas are accepted, as tsconfig.json,
+		// devcontainer.json and editor settings allow them.
+		std, err := hujson.Standardize([]byte(text))
+		if err != nil {
+			return nil, fmt.Errorf("parse json: %w", err)
+		}
+		if err := json.Unmarshal(std, &v); err != nil {
 			return nil, fmt.Errorf("parse json: %w", err)
 		}
 	default:

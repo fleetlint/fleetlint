@@ -36,7 +36,7 @@ var Accessors = []Accessor{
 	{"lines(path: string) -> list<string>", "File contents split into lines."},
 	{"yaml(path: string) -> dyn", "Parsed YAML document; null when absent."},
 	{"toml(path: string) -> dyn", "Parsed TOML document; null when absent."},
-	{"json(path: string) -> dyn", "Parsed JSON document; null when absent."},
+	{"json(path: string) -> dyn", "Parsed JSON document; null when absent. Comments and trailing commas are accepted (JWCC), as in tsconfig.json."},
 	{"makefile(path: string) -> map", "`{targets: list<string>, deps: map<string, list<string>>, recipes: map<string, list<string>>}`; null when absent."},
 	{"scan(path: string, regex: string) -> list<int>", "1-based line numbers where the regex matches."},
 	{"matchesAny(list: list<string>, regex: string) -> bool", "True if any element matches the regex."},
