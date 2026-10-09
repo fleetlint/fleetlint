@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +102,41 @@ func TestInlineHTML(t *testing.T) {
 	}
 	if got := inlineHTML("odd ` tick"); got != "odd ` tick" {
 		t.Errorf("unbalanced backticks stay text, got %q", got)
+	}
+}
+
+func TestJSONStoresDefinitionsOnce(t *testing.T) {
+	t.Parallel()
+	rep := triageReport()
+	adjusted := rep.Repos[1].Results[0]
+	adjusted.Rule.Params = map[string]any{"required": []any{"check"}}
+	rep.Repos[1].Results[0] = adjusted
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Version     int                       `json:"version"`
+		Definitions map[string]map[string]any `json:"definitions"`
+		Repos       []struct {
+			Results []struct {
+				Rule       string `json:"rule"`
+				Definition string `json:"definition"`
+			} `json:"results"`
+		} `json:"repos"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Version != jsonFormat || len(out.Definitions) != 6 {
+		t.Fatalf("version %d, %d definitions: %v", out.Version, len(out.Definitions), out.Definitions)
+	}
+	first, second := out.Repos[0].Results[0], out.Repos[1].Results[0]
+	if first.Rule != "a/hooks" || first.Definition != "" || second.Rule != "a/hooks" || second.Definition != "a/hooks#2" {
+		t.Fatalf("results reference definitions: %+v %+v", first, second)
+	}
+	if out.Definitions["a/hooks#2"]["params"] == nil {
+		t.Fatal("the adjusted definition is stored under its own key")
 	}
 }
 

@@ -54,8 +54,8 @@ func TestFleetFromForge(t *testing.T) {
 				Visibility string `json:"visibility"`
 			} `json:"facts"`
 			Results []struct {
-				Rule   struct{ ID string } `json:"rule"`
-				Status string              `json:"status"`
+				Rule   string `json:"rule"`
+				Status string `json:"status"`
 			} `json:"results"`
 		} `json:"repos"`
 	}
@@ -67,7 +67,7 @@ func TestFleetFromForge(t *testing.T) {
 	for _, r := range rep.Repos {
 		status := ""
 		for _, res := range r.Results {
-			if res.Rule.ID == "public/no-agent-files" {
+			if res.Rule == "public/no-agent-files" {
 				status = res.Status
 			}
 		}

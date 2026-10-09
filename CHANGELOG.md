@@ -18,6 +18,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Changed
 
+- **BREAKING** `fleet.json` stores each rule definition once under `definitions` and gives `version: 2`; a result's `rule` is the rule id, and `definition` names the stored definition when the repository adjusted it. For fifty repositories the file shrinks from about 10 MB to about 1.3 MB. Compatibility: readers of `results[].rule.id` read `results[].rule` and look the definition up.
 - Rules that could not be evaluated no longer count against compliance; before, they lowered it like a failure.
 - Rule errors have their own column and section and no longer count as failures in the rule table.
 - The rule table and matrix leave out rules that apply to no repository (listed in one line) and tell apart a rule a repository does not select (`·`) from one that does not apply (`-`).
