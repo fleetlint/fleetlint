@@ -10,6 +10,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - Action lists (`check -f agent` and the fleet's `actions/`) start with `fleetlint fix --apply` when part of the work is mechanical, before the manual steps.
 - An inferred tier says so: the tier source is `inferred` with the deciding fact (`inferred from release pipeline`) instead of `default`, which remains for the plain tier 3.
 
+### Changed
+
+- Rules that could not be evaluated no longer count against compliance; before, they lowered it like a failure.
+
 ### Fixed
 
 - The built-in catalog reports a tracked `.env` file or agent file with its path, no longer takes a Go function called `fit` or an encrypted `.env` file for a finding, and its agent instructions lose a literal `\n`.

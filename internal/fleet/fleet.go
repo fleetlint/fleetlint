@@ -132,8 +132,10 @@ type RepoReport struct {
 }
 
 // Compliance is the share of applicable rules that pass or are excepted.
+// Rules that could not be evaluated say nothing about the repository and
+// are left out; reports list them separately.
 func (r RepoReport) Compliance() float64 {
-	applicable := r.Summary.Pass + r.Summary.Fail + r.Summary.Excepted + r.Summary.Baselined + r.Summary.Error
+	applicable := r.Summary.Pass + r.Summary.Fail + r.Summary.Excepted + r.Summary.Baselined
 	if applicable == 0 {
 		return 0 // nothing applied: no evidence of compliance
 	}

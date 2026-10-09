@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetlint/fleetlint/internal/fleet"
+	"github.com/fleetlint/fleetlint/internal/model"
 	_ "github.com/fleetlint/fleetlint/internal/rules/builtin"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
@@ -180,6 +181,14 @@ func TestComplianceWithoutApplicableRules(t *testing.T) {
 	t.Parallel()
 	if c := (fleet.RepoReport{}).Compliance(); c != 0 {
 		t.Fatalf("no applicable rules is no evidence of compliance, got %v", c)
+	}
+}
+
+func TestComplianceLeavesRuleErrorsOut(t *testing.T) {
+	t.Parallel()
+	r := fleet.RepoReport{Summary: model.Counts{Pass: 1, Fail: 1, Error: 1}}
+	if c := r.Compliance(); c != 0.5 {
+		t.Fatalf("a rule that could not be evaluated says nothing about the repository: compliance %v, want 0.5", c)
 	}
 }
 
