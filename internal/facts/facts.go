@@ -22,6 +22,9 @@ const (
 	SourceDetected   Source = "detected"
 	SourceConfigured Source = "configured"
 	SourceDefault    Source = "default"
+	// SourceInferred is a value guessed from other facts (the tier from
+	// visibility, release or CI); TierReason says from which.
+	SourceInferred Source = "inferred"
 )
 
 // Visibility of the repository on its forge.
@@ -47,7 +50,9 @@ type Facts struct {
 	// engine, set by configuration.
 	Container string `json:"container"`
 	Tier      int    `json:"tier"`
-	Layout    string `json:"layout"`
+	// TierReason names the fact an inferred tier was derived from.
+	TierReason string `json:"tier_reason,omitempty"`
+	Layout     string `json:"layout"`
 	// Members are workspace member directories (repo-relative), when Layout is "workspace".
 	Members    []string   `json:"members,omitempty"`
 	CI         []string   `json:"ci"`
@@ -133,8 +138,11 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 	applyOverrides(&f, ov)
 
 	if f.Tier == 0 {
-		f.Tier = defaultTier(f)
+		f.Tier, f.TierReason = defaultTier(f)
 		f.Sources["tier"] = SourceDefault
+		if f.TierReason != "" {
+			f.Sources["tier"] = SourceInferred
+		}
 	}
 	return f
 }
@@ -160,6 +168,15 @@ func applyOverrides(f *Facts, ov Overrides) {
 		f.Tier = ov.Tier
 		f.Sources["tier"] = SourceConfigured
 	}
+}
+
+// TierSource says where the tier came from, with the deciding fact when it
+// was inferred: "configured", "default" or "inferred from CI".
+func (f Facts) TierSource() string {
+	if f.Sources["tier"] == SourceInferred && f.TierReason != "" {
+		return "inferred from " + f.TierReason
+	}
+	return string(f.Sources["tier"])
 }
 
 // Public is a convenience for rules.
@@ -362,15 +379,20 @@ func detectHooks(r *repo.Repo) []string {
 
 // defaultTier guesses how seriously a repo should be treated when the config
 // does not say. Public repos and anything with a release pipeline are tier 1;
-// anything with CI or tags is tier 2; the rest are experiments.
-func defaultTier(f Facts) int {
+// anything with CI or tags is tier 2; the rest are experiments. The reason
+// names the deciding fact; it is empty for the plain default.
+func defaultTier(f Facts) (int, string) {
 	switch {
-	case f.Visibility == VisibilityPublic, f.Release.Exists:
-		return 1
-	case len(f.CI) > 0, f.Release.LatestTag != "":
-		return 2
+	case f.Visibility == VisibilityPublic:
+		return 1, "public"
+	case f.Release.Exists:
+		return 1, "release pipeline"
+	case len(f.CI) > 0:
+		return 2, "CI"
+	case f.Release.LatestTag != "":
+		return 2, "tags"
 	}
-	return 3
+	return 3, ""
 }
 
 func fmtAny(v any) string {

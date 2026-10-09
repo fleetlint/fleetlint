@@ -199,7 +199,7 @@ func TestPublicRepoRules(t *testing.T) {
 	if s := status(t, out, "public/no-agent-files"); s.Status != model.StatusFail {
 		t.Fatalf("tracked CLAUDE.md in a public repo must fail: %+v", s)
 	}
-	if out.Facts.Tier != 1 || out.Facts.Sources["tier"] != "default" {
+	if out.Facts.Tier != 1 || out.Facts.Sources["tier"] != "inferred" || out.Facts.TierReason != "public" {
 		t.Fatalf("public repos default to tier 1, got %d (%s)", out.Facts.Tier, out.Facts.Sources["tier"])
 	}
 }

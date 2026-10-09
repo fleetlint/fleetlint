@@ -150,7 +150,7 @@ func writeTable(w io.Writer, run *engine.Run, opts Options) error {
 	paint := painter(opts.Color)
 	ew.printf("%s  stacks: %s  forge: %s  visibility: %s  tier: %d (%s)  release: %s\n",
 		paint(bold, f.Name), orNone(strings.Join(f.Stacks, ",")), f.Forge, f.Visibility, f.Tier,
-		f.Sources["tier"], yesNo(f.Release.Exists))
+		f.TierSource(), yesNo(f.Release.Exists))
 	ew.printf("%s   %s   %s   %d excepted   %d not applicable",
 		paint(green, fmt.Sprintf("%d passed", c.Pass)), paint(yellow, fmt.Sprintf("%d warnings", c.Warnings)), paint(red, fmt.Sprintf("%d errors", c.Errors)), c.Excepted, c.NotApplicable)
 	if c.Baselined > 0 {

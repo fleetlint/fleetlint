@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- An inferred tier says so: the tier source is `inferred` with the deciding fact (`inferred from release pipeline`) instead of `default`, which remains for the plain tier 3.
+
 ### Fixed
 
 - The built-in catalog reports a tracked `.env` file or agent file with its path, no longer takes a Go function called `fit` or an encrypted `.env` file for a finding, and its agent instructions lose a literal `\n`.

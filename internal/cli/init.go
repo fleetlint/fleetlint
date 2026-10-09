@@ -81,7 +81,7 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 		fmt.Fprintf(&b, "  visibility: %s   # as the forge reported it at init; update it if the repository changes hands\n", looked)
 	}
 	fmt.Fprintf(&b, "# discovered: stacks=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
-		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.Sources["tier"], f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
+		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
 	if len(runners) > 1 {
 		fmt.Fprintf(&b, "# task runners found: %s. %s is used; set `facts.taskrunner` to choose another.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
 	}
@@ -102,7 +102,7 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"forge", f.Forge + hostSuffix(f.ForgeHost), string(f.Sources["forge"])},
 		{"visibility", string(f.Visibility), string(f.Sources["visibility"])},
 		{"container", f.Container, string(f.Sources["container"])},
-		{"tier", fmt.Sprint(f.Tier), string(f.Sources["tier"])},
+		{"tier", fmt.Sprint(f.Tier), f.TierSource()},
 		{"layout", f.Layout, string(f.Sources["layout"])},
 		{"ci", orNone(strings.Join(f.CI, ", ")), "detected"},
 		{"release", releaseText(f), "detected"},
