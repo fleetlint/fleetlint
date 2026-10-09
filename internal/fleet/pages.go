@@ -13,8 +13,7 @@ func actionsHTML(name string, md []byte) []byte {
 	var b strings.Builder
 	b.WriteString("<!doctype html><meta charset=utf-8><title>fleetlint: ")
 	b.WriteString(html.EscapeString(name))
-	b.WriteString("</title><style>body{font:15px/1.5 system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem;color:#1b1b1b}" +
-		"pre{background:#f4f4f4;padding:.75rem;overflow:auto}code{background:#f4f4f4;padding:0 3px;border-radius:3px}pre code{padding:0}h2{margin-top:2rem}a{color:#005a9c}</style>" +
+	b.WriteString("</title><meta name=viewport content=\"width=device-width,initial-scale=1\"><style>" + baseCSS + pageCSS + "</style>" +
 		"<p><a href=\"../index.html\">&larr; fleet report</a></p>\n")
 	inFence := false
 	for _, line := range strings.Split(string(md), "\n") {

@@ -602,21 +602,7 @@ func renderActions(r RepoReport) []byte {
 
 func renderHTML(v *view) []byte {
 	var b strings.Builder
-	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fleet report</title><style>
-:root{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#ddd;--ok:#2e7d32;--warn:#b26a00;--err:#c62828;--code:#f4f4f4}
-@media(prefers-color-scheme:dark){:root{--bg:#121212;--fg:#eee;--muted:#9a9a9a;--line:#333;--ok:#81c784;--warn:#ffb74d;--err:#ef5350;--code:#222}}
-body{font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px;max-width:1600px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}.muted{color:var(--muted)}p{max-width:70rem}
-code{font:12.5px ui-monospace,monospace;background:var(--code);padding:0 3px;border-radius:3px}
-table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left;white-space:nowrap}
-th{position:sticky;top:0;background:var(--bg)}td.c{text-align:center}
-table.sort th{cursor:pointer}table.sort th:hover{text-decoration:underline}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}.na{color:var(--muted)}
-.bar{display:inline-block;height:10px;vertical-align:middle;margin-right:6px}.b-ok{background:var(--ok)}.b-warn{background:var(--warn)}.b-err{background:var(--err)}
-.wrap{overflow-x:auto}abbr{text-decoration:none;cursor:help}.filter{margin:0 0 8px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
-.filter input[type=search]{font:inherit;padding:3px 6px;min-width:16rem;background:var(--bg);color:var(--fg);border:1px solid var(--line)}
-th.rot{height:170px;vertical-align:bottom;padding:4px 2px}th.rot div{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:normal;font-size:12px}
-</style></head><body>`)
+	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fleet report</title><style>` + baseCSS + reportCSS + `</style></head><body>`)
 	fmt.Fprintf(&b, "<h1>Fleet report</h1><p class=muted>%s</p><p><strong>%s</strong></p>", html.EscapeString(v.generated()), inlineHTML(v.headline()))
 	before, after := v.sections()
 	for _, t := range before {

@@ -16,6 +16,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - The fleet file takes `group:` per entry; the report has a group summary next to the team summary.
 - **Discovery.** `fleet --discover <dir>` finds git repositories below a directory (four levels, not inside other repositories), names colliding ones by their path, groups them by the directory they sit in, and lists project directories that are in no repository of their own. `--exclude <glob>` skips paths.
 - The HTML report has the same sections as the Markdown one (it lacked the rule table), renders inline code, colors compliance by threshold, sorts tables by column and filters the matrix.
+- The HTML report and the action pages share one stylesheet with light and dark colors at readable contrast; links in dark mode were the browser's default blue on black, and the action pages had no dark mode.
 
 ### Changed
 
