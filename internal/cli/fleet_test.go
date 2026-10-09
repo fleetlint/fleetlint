@@ -61,6 +61,8 @@ func TestFleetSpecErrors(t *testing.T) {
 		{"nothing to check", nil, "no repositories"},
 		{"missing fleet file", []string{"--repos", filepath.Join(work, "missing.yaml")}, "no such file"},
 		{"invalid fleet file", []string{"--repos", filepath.Join(work, "bad.yaml")}, "version must be 1"},
+		{"exclude without discover", []string{"--exclude", "x/*", work}, "--exclude needs --discover"},
+		{"discover a missing directory", []string{"--discover", filepath.Join(work, "missing")}, "no such file"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -70,5 +72,33 @@ func TestFleetSpecErrors(t *testing.T) {
 				t.Fatalf("exit %d, stderr %q; want exit %d mentioning %q", code, stderr, cli.ExitConfig, c.want)
 			}
 		})
+	}
+}
+
+func TestFleetDiscover(t *testing.T) {
+	t.Parallel()
+	work := t.TempDir()
+	repo := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"})
+	group := filepath.Join(work, "group")
+	if err := os.MkdirAll(group, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(repo.Root, filepath.Join(group, "svc")); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFiles(t, work, map[string]string{"loose/main.go": "package main\n"})
+	out := filepath.Join(work, "report")
+	code, stdout, stderr := runCLI(t, work, "fleet", "--discover", work, "--exclude", "report", "--out", out)
+	if code != cli.ExitOK || !strings.Contains(stdout, "1 repositories checked") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	md, err := os.ReadFile(filepath.Join(out, "fleet.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"| svc | group |", "## Not under version control", filepath.Join(work, "loose")} {
+		if !strings.Contains(string(md), want) {
+			t.Errorf("report lacks %q:\n%s", want, md)
+		}
 	}
 }

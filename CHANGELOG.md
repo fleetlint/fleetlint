@@ -14,6 +14,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - **Facts to pin.** The tier and visibility of every repository where they were guessed or are unknown, with the line to add to `.fleetlint.yaml`.
 - An inferred tier says so: the tier source is `inferred` with the deciding fact (`inferred from release pipeline`) instead of `default`, which remains for the plain tier 3.
 - The fleet file takes `group:` per entry; the report has a group summary next to the team summary.
+- **Discovery.** `fleet --discover <dir>` finds git repositories below a directory (four levels, not inside other repositories), names colliding ones by their path, groups them by the directory they sit in, and lists project directories that are in no repository of their own. `--exclude <glob>` skips paths.
 - The HTML report has the same sections as the Markdown one (it lacked the rule table), renders inline code, colors compliance by threshold, sorts tables by column and filters the matrix.
 
 ### Changed

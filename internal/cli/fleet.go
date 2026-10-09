@@ -16,7 +16,7 @@ import (
 
 func fleetCmd(g *globals, code *int) *cobra.Command {
 	var specPath, out, cache string
-	var from []string
+	var from, discoverRoots, exclude []string
 	var update, failOnFindings bool
 	cmd := &cobra.Command{
 		Use:   "fleet [path...]",
@@ -26,9 +26,14 @@ runs check in each, and writes fleet.html, fleet.md, fleet.json, actions/<repo>.
 and history/<timestamp>.json into --out. URL entries are cloned into --cache.
 --from lists an owner's repositories through the forge API (GITHUB_TOKEN or
 GITEA_TOKEN from the environment, if set) and clones them over https with the
-same token; without one, public repositories only.`,
+same token; without one, public repositories only. --discover walks a
+directory for git repositories (groups follow the directory layout) and
+lists project directories that are in no repository of their own.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			spec, err := buildSpec(specPath, args)
+			if err == nil {
+				err = addWalked(spec, discoverRoots, exclude)
+			}
 			if err == nil {
 				err = addDiscovered(cmd.Context(), spec, from)
 			}
@@ -53,6 +58,8 @@ same token; without one, public repositories only.`,
 	}
 	cmd.Flags().StringVar(&specPath, "repos", "", "fleet file (version, cache, repos: [{path|url, name, team}])")
 	cmd.Flags().StringArrayVar(&from, "from", nil, "discover repositories on a forge: github:<owner> or gitea:<host>/<owner> (repeatable; archived repositories and forks are skipped)")
+	cmd.Flags().StringArrayVar(&discoverRoots, "discover", nil, fmt.Sprintf("find git repositories under a directory, up to %d levels down (repeatable)", fleet.DiscoverDepth))
+	cmd.Flags().StringArrayVar(&exclude, "exclude", nil, "with --discover: skip paths matching this glob, relative to the directory (e.g. '*/third_party/*'; repeatable)")
 	cmd.Flags().StringVar(&out, "out", "fleet-report", "output directory")
 	cmd.Flags().StringVar(&cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
 	cmd.Flags().BoolVar(&update, "update", false, "git pull cached clones before checking")
@@ -93,6 +100,34 @@ func buildSpec(specPath string, paths []string) (*fleet.Spec, error) {
 	return spec, nil
 }
 
+// addWalked appends the repositories found under each --discover root.
+func addWalked(spec *fleet.Spec, roots, exclude []string) error {
+	if len(exclude) > 0 && len(roots) == 0 {
+		return errors.New("--exclude needs --discover")
+	}
+	names := map[string]bool{}
+	for _, e := range spec.Repos {
+		names[e.Name] = true
+	}
+	for _, root := range roots {
+		found, err := fleet.Discover(root, fleet.DiscoverDepth, exclude)
+		if err != nil {
+			return fmt.Errorf("--discover %s: %w", root, err)
+		}
+		for _, e := range found.Repos {
+			if names[e.Name] {
+				return fmt.Errorf("--discover %s: repository name %q is already in the fleet", root, e.Name)
+			}
+			names[e.Name] = true
+			spec.Repos = append(spec.Repos, e)
+		}
+		for _, u := range found.Unversioned {
+			spec.Unversioned = append(spec.Unversioned, filepath.Join(root, u))
+		}
+	}
+	return nil
+}
+
 // addDiscovered appends the repositories of each --from source and makes
 // sure the run has something to check and somewhere to clone into.
 func addDiscovered(ctx context.Context, spec *fleet.Spec, from []string) error {
@@ -114,7 +149,7 @@ func addDiscovered(ctx context.Context, spec *fleet.Spec, from []string) error {
 		}
 	}
 	if len(spec.Repos) == 0 {
-		return errors.New("no repositories: pass paths, --repos fleet.yaml or --from github:<owner>")
+		return errors.New("no repositories: pass paths, --repos fleet.yaml, --discover <dir> or --from github:<owner>")
 	}
 	if len(from) > 0 && spec.Cache == "" {
 		dir, err := os.UserCacheDir()
