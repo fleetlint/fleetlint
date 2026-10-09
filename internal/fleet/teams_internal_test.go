@@ -22,20 +22,24 @@ func TestTeamSummaryCountsExpiringExceptions(t *testing.T) {
 		{Name: "broken", Team: "platform", Err: "clone failed"},
 		{Name: "tool", Summary: passing},
 	}}
-	teams := summarizeTeams(rep.Repos, now)
+	teams := summarize(rep.Repos, now, byTeam)
 	if len(teams) != 2 || teams[0].Team != noTeam || teams[1].Team != "platform" {
 		t.Fatalf("teams: %+v", teams)
 	}
 	if p := teams[1]; p.Repos != 3 || p.Unchecked != 1 || p.Expiring != 2 || p.Compliance != 1 {
 		t.Errorf("platform: %+v", p)
 	}
-	rows := strings.Join(collectExceptions(rep), "\n")
+	var md strings.Builder
+	table{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Until"}, Rows: collectExceptions(rep)}.markdown(&md)
+	rows := md.String()
 	for _, want := range []string{"| api | platform | `a/soon` | r | 2026-10-20 (in 15 days) |", "2027-03-31 |", "no deadline", "2026-09-01 (expired)"} {
 		if !strings.Contains(rows, want) {
 			t.Errorf("exception rows lack %q:\n%s", want, rows)
 		}
 	}
-	if summarizeTeams([]RepoReport{{Name: "solo", Summary: passing}}, now) != nil {
+	if summarize([]RepoReport{{Name: "solo", Summary: passing}}, now, byTeam) != nil {
 		t.Error("a fleet without team names has no team summary")
 	}
 }
+
+func byTeam(r RepoReport) string { return r.Team }

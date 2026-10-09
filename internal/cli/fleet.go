@@ -35,7 +35,7 @@ same token; without one, public repositories only.`,
 			if err != nil {
 				return &configError{err}
 			}
-			rep, err := fleet.Run(cmd.Context(), spec, fleet.Options{Deep: g.deep, Update: update, Cache: cache, Require: g.require, Version: Version})
+			rep, err := fleet.Run(cmd.Context(), spec, fleet.Options{Deep: g.deep, Update: update, Cache: cache, Require: g.require, Version: Version, MarkFixable: markFixable})
 			if err != nil {
 				return err
 			}

@@ -33,7 +33,8 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rep.Repos) != 3 || rep.Repos[0].Name != "clean" {
+	// Most urgent first: the unchecked repository, then the one with errors.
+	if len(rep.Repos) != 3 || rep.Repos[0].Name != "missing" || rep.Repos[1].Name != "messy" {
 		t.Fatalf("repos: %+v", rep.Repos)
 	}
 	byName := map[string]fleet.RepoReport{}
@@ -82,8 +83,9 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 		t.Fatalf("actions should list the failing rule:\n%s", actions)
 	}
 	htmlOut, _ := os.ReadFile(filepath.Join(out, "fleet.html"))
-	if !strings.Contains(string(htmlOut), `href="actions/messy.html"`) || strings.Contains(string(htmlOut), "<script") {
-		t.Fatal("html should link actions and contain no script")
+	// The one script is the report's own sort and filter code; nothing from a repository.
+	if !strings.Contains(string(htmlOut), `href="actions/messy.html"`) || strings.Count(string(htmlOut), "<script") != 1 {
+		t.Fatal("html should link actions and contain only its own script")
 	}
 	actionsPage, _ := os.ReadFile(filepath.Join(out, "actions/messy.html"))
 	if !strings.Contains(string(actionsPage), "<pre>") || !strings.Contains(string(actionsPage), "repo/no-tracked-junk") || strings.Contains(string(actionsPage), "<script") {

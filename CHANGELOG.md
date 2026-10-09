@@ -7,12 +7,21 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Added
 
+- **Fleet triage.** The fleet report opens with the top levers: the rules that fail most repositories, errors first, with how many `fleetlint fix --apply` repairs and how much of the errors and of all failures fixing them closes. Repositories are listed most urgent first.
+- **Fixable findings in fleet mode.** The fleet run marks what `fix --apply` can repair: a column per repository and per rule, and `*` in the matrix.
 - Action lists (`check -f agent` and the fleet's `actions/`) start with `fleetlint fix --apply` when part of the work is mechanical, before the manual steps.
+- **Repository context.** Each repository shows the branch and commit that were checked, how many uncommitted changes the working tree had, and the date of the last commit, marked stale after a year.
+- **Facts to pin.** The tier and visibility of every repository where they were guessed or are unknown, with the line to add to `.fleetlint.yaml`.
 - An inferred tier says so: the tier source is `inferred` with the deciding fact (`inferred from release pipeline`) instead of `default`, which remains for the plain tier 3.
+- The fleet file takes `group:` per entry; the report has a group summary next to the team summary.
+- The HTML report has the same sections as the Markdown one (it lacked the rule table), renders inline code, colors compliance by threshold, sorts tables by column and filters the matrix.
 
 ### Changed
 
 - Rules that could not be evaluated no longer count against compliance; before, they lowered it like a failure.
+- Rule errors have their own column and section and no longer count as failures in the rule table.
+- The rule table and matrix leave out rules that apply to no repository (listed in one line) and tell apart a rule a repository does not select (`·`) from one that does not apply (`-`).
+- `fleet.csv` gains the columns `group`, `tier_source`, `fixable`, `rule_errors`, `branch`, `commit`, `dirty`, `last_commit` and `stale`, after the existing ones.
 
 ### Fixed
 

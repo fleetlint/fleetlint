@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/csv"
 	"fmt"
-	"html"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,14 +56,14 @@ func expiring(exs []model.Exception, now time.Time) int {
 	return n
 }
 
-// summarizeTeams groups repositories by team. It returns nil when no
-// repository names a team, so single-team fleets keep the plain report.
-func summarizeTeams(repos []RepoReport, now time.Time) []TeamSummary {
+// summarize groups repositories by the key (team or group). It returns nil
+// when no repository has one, so a flat fleet keeps the plain report.
+func summarize(repos []RepoReport, now time.Time, key func(RepoReport) string) []TeamSummary {
 	byTeam := map[string]*TeamSummary{}
 	sums := map[string]float64{}
 	named := false
 	for _, r := range repos {
-		team := r.Team
+		team := key(r)
 		if team == "" {
 			team = noTeam
 		} else {
@@ -102,28 +101,18 @@ func summarizeTeams(repos []RepoReport, now time.Time) []TeamSummary {
 	return out
 }
 
-func writeTeamsMarkdown(b *strings.Builder, teams []TeamSummary) {
-	if len(teams) == 0 {
-		return
+// teamsTable renders a team or group summary; empty when there is none.
+func teamsTable(title, key string, teams []TeamSummary) table {
+	t := table{Title: title, Sortable: true, Head: []string{key, "Repositories", "Unchecked", "Compliance", "Errors", "Warnings", "Excepted", "Disabled", "Lowered", "Exceptions expiring"}}
+	for _, s := range teams {
+		pct := s.Compliance * 100
+		t.Rows = append(t.Rows, []tcell{
+			txt(s.Team), num(s.Repos), numIf(s.Unchecked, "err"),
+			{Text: fmt.Sprintf("%.0f%%", pct), Bar: &pct, Sort: fmt.Sprintf("%.3f", pct)},
+			numIf(s.Errors, "err"), numIf(s.Warnings, "warn"), num(s.Excepted), num(s.Disabled), num(s.Lowered), numIf(s.Expiring, "warn"),
+		})
 	}
-	b.WriteString("\n## Teams\n\n| Team | Repositories | Unchecked | Compliance | Errors | Warnings | Excepted | Disabled | Lowered | Exceptions expiring |\n|---|---|---|---|---|---|---|---|---|---|\n")
-	for _, t := range teams {
-		fmt.Fprintf(b, "| %s | %d | %d | %.0f%% | %d | %d | %d | %d | %d | %d |\n", escapeCell(t.Team), t.Repos, t.Unchecked, t.Compliance*100, t.Errors, t.Warnings, t.Excepted, t.Disabled, t.Lowered, t.Expiring)
-	}
-}
-
-func writeTeamsHTML(b *strings.Builder, teams []TeamSummary) {
-	if len(teams) == 0 {
-		return
-	}
-	b.WriteString("<h2>Teams</h2><div class=wrap><table><tr><th>Team</th><th>Repositories</th><th>Unchecked</th><th>Compliance</th><th>Errors</th><th>Warnings</th><th>Excepted</th><th>Disabled</th><th>Lowered</th><th>Exceptions expiring</th></tr>")
-	for _, t := range teams {
-		pct := t.Compliance * 100
-		fmt.Fprintf(b, "<tr><td>%s</td><td class=c>%d</td><td class=\"c %s\">%d</td><td><span class=bar style=\"width:%.0fpx\"></span>%.0f%%</td><td class=\"c %s\">%d</td><td class=\"c %s\">%d</td><td class=c>%d</td><td class=c>%d</td><td class=c>%d</td><td class=\"c %s\">%d</td></tr>",
-			html.EscapeString(t.Team), t.Repos, classIf(t.Unchecked > 0, "err"), t.Unchecked, pct, pct,
-			classIf(t.Errors > 0, "err"), t.Errors, classIf(t.Warnings > 0, "warn"), t.Warnings, t.Excepted, t.Disabled, t.Lowered, classIf(t.Expiring > 0, "warn"), t.Expiring)
-	}
-	b.WriteString("</table></div>")
+	return t
 }
 
 // renderCSV is one row per repository, for spreadsheets and whatever
@@ -131,16 +120,28 @@ func writeTeamsHTML(b *strings.Builder, teams []TeamSummary) {
 func renderCSV(rep *Report) ([]byte, error) {
 	var buf bytes.Buffer
 	w := csv.NewWriter(&buf)
-	rows := [][]string{{"repository", "team", "source", "visibility", "tier", "stacks", "compliance", "errors", "warnings", "excepted", "disabled", "lowered", "error"}}
+	// New columns go after "error" so existing consumers keep their indices.
+	rows := [][]string{{
+		"repository", "team", "source", "visibility", "tier", "stacks", "compliance", "errors", "warnings", "excepted", "disabled", "lowered", "error",
+		"group", "tier_source", "fixable", "rule_errors", "branch", "commit", "dirty", "last_commit", "stale",
+	}}
 	for _, r := range rep.Repos {
 		if r.Err != "" {
-			rows = append(rows, []string{r.Name, r.Team, r.Source, "", "", "", "", "", "", "", "", "", r.Err})
+			rows = append(rows, []string{r.Name, r.Team, r.Source, "", "", "", "", "", "", "", "", "", r.Err, r.Group, "", "", "", "", "", "", "", ""})
 			continue
+		}
+		branch, commit, dirty, last, stale := "", "", "", "", ""
+		if g := r.Git; g != nil {
+			branch, commit, dirty, stale = g.Branch, g.Commit, strconv.Itoa(g.Dirty), strconv.FormatBool(g.Stale(rep.GeneratedAt))
+			if !g.LastCommit.IsZero() {
+				last = g.LastCommit.Format("2006-01-02")
+			}
 		}
 		rows = append(rows, []string{
 			r.Name, r.Team, r.Source, string(r.Facts.Visibility), strconv.Itoa(r.Facts.Tier), strings.Join(r.Facts.Stacks, " "),
 			strconv.FormatFloat(r.Compliance(), 'f', 3, 64), strconv.Itoa(r.Summary.Errors), strconv.Itoa(r.Summary.Warnings),
 			strconv.Itoa(r.Summary.Excepted), strconv.Itoa(len(r.Disabled)), strconv.Itoa(len(r.Weakened)), "",
+			r.Group, string(r.Facts.Sources["tier"]), strconv.Itoa(r.Fixable()), strconv.Itoa(r.Summary.Error), branch, commit, dirty, last, stale,
 		})
 	}
 	if err := w.WriteAll(rows); err != nil {

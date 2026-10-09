@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/report"
 )
@@ -23,9 +24,10 @@ func Write(dir string, rep *Report) error {
 			return err
 		}
 	}
-	page := renderHTML(rep)
+	v := newView(rep)
+	page := renderHTML(v)
 	files := map[string][]byte{
-		"fleet.md":   renderMarkdown(rep),
+		"fleet.md":   renderMarkdown(v),
 		"fleet.html": page,
 		"index.html": page, // so the directory can be published as-is (GitHub/Gitea Pages)
 	}
@@ -51,14 +53,23 @@ func Write(dir string, rep *Report) error {
 	return nil
 }
 
+// Matrix marks. A rule a repository's configuration does not select is
+// different from one it selects that does not apply there.
+const (
+	markNotSelected = "·"
+	markNA          = "-"
+)
+
 type cell struct {
 	Mark, Title string
 }
 
-// cellFor summarizes a rule across the root and every scope: the worst status wins.
+// cellFor summarizes a rule across the root and every scope: the worst
+// status wins, and a failing mark gets `*` when `fix --apply` repairs it.
 func cellFor(r RepoReport, rule string) cell {
-	best := cell{"", ""}
+	best := cell{markNotSelected, "not selected"}
 	rank := -1
+	fixable := false
 	for _, res := range r.Results {
 		if res.Rule.ID != rule {
 			continue
@@ -67,6 +78,11 @@ func cellFor(r RepoReport, rule string) cell {
 		if k > rank {
 			best, rank = c, k
 		}
+		fixable = fixable || (res.Status == model.StatusFail && res.Fixable)
+	}
+	if fixable && rank >= 3 && rank <= 5 {
+		best.Mark += "*"
+		best.Title += " (fleetlint fix --apply)"
 	}
 	return best
 }
@@ -87,9 +103,9 @@ func cellOf(res model.Result) (cell, int) {
 		}
 		return cell{"exc", prefix + reason}, 2
 	case model.StatusBaselined:
-		return cell{"base", prefix + "baselined"}, 3
+		return cell{"base", prefix + "baselined"}, 2
 	case model.StatusNotApplicable:
-		return cell{"-", "n/a"}, 0
+		return cell{markNA, "n/a"}, 0
 	case model.StatusError:
 		return cell{"ERR", prefix + "rule error: " + res.Err}, 6
 	case model.StatusFail:
@@ -113,78 +129,436 @@ func leadMessage(r model.Result) string {
 	return r.Findings[0].Message
 }
 
-func renderMarkdown(rep *Report) []byte {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Fleet report\n\nGenerated %s · %d repositories · %d rules · fleetlint %s, catalog %s\n\n", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules), orUnknown(rep.Tool), orUnknown(rep.Catalog))
-	b.WriteString("## Repositories\n\n| Repository | Team | Stacks | Tier | Compliance | Errors | Warnings | Excepted | Disabled |\n|---|---|---|---|---|---|---|---|---|\n")
-	for _, r := range rep.Repos {
-		if r.Err != "" {
-			fmt.Fprintf(&b, "| %s | %s | | | error | | | | |\n", r.Name, r.Team)
-			continue
-		}
-		fmt.Fprintf(&b, "| %s | %s | %s | %d | %.0f%% | %d | %d | %d | %d |\n", r.Name, r.Team, strings.Join(r.Facts.Stacks, ", "), r.Facts.Tier,
-			r.Compliance()*100, r.Summary.Errors, r.Summary.Warnings, r.Summary.Excepted, len(r.Disabled))
-	}
-	writeTeamsMarkdown(&b, rep.Teams)
-	b.WriteString("\n## Rules\n\n| Rule | Pass | Fail | Excepted | n/a |\n|---|---|---|---|---|\n")
+// ruleStat is one rule across the fleet; counts are repositories.
+type ruleStat struct {
+	ID                                                            string
+	Worst                                                         model.Severity
+	Pass, Fail, FailErr, Fixable, Errs, Excepted, NA, NotSelected int
+}
+
+func (s ruleStat) applicable() bool { return s.Pass+s.Fail+s.Errs+s.Excepted > 0 }
+
+// view is what every renderer shows, computed once.
+type view struct {
+	rep          *Report
+	stats        []ruleStat // applicable somewhere, in rule order
+	inapplicable []string   // selected somewhere, applicable nowhere
+}
+
+func newView(rep *Report) *view {
+	v := &view{rep: rep}
 	for _, rule := range rep.Rules {
-		var pass, fail, exc, na int
-		for _, r := range rep.Repos {
-			switch cellFor(r, rule).Mark {
-			case "ok":
-				pass++
-			case "FAIL", "warn", "info", "ERR":
-				fail++
-			case "exc", "base":
-				exc++
-			case "-":
-				na++
+		s := statFor(rep, rule)
+		if s.applicable() {
+			v.stats = append(v.stats, s)
+		} else {
+			v.inapplicable = append(v.inapplicable, rule)
+		}
+	}
+	return v
+}
+
+func statFor(rep *Report, rule string) ruleStat {
+	s := ruleStat{ID: rule}
+	for _, r := range rep.Repos {
+		if r.Err == "" {
+			s.add(r, cellFor(r, rule).Mark)
+		}
+	}
+	return s
+}
+
+// add counts one repository's matrix mark for the rule.
+func (s *ruleStat) add(r RepoReport, mark string) {
+	switch strings.TrimSuffix(mark, "*") {
+	case "ok":
+		s.Pass++
+	case "FAIL", "warn", "info":
+		s.Fail++
+		if strings.HasSuffix(mark, "*") {
+			s.Fixable++
+		}
+		sev := worstFailing(r, s.ID)
+		if sev == model.SeverityError {
+			s.FailErr++
+		}
+		if s.Fail == 1 || sev > s.Worst {
+			s.Worst = sev
+		}
+	case "ERR":
+		s.Errs++
+	case "exc", "base":
+		s.Excepted++
+	case markNA:
+		s.NA++
+	default:
+		s.NotSelected++
+	}
+}
+
+func worstFailing(r RepoReport, rule string) model.Severity {
+	worst := model.SeverityInfo
+	for _, res := range r.Results {
+		if res.Rule.ID == rule && res.Status == model.StatusFail && res.Severity > worst {
+			worst = res.Severity
+		}
+	}
+	return worst
+}
+
+func (v *view) headline() string {
+	var withErrors, unchecked, ruleErrs, fixable int
+	for _, r := range v.rep.Repos {
+		switch {
+		case r.Err != "":
+			unchecked++
+			continue
+		case r.Summary.Errors > 0:
+			withErrors++
+		}
+		ruleErrs += r.Summary.Error
+		fixable += r.Fixable()
+	}
+	return fmt.Sprintf("%d repositories: %d with errors, %d could not be checked · %d rule errors · %d findings fixable with `fleetlint fix --apply`",
+		len(v.rep.Repos), withErrors, unchecked, ruleErrs, fixable)
+}
+
+func (v *view) generated() string {
+	rep := v.rep
+	return fmt.Sprintf("Generated %s · %d repositories · %d rules · fleetlint %s, catalog %s", rep.GeneratedAt.Format("2006-01-02 15:04 MST"),
+		len(rep.Repos), len(rep.Rules), orUnknown(rep.Tool), orUnknown(rep.Catalog))
+}
+
+// levers ranks the failing rules by how much of the fleet they hold back:
+// repositories failing at error severity first (they fail CI), then all
+// failing ones. The cumulative columns show how much fixing the first n closes.
+func (v *view) levers() table {
+	failing := make([]ruleStat, 0, len(v.stats))
+	total, totalErr := 0, 0
+	for _, s := range v.stats {
+		if s.Fail > 0 {
+			failing = append(failing, s)
+			total += s.Fail
+			totalErr += s.FailErr
+		}
+	}
+	sort.SliceStable(failing, func(i, j int) bool {
+		a, b := failing[i], failing[j]
+		if a.FailErr != b.FailErr {
+			return a.FailErr > b.FailErr
+		}
+		if a.Fail != b.Fail {
+			return a.Fail > b.Fail
+		}
+		return a.Fixable > b.Fixable
+	})
+	t := table{
+		Title: "Top levers",
+		Head:  []string{"#", "Rule", "Severity", "Failing in", "Fixable by `fix --apply`", "Errors closed (cumulative)", "All failures closed (cumulative)"},
+	}
+	share := func(n, of int) string { return fmt.Sprintf("%.0f%%", 100*float64(n)/float64(max(of, 1))) }
+	cum, cumErr, errRules := 0, 0, 0
+	for i, s := range failing[:min(len(failing), 10)] {
+		cum += s.Fail
+		cumErr += s.FailErr
+		if s.FailErr > 0 {
+			errRules = i + 1
+		}
+		t.Rows = append(t.Rows, []tcell{
+			num(i + 1), code(s.ID),
+			{Text: s.Worst.String(), Class: sevClass(s.Worst)},
+			txt(fmt.Sprintf("%d of %d", s.Fail, s.Pass+s.Fail+s.Excepted)), numIf(s.Fixable, "ok"),
+			txt(share(cumErr, totalErr)), txt(share(cum, total)),
+		})
+	}
+	if len(t.Rows) > 0 {
+		t.Intro = fmt.Sprintf("Rules ranked by the repositories they fail at error severity, then by all failures. %d failing rule × repository pairs, %d of them errors (these fail CI). Fixing the first %d rules closes %s of the errors; the long tail of warnings is in the rules table.",
+			total, totalErr, max(errRules, 1), share(cumErr, totalErr))
+	}
+	return t
+}
+
+func sevClass(s model.Severity) string {
+	switch s {
+	case model.SeverityError:
+		return "err"
+	case model.SeverityWarning:
+		return "warn"
+	case model.SeverityInfo:
+	}
+	return "na"
+}
+
+// column is one column of the repository table; optional ones appear
+// only when some repository has a value for them.
+type column struct {
+	head string
+	cell func(RepoReport) tcell
+}
+
+func (v *view) repoColumns() []column {
+	any := func(pred func(RepoReport) bool) bool {
+		for _, r := range v.rep.Repos {
+			if pred(r) {
+				return true
 			}
 		}
-		fmt.Fprintf(&b, "| `%s` | %d | %d | %d | %d |\n", rule, pass, fail, exc, na)
+		return false
+	}
+	// checked leaves the cell empty for a repository that could not be checked.
+	checked := func(f func(RepoReport) tcell) func(RepoReport) tcell {
+		return func(r RepoReport) tcell {
+			if r.Err != "" {
+				return txt("")
+			}
+			return f(r)
+		}
+	}
+	cols := []column{{"Repository", func(r RepoReport) tcell { return tcell{Text: r.Name, Href: "actions/" + r.Name + ".html"} }}}
+	if any(func(r RepoReport) bool { return r.Group != "" }) {
+		cols = append(cols, column{"Group", func(r RepoReport) tcell { return txt(r.Group) }})
+	}
+	if any(func(r RepoReport) bool { return r.Team != "" }) {
+		cols = append(cols, column{"Team", func(r RepoReport) tcell { return txt(r.Team) }})
+	}
+	cols = append(cols,
+		column{"Stacks", func(r RepoReport) tcell {
+			if r.Err != "" {
+				return tcell{Text: "could not be checked: " + r.Err, Class: "err"}
+			}
+			return txt(strings.Join(r.Facts.Stacks, ", "))
+		}},
+		column{"Tier", checked(func(r RepoReport) tcell { return tierCell(r.Facts) })},
+		column{"Visibility", checked(func(r RepoReport) tcell { return visibilityCell(r.Facts.Visibility) })},
+		column{"Compliance", checked(func(r RepoReport) tcell {
+			pct := r.Compliance() * 100
+			return tcell{Text: fmt.Sprintf("%.0f%%", pct), Bar: &pct, Sort: fmt.Sprintf("%.3f", pct)}
+		})},
+		column{"Errors", checked(func(r RepoReport) tcell { return numIf(r.Summary.Errors, "err") })},
+		column{"Warnings", checked(func(r RepoReport) tcell { return numIf(r.Summary.Warnings, "warn") })},
+		column{"Fixable", checked(func(r RepoReport) tcell { return numIf(r.Fixable(), "ok") })},
+		column{"Rule errors", checked(func(r RepoReport) tcell { return numIf(r.Summary.Error, "err") })},
+	)
+	if any(func(r RepoReport) bool { return r.Summary.Excepted > 0 }) {
+		cols = append(cols, column{"Excepted", checked(func(r RepoReport) tcell { return num(r.Summary.Excepted) })})
+	}
+	if any(func(r RepoReport) bool { return len(r.Disabled) > 0 }) {
+		cols = append(cols, column{"Disabled", checked(func(r RepoReport) tcell { return num(len(r.Disabled)) })})
+	}
+	return append(cols,
+		column{"Checked", checked(func(r RepoReport) tcell { return checkedCell(r.Git) })},
+		column{"Last commit", checked(func(r RepoReport) tcell { return lastCommitCell(r.Git, v) })},
+	)
+}
+
+func (v *view) repositories() table {
+	cols := v.repoColumns()
+	t := table{
+		Title: "Repositories", Sortable: true, ID: "repos",
+		Intro: "Most urgent first. Compliance is the share of applicable rules that pass or are excepted; rules that could not be evaluated are left out and counted under rule errors. A tier that is not configured is a guess: see facts to pin.",
+	}
+	for _, c := range cols {
+		t.Head = append(t.Head, c.head)
+	}
+	for _, r := range v.rep.Repos {
+		row := make([]tcell, 0, len(cols))
+		for _, c := range cols {
+			row = append(row, c.cell(r))
+		}
+		t.Rows = append(t.Rows, row)
+	}
+	return t
+}
+
+func tierCell(f facts.Facts) tcell {
+	c := tcell{Text: fmt.Sprint(f.Tier), Title: f.TierSource(), Sort: fmt.Sprint(f.Tier)}
+	switch f.Sources["tier"] {
+	case facts.SourceInferred:
+		c.Text += " (inferred)"
+		c.Class = "warn"
+	case facts.SourceDefault:
+		c.Text += " (default)"
+		c.Class = "warn"
+	case facts.SourceConfigured, facts.SourceDetected:
+	}
+	return c
+}
+
+func visibilityCell(vis facts.Visibility) tcell {
+	c := txt(string(vis))
+	if vis == facts.VisibilityUnknown || vis == "" {
+		c.Text, c.Class = "unknown", "warn"
+	}
+	return c
+}
+
+func checkedCell(g *GitState) tcell {
+	if g == nil {
+		return tcell{Text: "no git", Class: "warn"}
+	}
+	s := orUnknown(g.Branch)
+	if g.Commit != "" {
+		s += " @ " + g.Commit[:min(len(g.Commit), 7)]
+	}
+	c := tcell{Text: s}
+	if g.Dirty > 0 {
+		c.Text += fmt.Sprintf(", %d uncommitted", g.Dirty)
+		c.Class = "warn"
+		c.Title = "the working tree was checked, not the commit"
+	}
+	return c
+}
+
+func lastCommitCell(g *GitState, v *view) tcell {
+	if g == nil || g.LastCommit.IsZero() {
+		return txt("")
+	}
+	c := tcell{Text: g.LastCommit.Format("2006-01-02"), Sort: g.LastCommit.Format("20060102")}
+	if g.Stale(v.rep.GeneratedAt) {
+		c.Text += " (stale)"
+		c.Class = "warn"
+		c.Title = "no commit for more than a year: archive it or drop it from the fleet"
+	}
+	return c
+}
+
+func (v *view) ruleErrors() table {
+	t := table{
+		Title: "Rule errors",
+		Intro: "These rules could not be evaluated, so they say nothing about the repository. The cause is usually a file fleetlint cannot parse; fix the rule or the file, never count them as compliance.",
+		Head:  []string{"Repository", "Rule", "Scope", "Error"},
+	}
+	for _, r := range v.rep.Repos {
+		for _, res := range r.Results {
+			if res.Status == model.StatusError {
+				t.Rows = append(t.Rows, []tcell{txt(r.Name), code(res.Rule.ID), txt(res.Scope), {Text: res.Err, Class: "err"}})
+			}
+		}
+	}
+	return t
+}
+
+// factsToPin lists repositories whose tier or visibility was guessed: both
+// decide which rules apply and how severe they are.
+func (v *view) factsToPin() table {
+	t := table{
+		Title: "Facts to pin",
+		Intro: "Tier and visibility decide which rules apply and how severe they are. For these repositories they were guessed or are unknown (the forge did not answer without a token). Pin them in `.fleetlint.yaml`.",
+		Head:  []string{"Repository", "Tier", "Tier source", "Visibility", "Add to .fleetlint.yaml"},
+	}
+	for _, r := range v.rep.Repos {
+		if r.Err != "" {
+			continue
+		}
+		f := r.Facts
+		var pins []string
+		if f.Sources["tier"] != facts.SourceConfigured {
+			pins = append(pins, fmt.Sprintf("tier: %d", f.Tier))
+		}
+		if f.Visibility == facts.VisibilityUnknown || f.Visibility == "" {
+			pins = append(pins, "visibility: public|private")
+		}
+		if len(pins) == 0 {
+			continue
+		}
+		t.Rows = append(t.Rows, []tcell{txt(r.Name), num(f.Tier), txt(f.TierSource()), visibilityCell(f.Visibility), code("facts: { " + strings.Join(pins, ", ") + " }")})
+	}
+	return t
+}
+
+func (v *view) rules() table {
+	t := table{
+		Title: "Rules", Sortable: true,
+		Intro: "Counts are repositories. Not selected: the repository's configuration does not include the rule; n/a: it is selected but its stack, tier or condition does not apply.",
+		Head:  []string{"Rule", "Pass", "Fail", "Fixable", "Rule errors", "Excepted", "n/a", "Not selected"},
+	}
+	for _, s := range v.stats {
+		t.Rows = append(t.Rows, []tcell{code(s.ID), num(s.Pass), numIf(s.Fail, sevClass(s.Worst)), numIf(s.Fixable, "ok"), numIf(s.Errs, "err"), num(s.Excepted), num(s.NA), num(s.NotSelected)})
+	}
+	return t
+}
+
+func (v *view) inapplicableNote() string {
+	if len(v.inapplicable) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("Selected but applicable in no repository (%d, left out of the tables): %s.", len(v.inapplicable), strings.Join(v.inapplicable, ", "))
+}
+
+func (v *view) unversioned() table {
+	t := table{
+		Title: "Not under version control",
+		Intro: "Discovery found these project directories outside any repository of their own. fleetlint cannot check them; put them under git or exclude them with `--exclude`.",
+		Head:  []string{"Directory"},
+	}
+	for _, u := range v.rep.Unversioned {
+		t.Rows = append(t.Rows, []tcell{txt(u)})
+	}
+	return t
+}
+
+func (v *view) policyTables() []table {
+	cols := []string{"Repository", "Rule", "Layer", "Where", "Reason"}
+	return []table{
+		{Title: "Disabled rules", Head: cols, Rows: collectDisabled(v.rep, false)},
+		{Title: "Lowered severities", Head: cols, Rows: collectDisabled(v.rep, true)},
+		{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Until"}, Rows: collectExceptions(v.rep)},
+	}
+}
+
+// sections is the report in order; Markdown and HTML render the same list
+// and differ only in the matrix.
+func (v *view) sections() (before, after []table) {
+	before = []table{
+		v.levers(), v.repositories(),
+		teamsTable("Groups", "Group", v.rep.Groups), teamsTable("Teams", "Team", v.rep.Teams),
+		v.ruleErrors(), v.rules(),
+	}
+	after = append([]table{v.factsToPin(), v.unversioned()}, v.policyTables()...)
+	return before, after
+}
+
+func renderMarkdown(v *view) []byte {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Fleet report\n\n%s\n\n%s\n", v.generated(), v.headline())
+	before, after := v.sections()
+	for _, t := range before {
+		t.markdown(&b)
+	}
+	if note := v.inapplicableNote(); note != "" {
+		b.WriteString("\n" + note + "\n")
 	}
 	// Rules down, repositories across: the rule list is long, the fleet usually is not.
 	b.WriteString("\n## Matrix\n\n| Rule |")
-	for _, r := range rep.Repos {
-		fmt.Fprintf(&b, " %s |", r.Name)
+	for _, r := range v.rep.Repos {
+		fmt.Fprintf(&b, " %s |", escapeCell(r.Name))
 	}
-	b.WriteString("\n|---|" + strings.Repeat("---|", len(rep.Repos)) + "\n")
-	for _, rule := range rep.Rules {
-		fmt.Fprintf(&b, "| `%s` |", rule)
-		for _, r := range rep.Repos {
-			fmt.Fprintf(&b, " %s |", cellFor(r, rule).Mark)
+	b.WriteString("\n|---|" + strings.Repeat("---|", len(v.rep.Repos)) + "\n")
+	for _, s := range v.stats {
+		fmt.Fprintf(&b, "| `%s` |", s.ID)
+		for _, r := range v.rep.Repos {
+			fmt.Fprintf(&b, " %s |", cellFor(r, s.ID).Mark)
 		}
 		b.WriteString("\n")
 	}
-	writePolicyNotes(&b, rep)
+	b.WriteString("\n" + legend + "\n")
+	for _, t := range after {
+		t.markdown(&b)
+	}
 	return []byte(b.String())
 }
 
-func writePolicyNotes(b *strings.Builder, rep *Report) {
-	section := func(title, header string, rows []string) {
-		if len(rows) == 0 {
-			return
-		}
-		sort.Strings(rows)
-		fmt.Fprintf(b, "\n## %s\n\n%s\n", title, header)
-		for _, row := range rows {
-			b.WriteString(row + "\n")
-		}
-	}
-	section("Disabled rules", "| Repository | Rule | Layer | Where | Reason |\n|---|---|---|---|---|", collectDisabled(rep, false))
-	section("Lowered severities", "| Repository | Rule | Layer | Where | Reason |\n|---|---|---|---|---|", collectDisabled(rep, true))
-	section("Exceptions", "| Repository | Team | Rule | Reason | Until |\n|---|---|---|---|---|", collectExceptions(rep))
-}
+const legend = "ok pass · FAIL error · warn warning · info info · `*` fixable with `fleetlint fix --apply` · ERR rule error · exc excepted · base baselined · - not applicable · · not selected"
 
-func collectDisabled(rep *Report, weakened bool) []string {
-	var rows []string
+func collectDisabled(rep *Report, weakened bool) [][]tcell {
+	var rows [][]tcell
 	for _, r := range rep.Repos {
 		list := r.Disabled
 		if weakened {
 			list = r.Weakened
 		}
 		for _, d := range list {
-			rows = append(rows, fmt.Sprintf("| %s | `%s` | %s | %s | %s |", r.Name, d.ID, d.Layer, escapeCell(d.Where), escapeCell(d.Reason)))
+			rows = append(rows, []tcell{txt(r.Name), code(d.ID), txt(d.Layer), txt(d.Where), txt(d.Reason)})
 		}
 	}
 	return rows
@@ -196,20 +570,22 @@ func escapeCell(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
 }
 
-func collectExceptions(rep *Report) []string {
-	var rows []string
+func collectExceptions(rep *Report) [][]tcell {
+	var rows [][]tcell
 	for _, r := range rep.Repos {
 		for _, ex := range r.Exceptions {
-			until := ex.Until
+			until := txt(ex.Until)
 			switch days, dated := daysLeft(ex, rep.GeneratedAt); {
-			case until == "":
-				until = "no deadline"
+			case ex.Until == "":
+				until.Text = "no deadline"
 			case ex.Expired:
-				until += " (expired)"
+				until.Text += " (expired)"
+				until.Class = "err"
 			case dated && days <= expiryWindowDays:
-				until += fmt.Sprintf(" (in %d days)", days)
+				until.Text += fmt.Sprintf(" (in %d days)", days)
+				until.Class = "warn"
 			}
-			rows = append(rows, fmt.Sprintf("| %s | %s | `%s` | %s | %s |", r.Name, escapeCell(r.Team), ex.Rule, escapeCell(ex.Reason), until))
+			rows = append(rows, []tcell{txt(r.Name), txt(r.Team), code(ex.Rule), txt(ex.Reason), until})
 		}
 	}
 	return rows
@@ -224,66 +600,66 @@ func renderActions(r RepoReport) []byte {
 	return b.Bytes()
 }
 
-func renderHTML(rep *Report) []byte {
+func renderHTML(v *view) []byte {
 	var b strings.Builder
 	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fleet report</title><style>
-:root{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#ddd;--ok:#2e7d32;--warn:#b26a00;--err:#c62828}
-@media(prefers-color-scheme:dark){:root{--bg:#121212;--fg:#eee;--muted:#9a9a9a;--line:#333;--ok:#81c784;--warn:#ffb74d;--err:#ef5350}}
-body{font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px;max-width:1400px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}.muted{color:var(--muted)}
+:root{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#ddd;--ok:#2e7d32;--warn:#b26a00;--err:#c62828;--code:#f4f4f4}
+@media(prefers-color-scheme:dark){:root{--bg:#121212;--fg:#eee;--muted:#9a9a9a;--line:#333;--ok:#81c784;--warn:#ffb74d;--err:#ef5350;--code:#222}}
+body{font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:16px;max-width:1600px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:16px;margin:28px 0 8px}.muted{color:var(--muted)}p{max-width:70rem}
+code{font:12.5px ui-monospace,monospace;background:var(--code);padding:0 3px;border-radius:3px}
 table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left;white-space:nowrap}
 th{position:sticky;top:0;background:var(--bg)}td.c{text-align:center}
+table.sort th{cursor:pointer}table.sort th:hover{text-decoration:underline}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}.na{color:var(--muted)}
-.bar{display:inline-block;height:10px;background:var(--ok);vertical-align:middle;margin-right:6px}
-.wrap{overflow-x:auto}abbr{text-decoration:none;cursor:help}
+.bar{display:inline-block;height:10px;vertical-align:middle;margin-right:6px}.b-ok{background:var(--ok)}.b-warn{background:var(--warn)}.b-err{background:var(--err)}
+.wrap{overflow-x:auto}abbr{text-decoration:none;cursor:help}.filter{margin:0 0 8px;display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+.filter input[type=search]{font:inherit;padding:3px 6px;min-width:16rem;background:var(--bg);color:var(--fg);border:1px solid var(--line)}
 th.rot{height:170px;vertical-align:bottom;padding:4px 2px}th.rot div{writing-mode:vertical-rl;transform:rotate(180deg);font-weight:normal;font-size:12px}
 </style></head><body>`)
-	fmt.Fprintf(&b, "<h1>Fleet report</h1><p class=muted>Generated %s · %d repositories · %d rules · fleetlint %s, catalog %s</p>", rep.GeneratedAt.Format("2006-01-02 15:04 MST"), len(rep.Repos), len(rep.Rules), html.EscapeString(orUnknown(rep.Tool)), html.EscapeString(orUnknown(rep.Catalog)))
-	b.WriteString("<h2>Repositories</h2><div class=wrap><table><tr><th>Repository</th><th>Team</th><th>Stacks</th><th>Tier</th><th>Compliance</th><th>Errors</th><th>Warnings</th><th>Excepted</th><th>Disabled</th></tr>")
-	for _, r := range rep.Repos {
-		if r.Err != "" {
-			fmt.Fprintf(&b, "<tr><td>%s</td><td>%s</td><td colspan=7 class=err>%s</td></tr>", html.EscapeString(r.Name), html.EscapeString(r.Team), html.EscapeString(r.Err))
-			continue
-		}
-		pct := r.Compliance() * 100
-		fmt.Fprintf(&b, "<tr><td><a href=\"actions/%s.html\">%s</a></td><td>%s</td><td>%s</td><td class=c>%d</td><td><span class=bar style=\"width:%.0fpx\"></span>%.0f%%</td><td class=\"c %s\">%d</td><td class=\"c %s\">%d</td><td class=c>%d</td><td class=c>%d</td></tr>",
-			html.EscapeString(r.Name), html.EscapeString(r.Name), html.EscapeString(r.Team), html.EscapeString(strings.Join(r.Facts.Stacks, ", ")), r.Facts.Tier,
-			pct, pct, classIf(r.Summary.Errors > 0, "err"), r.Summary.Errors, classIf(r.Summary.Warnings > 0, "warn"), r.Summary.Warnings, r.Summary.Excepted, len(r.Disabled))
+	fmt.Fprintf(&b, "<h1>Fleet report</h1><p class=muted>%s</p><p><strong>%s</strong></p>", html.EscapeString(v.generated()), inlineHTML(v.headline()))
+	before, after := v.sections()
+	for _, t := range before {
+		t.html(&b)
 	}
-	b.WriteString("</table></div>")
-	writeTeamsHTML(&b, rep.Teams)
-	b.WriteString("<h2>Matrix</h2><div class=wrap><table><tr><th>Rule</th>")
-	for _, r := range rep.Repos {
+	if note := v.inapplicableNote(); note != "" {
+		b.WriteString("<p class=muted>" + html.EscapeString(note) + "</p>")
+	}
+	b.WriteString(`<h2>Matrix</h2><div class=filter><input type=search id=mf placeholder="filter rules (e.g. release/ or lint)"><label><input type=checkbox id=mfail> only rules that fail somewhere</label></div><div class=wrap><table id=matrix><thead><tr><th>Rule</th>`)
+	for _, r := range v.rep.Repos {
 		fmt.Fprintf(&b, "<th class=rot><div>%s</div></th>", html.EscapeString(r.Name))
 	}
-	b.WriteString("</tr>")
-	for _, rule := range rep.Rules {
-		fmt.Fprintf(&b, "<tr><td><code>%s</code></td>", html.EscapeString(rule))
-		for _, r := range rep.Repos {
-			c := cellFor(r, rule)
-			fmt.Fprintf(&b, "<td class=\"c %s\"><abbr title=\"%s\">%s</abbr></td>", markClass(c.Mark), html.EscapeString(c.Title), c.Mark)
+	b.WriteString("</tr></thead><tbody>")
+	for _, s := range v.stats {
+		fmt.Fprintf(&b, "<tr data-fail=%d><td><code>%s</code></td>", s.Fail+s.Errs, html.EscapeString(s.ID))
+		for _, r := range v.rep.Repos {
+			c := cellFor(r, s.ID)
+			fmt.Fprintf(&b, "<td class=\"c %s\"><abbr title=\"%s\">%s</abbr></td>", markClass(c.Mark), html.EscapeString(c.Title), html.EscapeString(c.Mark))
 		}
 		b.WriteString("</tr>")
 	}
-	b.WriteString("</table></div>")
-	var notes strings.Builder
-	writePolicyNotes(&notes, rep)
-	if notes.Len() > 0 {
-		b.WriteString("<h2>Policy notes</h2><pre>" + html.EscapeString(notes.String()) + "</pre>")
+	b.WriteString("</tbody></table></div><p class=muted>" + inlineHTML(legend) + "</p>")
+	for _, t := range after {
+		t.html(&b)
 	}
-	b.WriteString("<p class=muted>ok pass, exc excepted, base baselined, warn warning, FAIL error, info info, ERR rule error, - not applicable</p></body></html>\n")
+	b.WriteString(pageScript + "</body></html>\n")
 	return []byte(b.String())
 }
 
-func classIf(cond bool, class string) string {
-	if cond {
-		return class
-	}
-	return ""
-}
+// pageScript sorts tables with class "sort" by the clicked column and
+// filters the matrix. The report reads fine without it.
+const pageScript = `<script>
+document.querySelectorAll("table.sort").forEach(function(t){t.querySelectorAll("th").forEach(function(th,i){th.addEventListener("click",function(){
+var tb=t.tBodies[0],rows=Array.from(tb.rows),asc=th.dataset.dir!=="asc";t.querySelectorAll("th").forEach(function(h){delete h.dataset.dir});th.dataset.dir=asc?"asc":"desc";
+function val(r){var c=r.cells[i];if(!c)return"";var v=c.dataset.v!==undefined?c.dataset.v:c.textContent.trim();var n=parseFloat(v);return isNaN(n)?v.toLowerCase():n}
+rows.sort(function(a,b){var x=val(a),y=val(b);if(typeof x!==typeof y){x=String(x);y=String(y)}return(x<y?-1:x>y?1:0)*(asc?1:-1)});rows.forEach(function(r){tb.appendChild(r)})})})});
+(function(){var q=document.getElementById("mf"),f=document.getElementById("mfail");if(!q)return;function run(){var s=q.value.toLowerCase();
+document.querySelectorAll("#matrix tbody tr").forEach(function(r){var show=r.cells[0].textContent.toLowerCase().indexOf(s)>=0&&(!f.checked||r.dataset.fail!=="0");r.style.display=show?"":"none"})}
+q.addEventListener("input",run);f.addEventListener("change",run)})();
+</script>`
 
 func markClass(mark string) string {
-	switch mark {
+	switch strings.TrimSuffix(mark, "*") {
 	case "ok", "exc":
 		return "ok"
 	case "warn", "info", "base":

@@ -32,6 +32,8 @@ type Spec struct {
 	Version int     `yaml:"version"`
 	Cache   string  `yaml:"cache,omitempty"`
 	Repos   []Entry `yaml:"repos"`
+	// Unversioned is filled by discovery, never read from a fleet file.
+	Unversioned []string `yaml:"-"`
 }
 
 // Entry is one repository: a local path or a git URL (cloned into the cache).
@@ -40,6 +42,9 @@ type Entry struct {
 	Path string `yaml:"path,omitempty"`
 	URL  string `yaml:"url,omitempty"`
 	Team string `yaml:"team,omitempty"`
+	// Group is where the repository sits: the directory it was discovered
+	// under, or what the fleet file says. Reports group by it.
+	Group string `yaml:"group,omitempty"`
 	// Visibility (public or private) is what the forge says about the
 	// repository; it applies when the repository does not say itself.
 	Visibility string `yaml:"visibility,omitempty"`
@@ -115,13 +120,18 @@ type Options struct {
 	Cache   string
 	// Version names the binary in the report.
 	Version string
+	// MarkFixable flags the results `fleetlint fix --apply` can repair; the
+	// planner lives with the fix command, so the caller passes it in.
+	MarkFixable func(*repo.Repo, *engine.Run)
 }
 
 // RepoReport is one repository's outcome.
 type RepoReport struct {
 	Name       string            `json:"name"`
 	Team       string            `json:"team,omitempty"`
+	Group      string            `json:"group,omitempty"`
 	Source     string            `json:"source"`
+	Git        *GitState         `json:"git,omitempty"`
 	Facts      facts.Facts       `json:"facts"`
 	Summary    model.Counts      `json:"summary"`
 	Results    []model.Result    `json:"results"`
@@ -143,6 +153,38 @@ func (r RepoReport) Compliance() float64 {
 	return float64(r.Summary.Pass+r.Summary.Excepted) / float64(applicable)
 }
 
+// Fixable counts the failing results `fleetlint fix --apply` can repair.
+func (r RepoReport) Fixable() int {
+	n := 0
+	for _, res := range r.Results {
+		if res.Status == model.StatusFail && res.Fixable {
+			n++
+		}
+	}
+	return n
+}
+
+// urgent orders repositories for triage: unchecked ones first, then by
+// errors, rule errors and warnings, then by the lowest compliance.
+func urgent(a, b RepoReport) bool {
+	if (a.Err != "") != (b.Err != "") {
+		return a.Err != ""
+	}
+	ka := [3]int{a.Summary.Errors, a.Summary.Error, a.Summary.Warnings}
+	kb := [3]int{b.Summary.Errors, b.Summary.Error, b.Summary.Warnings}
+	if ka != kb {
+		for i := range ka {
+			if ka[i] != kb[i] {
+				return ka[i] > kb[i]
+			}
+		}
+	}
+	if ca, cb := a.Compliance(), b.Compliance(); ca != cb {
+		return ca < cb
+	}
+	return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+}
+
 // Report is the whole fleet.
 type Report struct {
 	GeneratedAt time.Time `json:"generated_at"`
@@ -155,6 +197,11 @@ type Report struct {
 	Rules []string `json:"rules"`
 	// Teams summarizes the repositories per team; empty when no entry names one.
 	Teams []TeamSummary `json:"teams,omitempty"`
+	// Groups does the same per group.
+	Groups []TeamSummary `json:"groups,omitempty"`
+	// Unversioned lists project directories discovery found outside any
+	// repository of their own; nothing can check them.
+	Unversioned []string `json:"unversioned,omitempty"`
 }
 
 // Run checks every repository in the spec.
@@ -178,13 +225,15 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 		rep.Rules = append(rep.Rules, id)
 	}
 	sort.Strings(rep.Rules)
-	sort.Slice(rep.Repos, func(i, j int) bool { return rep.Repos[i].Name < rep.Repos[j].Name })
-	rep.Teams = summarizeTeams(rep.Repos, opts.Now)
+	sort.SliceStable(rep.Repos, func(i, j int) bool { return urgent(rep.Repos[i], rep.Repos[j]) })
+	rep.Teams = summarize(rep.Repos, opts.Now, func(r RepoReport) string { return r.Team })
+	rep.Groups = summarize(rep.Repos, opts.Now, func(r RepoReport) string { return r.Group })
+	rep.Unversioned = spec.Unversioned
 	return rep, nil
 }
 
 func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport {
-	rr := RepoReport{Name: e.Name, Team: e.Team, Source: firstNonEmpty(e.URL, e.Path)}
+	rr := RepoReport{Name: e.Name, Team: e.Team, Group: e.Group, Source: firstNonEmpty(e.URL, e.Path)}
 	path, err := materialize(ctx, e, firstNonEmpty(opts.Cache, spec.Cache), opts.Update)
 	if err != nil {
 		rr.Err = err.Error()
@@ -195,6 +244,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		rr.Err = err.Error()
 		return rr
 	}
+	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	eff, err := config.Load(r.Root, config.Options{Now: opts.Now, Loader: catalog.RemoteLoader(ctx)})
 	if err == nil {
 		err = eff.Requires(opts.Require)
@@ -207,6 +257,9 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	if err != nil {
 		rr.Err = err.Error()
 		return rr
+	}
+	if opts.MarkFixable != nil {
+		opts.MarkFixable(r, run)
 	}
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
 	rr.Disabled, rr.Weakened = eff.Disabled, eff.Weakened
