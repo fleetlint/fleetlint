@@ -2,7 +2,7 @@ module github.com/fleetlint/fleetlint
 
 go 1.26.0
 
-toolchain go1.27.1
+toolchain go1.27.2
 
 require (
 	cel.dev/cel-go v0.32.0
