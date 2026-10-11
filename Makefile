@@ -102,5 +102,5 @@ release: ## refuse dirty/non-main -> check -> date the Unreleased changelog sect
 	@test "$$(git branch --show-current)" = "$(MAIN_BRANCH)" || { echo "not on $(MAIN_BRANCH)"; exit 1; }
 	$(MAKE) check
 	@v=$$(git-cliff --bumped-version); echo "next version: $$v"; \
-	sed -i "s/^## \[Unreleased\]$$/## [Unreleased]\n\n## [$${v#v}] - $$(date +%F)/" CHANGELOG.md && git add CHANGELOG.md && git commit -q -m "chore(release): $$v" && git tag -s "$$v" -m "$$v" && echo "tagged $$v — push with: git push --follow-tags"
+	sed -i "s/^## \[Unreleased\]$$/## [Unreleased]\n\n## [$${v#v}] - $$(date +%F)/" CHANGELOG.md && git add CHANGELOG.md && SKIP=no-commit-to-branch git commit -q -m "chore(release): $$v" && git tag -s "$$v" -m "$$v" && echo "tagged $$v — push with: git push --follow-tags"
 endif
