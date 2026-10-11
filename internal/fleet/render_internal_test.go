@@ -46,7 +46,7 @@ func triageReport() *Report {
 func TestMarkdownTriageSections(t *testing.T) {
 	t.Parallel()
 	rep := triageReport()
-	md := string(renderMarkdown(newView(rep)))
+	md := string(renderMarkdown(newView(rep, nil)))
 	for _, want := range []string{
 		"## Top levers", "| 1 | `a/hooks` | error | 2 of 2 | 1 | 100% |",
 		"2 repositories: 2 with errors, 0 could not be checked · 1 rule errors · 1 findings fixable",
@@ -84,7 +84,7 @@ func TestUrgentOrder(t *testing.T) {
 
 func TestHTMLSharesSectionsAndRendersCode(t *testing.T) {
 	t.Parallel()
-	page := string(renderHTML(newView(triageReport())))
+	page := string(renderHTML(newView(triageReport(), nil)))
 	for _, want := range []string{
 		"<h2>Top levers</h2>", "<h2>Rules</h2>", "<h2>Rule errors</h2>", "<h2>Facts to pin</h2>",
 		"<code>fleetlint fix --apply</code>", `class="bar b-err"`, `id=mf`,

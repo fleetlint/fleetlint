@@ -17,6 +17,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - **Discovery.** `fleet --discover <dir>` finds git repositories below a directory (four levels, not inside other repositories), names colliding ones by their path, groups them by the directory they sit in, and lists project directories that are in no repository of their own. `--exclude <glob>` skips paths.
 - The HTML report has the same sections as the Markdown one (it lacked the rule table), renders inline code, colors compliance by threshold, sorts tables by column and filters the matrix.
 - The HTML report and the action pages share one stylesheet with light and dark colors at readable contrast; links in dark mode were the browser's default blue on black, and the action pages had no dark mode.
+- **Since the last run.** The fleet report compares with the latest earlier run in `history/`: rules failing at error severity before and after, and per repository the rules that newly fail and those that were fixed.
 - **Fleet-wide facts.** The fleet file sets `team`, `tier` and `visibility` for every repository under `defaults:` and per group under `groups:`, discovered ones included, and entries take `tier:`; what a repository pins in `.fleetlint.yaml` still wins. Fleet runs ask GitHub or Gitea whether a local repository is public when nothing says so, as `init` does, with one note per forge that would not answer.
 
 ### Changed

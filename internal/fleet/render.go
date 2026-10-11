@@ -17,14 +17,19 @@ import (
 
 // Write renders the report into dir: fleet.md, fleet.html, fleet.json, fleet.csv,
 // actions/<repo>.{md,html} and history/<timestamp>.json; index.html duplicates
-// fleet.html so the directory publishes as a static site.
+// fleet.html so the directory publishes as a static site. The latest earlier
+// run in history/ is the baseline for what changed.
 func Write(dir string, rep *Report) error {
+	prev, err := loadPrevious(dir, rep.GeneratedAt)
+	if err != nil {
+		return err
+	}
 	for _, sub := range []string{"", "actions", "history"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o750); err != nil {
 			return err
 		}
 	}
-	v := newView(rep)
+	v := newView(rep, prev)
 	page := renderHTML(v)
 	files := map[string][]byte{
 		"fleet.md":   renderMarkdown(v),
@@ -39,7 +44,7 @@ func Write(dir string, rep *Report) error {
 	if files["fleet.csv"], err = renderCSV(rep); err != nil {
 		return err
 	}
-	files[filepath.Join("history", rep.GeneratedAt.UTC().Format("2006-01-02T150405Z")+".json")] = js
+	files[filepath.Join("history", rep.GeneratedAt.UTC().Format(historyStamp)+".json")] = js
 	for _, r := range rep.Repos {
 		md := renderActions(r)
 		files[filepath.Join("actions", r.Name+".md")] = md
@@ -52,6 +57,9 @@ func Write(dir string, rep *Report) error {
 	}
 	return nil
 }
+
+// historyStamp names a run's file in history/; names sort by time.
+const historyStamp = "2006-01-02T150405Z"
 
 // Matrix marks. A rule a repository's configuration does not select is
 // different from one it selects that does not apply there.
@@ -141,12 +149,13 @@ func (s ruleStat) applicable() bool { return s.Pass+s.Fail+s.Errs+s.Excepted > 0
 // view is what every renderer shows, computed once.
 type view struct {
 	rep          *Report
+	prev         *snapshot  // the previous run, nil without history
 	stats        []ruleStat // applicable somewhere, in rule order
 	inapplicable []string   // selected somewhere, applicable nowhere
 }
 
-func newView(rep *Report) *view {
-	v := &view{rep: rep}
+func newView(rep *Report, prev *snapshot) *view {
+	v := &view{rep: rep, prev: prev}
 	for _, rule := range rep.Rules {
 		s := statFor(rep, rule)
 		if s.applicable() {
@@ -510,7 +519,7 @@ func (v *view) policyTables() []table {
 // and differ only in the matrix.
 func (v *view) sections() (before, after []table) {
 	before = []table{
-		v.levers(), v.repositories(),
+		v.changes(), v.levers(), v.repositories(),
 		teamsTable("Groups", "Group", v.rep.Groups), teamsTable("Teams", "Team", v.rep.Teams),
 		v.ruleErrors(), v.rules(),
 	}
