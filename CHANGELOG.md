@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-11
+
 ### Added
 
 - **Fleet triage.** The fleet report opens with the top levers: the rules that fail most repositories, errors first, with how many `fleetlint fix --apply` repairs and how much of the errors and of all failures fixing them closes. Repositories are listed most urgent first.
