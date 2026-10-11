@@ -21,6 +21,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - **Since the last run.** The fleet report compares with the latest earlier run in `history/`: rules failing at error severity before and after, and per repository the rules that newly fail and those that were fixed.
 - **Fleet-wide facts.** The fleet file sets `team`, `tier` and `visibility` for every repository under `defaults:` and per group under `groups:`, discovered ones included, and entries take `tier:`; what a repository pins in `.fleetlint.yaml` still wins. Fleet runs ask GitHub or Gitea whether a local repository is public when nothing says so, as `init` does, with one note per forge that would not answer. A fleet file entry for a repository that `--discover` also finds adjusts that repository instead of clashing with it.
 
+- **Installation.** Homebrew (`brew install fleetlint/tap/fleetlint`), Scoop, a Nix flake (`github:fleetlint/nur`), `.deb`, `.rpm`, `.apk` and Arch packages on every release, and a signed multi-arch container image `ghcr.io/fleetlint/fleetlint` that includes git. Packages carry an SBOM each, like the archives.
+
 ### Changed
 
 - **BREAKING** `fleet.json` stores each rule definition once under `definitions` and gives `version: 2`; a result's `rule` is the rule id, and `definition` names the stored definition when the repository adjusted it. For fifty repositories the file shrinks from about 10 MB to about 1.3 MB. Compatibility: readers of `results[].rule.id` read `results[].rule` and look the definition up.

@@ -7,10 +7,16 @@ It does not lint code. It checks that the things which lint, test, build and rel
 ## Install
 
 ```sh
+brew install fleetlint/tap/fleetlint                     # macOS, Linux
+scoop bucket add fleetlint https://github.com/fleetlint/scoop-bucket
+scoop install fleetlint/fleetlint                        # Windows
+nix profile install github:fleetlint/nur#fleetlint      # Nix
+mise use github:fleetlint/fleetlint                      # mise
+docker run --rm -v "$PWD:/repo" ghcr.io/fleetlint/fleetlint check
 go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
 ```
 
-Or download a binary for Linux, macOS or Windows from the [releases](https://github.com/fleetlint/fleetlint/releases). Each release carries `checksums.txt`, a signature bundle for it and one SBOM per archive; the release notes show the `cosign verify-blob` command.
+The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archives for Linux, macOS and Windows and `.deb`, `.rpm`, `.apk` and Arch packages. Each release has `checksums.txt`, a signature bundle for it and one SBOM per archive and package; the release notes show the `cosign verify-blob` command. The container image is signed with cosign as well. In CI, use the [GitHub Action](https://github.com/fleetlint/action).
 
 ## Quickstart
 
@@ -87,7 +93,7 @@ Requires Go 1.26 or newer (the build uses the toolchain named in `go.mod` and do
 
 ## Status
 
-0.1.0 is the first release. The configuration, catalog and JSON formats may still change before 1.0; `CHANGELOG.md` lists every change with a compatibility note. What is next and what is still unverified is in `docs/ROADMAP.md`.
+Releases before 1.0 may still change the configuration, catalog and JSON formats; `CHANGELOG.md` lists every change with a compatibility note. What is next and what is still unverified is in `docs/ROADMAP.md`.
 
 ## License
 

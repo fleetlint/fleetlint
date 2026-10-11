@@ -30,11 +30,118 @@ checksum:
   name_template: checksums.txt
   algorithm: sha256
 
+nfpms:
+  - package_name: fleetlint
+    vendor: fleetlint
+    homepage: https://fleetlint.org
+    maintainer: The fleetlint authors <https://github.com/fleetlint/fleetlint>
+    description: Checks how repositories are set up against a catalog of rules and tells you how to close each gap.
+    license: MIT
+    formats: [deb, rpm, apk, archlinux]
+    dependencies: [git]
+    file_name_template: "{{ .ConventionalFileName }}"
+    contents:
+      - src: LICENSE
+        dst: /usr/share/licenses/fleetlint/LICENSE
+
 sboms:
-  - artifacts: archive
+  - id: archives
+    artifacts: archive
     documents: ["{{ .ArtifactName }}.spdx.json"]
     cmd: syft
     args: ["$artifact", "--output", "spdx-json=$document"]
+  - id: packages
+    artifacts: package
+    documents: ["{{ .ArtifactName }}.spdx.json"]
+    cmd: syft
+    args: ["$artifact", "--output", "spdx-json=$document"]
+
+# The container, the cask, the Scoop manifest and the Nix package are
+# published from GitHub only: the deploy keys live in the release
+# environment there, and the image goes to ghcr.io.
+dockers_v2:
+  - images: [ghcr.io/fleetlint/fleetlint]
+    tags: ["{{ .Version }}", "{{ if not .Prerelease }}latest{{ end }}"]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: true
+    disable: '{{ ne (envOrDefault "IS_GITHUB" "") "true" }}'
+    labels:
+      org.opencontainers.image.title: fleetlint
+      org.opencontainers.image.source: https://github.com/fleetlint/fleetlint
+      org.opencontainers.image.url: https://fleetlint.org
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.licenses: MIT
+
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    args: ["sign", "--yes", "${artifact}@${digest}"]
+
+homebrew_casks:
+  - name: fleetlint
+    directory: Casks
+    homepage: https://fleetlint.org
+    description: Checks how repositories are set up against a catalog of rules
+    license: MIT
+    skip_upload: '{{ if envOrDefault "TAP_DEPLOY_KEY" "" }}auto{{ else }}true{{ end }}'
+    commit_author:
+      name: fleetlint release
+      email: fleetlint-release@users.noreply.github.com
+    commit_msg_template: "chore: fleetlint {{ .Tag }}"
+    repository:
+      owner: fleetlint
+      name: homebrew-tap
+      branch: main
+      git:
+        url: git@github.com:fleetlint/homebrew-tap.git
+        private_key: '{{ envOrDefault "TAP_DEPLOY_KEY" "" }}'
+    hooks:
+      post:
+        # The binary is signed with cosign, not by Apple; without this macOS refuses to start it.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/fleetlint"]
+          end
+
+scoops:
+  - name: fleetlint
+    homepage: https://fleetlint.org
+    description: Checks how repositories are set up against a catalog of rules and tells you how to close each gap.
+    license: MIT
+    depends: [git]
+    skip_upload: '{{ if envOrDefault "SCOOP_DEPLOY_KEY" "" }}auto{{ else }}true{{ end }}'
+    commit_author:
+      name: fleetlint release
+      email: fleetlint-release@users.noreply.github.com
+    commit_msg_template: "chore: fleetlint {{ .Tag }}"
+    repository:
+      owner: fleetlint
+      name: scoop-bucket
+      branch: main
+      git:
+        url: git@github.com:fleetlint/scoop-bucket.git
+        private_key: '{{ envOrDefault "SCOOP_DEPLOY_KEY" "" }}'
+
+nix:
+  - name: fleetlint
+    path: pkgs/fleetlint/default.nix
+    homepage: https://fleetlint.org
+    description: Checks how repositories are set up against a catalog of rules
+    license: mit
+    dependencies: [git]
+    skip_upload: '{{ if envOrDefault "NUR_DEPLOY_KEY" "" }}auto{{ else }}true{{ end }}'
+    commit_author:
+      name: fleetlint release
+      email: fleetlint-release@users.noreply.github.com
+    commit_msg_template: "chore: fleetlint {{ .Tag }}"
+    repository:
+      owner: fleetlint
+      name: nur
+      branch: main
+      git:
+        url: git@github.com:fleetlint/nur.git
+        private_key: '{{ envOrDefault "NUR_DEPLOY_KEY" "" }}'
 
 signs:
   - cmd: ./scripts/sign.sh   # keyless on GitHub, --key when COSIGN_PRIVATE_KEY is set (Gitea)

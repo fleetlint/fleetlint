@@ -59,6 +59,20 @@ jobs:
           make tools
           make check
 
+      # GitHub only: the multi-arch image for ghcr.io and nix-hash for the Nix package.
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: env.IS_GITHUB == 'true'
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: env.IS_GITHUB == 'true'
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        if: env.IS_GITHUB == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        if: env.IS_GITHUB == 'true'
+
       # GoReleaser builds, checksums, generates SBOMs (syft), signs (cosign) and publishes
       # to whichever forge it is running on. See .goreleaser.yaml for the signing switch.
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
@@ -71,6 +85,10 @@ jobs:
           GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          # Deploy keys of fleetlint/homebrew-tap, scoop-bucket and nur; unset on Gitea, which skips them.
+          TAP_DEPLOY_KEY: ${{ secrets.TAP_DEPLOY_KEY }}
+          SCOOP_DEPLOY_KEY: ${{ secrets.SCOOP_DEPLOY_KEY }}
+          NUR_DEPLOY_KEY: ${{ secrets.NUR_DEPLOY_KEY }}
 
       - name: Build provenance attestation (SLSA, GitHub only)
         if: env.IS_GITHUB == 'true'
