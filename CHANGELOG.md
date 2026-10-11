@@ -19,7 +19,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - The HTML report and the action pages share one stylesheet with light and dark colors at readable contrast; links in dark mode were the browser's default blue on black, and the action pages had no dark mode.
 - **Fixing across the fleet.** `fleet --fix` lists the mechanical fixes in every local repository, `--apply` writes them (nothing is committed) and the report shows the state after them; `--rule` limits both to one rule.
 - **Since the last run.** The fleet report compares with the latest earlier run in `history/`: rules failing at error severity before and after, and per repository the rules that newly fail and those that were fixed.
-- **Fleet-wide facts.** The fleet file sets `team`, `tier` and `visibility` for every repository under `defaults:` and per group under `groups:`, discovered ones included, and entries take `tier:`; what a repository pins in `.fleetlint.yaml` still wins. Fleet runs ask GitHub or Gitea whether a local repository is public when nothing says so, as `init` does, with one note per forge that would not answer.
+- **Fleet-wide facts.** The fleet file sets `team`, `tier` and `visibility` for every repository under `defaults:` and per group under `groups:`, discovered ones included, and entries take `tier:`; what a repository pins in `.fleetlint.yaml` still wins. Fleet runs ask GitHub or Gitea whether a local repository is public when nothing says so, as `init` does, with one note per forge that would not answer. A fleet file entry for a repository that `--discover` also finds adjusts that repository instead of clashing with it.
 
 ### Changed
 

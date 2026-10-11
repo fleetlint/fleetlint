@@ -162,3 +162,26 @@ func TestFleetFixPassesOverWhatItCannotPlan(t *testing.T) {
 		t.Fatalf("a rule fix cannot plan is skipped, the repository still checked: exit %d\n%s\n%s", code, stdout, stderr)
 	}
 }
+
+func TestFleetFileEntryAdjustsADiscoveredRepository(t *testing.T) {
+	t.Parallel()
+	work := t.TempDir()
+	repo := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"})
+	svc := filepath.Join(work, "group", "svc")
+	if err := os.MkdirAll(filepath.Dir(svc), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(repo.Root, svc); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFiles(t, work, map[string]string{"fleet.yaml": "version: 1\nrepos:\n  - {path: group/svc, name: svc, tier: 3}\n"})
+	out := filepath.Join(work, "report")
+	code, stdout, stderr := runCLI(t, work, "fleet", "--repos", filepath.Join(work, "fleet.yaml"), "--discover", work, "--exclude", "report", "--out", out)
+	if code != cli.ExitOK || !strings.Contains(stdout, "1 repositories checked") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "fleet.md"))
+	if !strings.Contains(string(md), "| svc | group |") || !strings.Contains(string(md), "| 3 |") {
+		t.Errorf("the entry keeps its tier and takes the discovered group:\n%s", md)
+	}
+}

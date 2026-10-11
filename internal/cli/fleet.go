@@ -246,8 +246,12 @@ func addWalked(spec *fleet.Spec, roots, exclude []string) error {
 		return errors.New("--exclude needs --discover")
 	}
 	names := map[string]bool{}
-	for _, e := range spec.Repos {
+	listed := map[string]int{} // path -> index of its fleet file entry
+	for i, e := range spec.Repos {
 		names[e.Name] = true
+		if e.Path != "" {
+			listed[absPath(e.Path)] = i
+		}
 	}
 	for _, root := range roots {
 		found, err := fleet.Discover(root, fleet.DiscoverDepth, exclude)
@@ -255,17 +259,39 @@ func addWalked(spec *fleet.Spec, roots, exclude []string) error {
 			return fmt.Errorf("--discover %s: %w", root, err)
 		}
 		for _, e := range found.Repos {
-			if names[e.Name] {
-				return fmt.Errorf("--discover %s: repository name %q is already in the fleet", root, e.Name)
+			if err := addFound(spec, names, listed, e); err != nil {
+				return fmt.Errorf("--discover %s: %w", root, err)
 			}
-			names[e.Name] = true
-			spec.Repos = append(spec.Repos, e)
 		}
 		for _, u := range found.Unversioned {
 			spec.Unversioned = append(spec.Unversioned, filepath.Join(root, u))
 		}
 	}
 	return nil
+}
+
+// addFound appends a discovered repository; a fleet file entry for the
+// same path adjusts it instead and only takes its group.
+func addFound(spec *fleet.Spec, names map[string]bool, listed map[string]int, e fleet.Entry) error {
+	if i, ok := listed[absPath(e.Path)]; ok {
+		if spec.Repos[i].Group == "" {
+			spec.Repos[i].Group = e.Group
+		}
+		return nil
+	}
+	if names[e.Name] {
+		return fmt.Errorf("repository name %q is already in the fleet", e.Name)
+	}
+	names[e.Name] = true
+	spec.Repos = append(spec.Repos, e)
+	return nil
+}
+
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return filepath.Clean(p)
 }
 
 // addDiscovered appends the repositories of each --from source and makes
