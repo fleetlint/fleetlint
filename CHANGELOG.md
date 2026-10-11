@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- The built-in catalog reports a tracked `.env` file or agent file with its path, no longer takes a Go function called `fit` or an encrypted `.env` file for a finding, and its agent instructions lose a literal `\n`.
+
 ### Security
 
 - Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix HTTP/2 vulnerabilities (GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6613, GO-2026-6617).
