@@ -19,7 +19,7 @@ GO_LICENSES := go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
 # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
 GOLANGCI_VERSION    ?= v2.14.0
 # renovate: datasource=go depName=golang.org/x/vuln
-GOVULNCHECK_VERSION ?= v1.8.0
+GOVULNCHECK_VERSION ?= v1.9.0
 # renovate: datasource=go depName=github.com/boumenot/gocover-cobertura
 GOCOVER_VERSION     ?= v1.5.0
 # renovate: datasource=go depName=github.com/go-gremlins/gremlins

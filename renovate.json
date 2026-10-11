@@ -12,5 +12,21 @@
   ],
   "pre-commit": {
     "enabled": true
-  }
+  },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "x/ modules carry the HTTP/2 and crypto fixes; govulncheck in CI fails on them even when indirect",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "matchPackageNames": [
+        "golang.org/x/**"
+      ],
+      "enabled": true
+    }
+  ]
 }

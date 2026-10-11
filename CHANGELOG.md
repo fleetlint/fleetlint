@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+
+- Built with Go 1.27.2 and `golang.org/x/net` v0.60.0, which fix HTTP/2 vulnerabilities (GO-2026-6610, GO-2026-6611, GO-2026-6612, GO-2026-6613, GO-2026-6617).
+
 ## [0.1.0] - 2026-10-05
 
 First release. The configuration, catalog and JSON output formats may still change before 1.0; changes will be listed here with a compatibility note.
