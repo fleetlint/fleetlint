@@ -25,3 +25,7 @@ commit_parsers = [
 ]
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
+
+[bump]
+# Before 1.0 a breaking change bumps the minor version (0.1 -> 0.2), not to 1.0.
+breaking_always_bump_major = false

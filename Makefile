@@ -97,10 +97,10 @@ check-fast: ## before every commit (< 30 s)
 check: lint test cover audit build ## definition of green (< 10 min)
 	$(BIN) check --fail-on error
 
-release: ## refuse dirty/non-main -> check -> tag; pushing the tag triggers the release workflow
+release: ## refuse dirty/non-main -> check -> date the Unreleased changelog section -> tag; pushing the tag triggers the release workflow
 	@test -z "$$(git status --porcelain)" || { echo "dirty tree"; exit 1; }
 	@test "$$(git branch --show-current)" = "$(MAIN_BRANCH)" || { echo "not on $(MAIN_BRANCH)"; exit 1; }
 	$(MAKE) check
 	@v=$$(git-cliff --bumped-version); echo "next version: $$v"; \
-	git-cliff --tag "$$v" -o CHANGELOG.md && git add CHANGELOG.md && git commit -q -m "chore(release): $$v" && git tag -s "$$v" -m "$$v" && echo "tagged $$v — push with: git push --follow-tags"
+	sed -i "s/^## \[Unreleased\]$$/## [Unreleased]\n\n## [$${v#v}] - $$(date +%F)/" CHANGELOG.md && git add CHANGELOG.md && git commit -q -m "chore(release): $$v" && git tag -s "$$v" -m "$$v" && echo "tagged $$v — push with: git push --follow-tags"
 endif
