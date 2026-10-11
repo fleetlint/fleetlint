@@ -379,7 +379,7 @@ func tierCell(f facts.Facts) tcell {
 	case facts.SourceDefault:
 		c.Text += " (default)"
 		c.Class = "warn"
-	case facts.SourceConfigured, facts.SourceDetected:
+	case facts.SourceConfigured, facts.SourceDetected, facts.SourceFleet:
 	}
 	return c
 }
@@ -443,7 +443,7 @@ func (v *view) ruleErrors() table {
 func (v *view) factsToPin() table {
 	t := table{
 		Title: "Facts to pin",
-		Intro: "Tier and visibility decide which rules apply and how severe they are. For these repositories they were guessed or are unknown (the forge did not answer without a token). Pin them in `.fleetlint.yaml`.",
+		Intro: "Tier and visibility decide which rules apply and how severe they are. For these repositories they were guessed or are unknown (the forge did not answer without a token). Pin them in `.fleetlint.yaml`, or for many repositories at once under `defaults:` or `groups:` in the fleet file.",
 		Head:  []string{"Repository", "Tier", "Tier source", "Visibility", "Add to .fleetlint.yaml"},
 	}
 	for _, r := range v.rep.Repos {
@@ -452,7 +452,7 @@ func (v *view) factsToPin() table {
 		}
 		f := r.Facts
 		var pins []string
-		if f.Sources["tier"] != facts.SourceConfigured {
+		if src := f.Sources["tier"]; src != facts.SourceConfigured && src != facts.SourceFleet {
 			pins = append(pins, fmt.Sprintf("tier: %d", f.Tier))
 		}
 		if f.Visibility == facts.VisibilityUnknown || f.Visibility == "" {

@@ -57,6 +57,8 @@ type Options struct {
 	// Visibility is what the forge reported for the repository, if anyone
 	// asked; it is used when the repository itself does not say.
 	Visibility facts.Visibility
+	// Tier is what a fleet file sets; the configuration file wins over it.
+	Tier int
 }
 
 // Evaluate runs every applicable rule for the root and each configured scope.
@@ -68,6 +70,7 @@ func Evaluate(ctx context.Context, r *repo.Repo, eff *config.Effective) (*Run, e
 func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts Options) (*Run, error) {
 	ov := eff.File.Facts.ToFacts()
 	ov.DetectedVisibility = opts.Visibility
+	ov.FleetTier = opts.Tier
 	root := facts.Discover(r, ov)
 	run := &Run{Facts: root, Config: eff}
 
@@ -138,6 +141,7 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 	sc = mergeNested(sc, nested)
 	ov := eff.File.Facts.ToFacts()
 	ov.DetectedVisibility = opts.Visibility
+	ov.FleetTier = opts.Tier
 	if len(sc.Facts.Stacks) > 0 {
 		ov.Stacks = sc.Facts.Stacks
 	}

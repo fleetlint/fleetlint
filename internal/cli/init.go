@@ -43,25 +43,34 @@ func initCmd(g *globals, code *int) *cobra.Command {
 // nothing local says so. It returns "" when there is nothing to ask or the
 // forge does not answer; the reason goes to stderr.
 func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visibility {
-	if f.Visibility != facts.VisibilityUnknown || (f.Forge != "github" && f.Forge != "gitea") {
-		return ""
-	}
-	host, owner, name, ok := forge.ParseRemote(r.RemoteURL())
-	if !ok {
-		return ""
-	}
-	public, err := forge.Client{}.Public(cmd.Context(), f.Forge, host, owner, name)
+	vis, host, err := lookupVisibility(cmd.Context(), r, f)
 	switch {
 	case errors.Is(err, forge.ErrNotFound):
-		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s does not show %s/%s without a token; left undetected (set GITHUB_TOKEN or GITEA_TOKEN, or pin facts.visibility)\n", host, owner, name) //nolint:errcheck // a note on stderr
-		return ""
+		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s does not show this repository without a token; left undetected (set GITHUB_TOKEN or GITEA_TOKEN, or pin facts.visibility)\n", host) //nolint:errcheck // a note on stderr
 	case err != nil:
 		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: lookup on %s failed (%v); left undetected\n", host, err) //nolint:errcheck // a note on stderr
-		return ""
-	case public:
-		return facts.VisibilityPublic
 	}
-	return facts.VisibilityPrivate
+	return vis
+}
+
+// lookupVisibility asks the forge of the repository's remote whether it is
+// public. It returns "" and no error when there is nothing to ask.
+func lookupVisibility(ctx context.Context, r *repo.Repo, f facts.Facts) (facts.Visibility, string, error) {
+	if f.Visibility != facts.VisibilityUnknown || (f.Forge != "github" && f.Forge != "gitea") {
+		return "", "", nil
+	}
+	host, owner, name, ok := forge.ParseRemote(r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
+	if !ok {
+		return "", "", nil
+	}
+	public, err := forge.Client{}.Public(ctx, f.Forge, host, owner, name)
+	switch {
+	case err != nil:
+		return "", host, err
+	case public:
+		return facts.VisibilityPublic, host, nil
+	}
+	return facts.VisibilityPrivate, host, nil
 }
 
 func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibility, runners []string) string {

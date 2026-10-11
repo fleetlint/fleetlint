@@ -25,6 +25,8 @@ const (
 	// SourceInferred is a value guessed from other facts (the tier from
 	// visibility, release or CI); TierReason says from which.
 	SourceInferred Source = "inferred"
+	// SourceFleet is a value the fleet file set for the repository.
+	SourceFleet Source = "fleet"
 )
 
 // Visibility of the repository on its forge.
@@ -106,6 +108,9 @@ type Overrides struct {
 	// DetectedVisibility is what a forge said; it applies only when neither
 	// git config nor the configuration file settles the visibility.
 	DetectedVisibility Visibility
+	// FleetTier is the tier a fleet file sets; it applies only when the
+	// configuration file does not pin one.
+	FleetTier int
 }
 
 // Discover computes facts for a repository, applying overrides last.
@@ -137,6 +142,10 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 
 	applyOverrides(&f, ov)
 
+	if f.Tier == 0 && ov.FleetTier != 0 {
+		f.Tier = ov.FleetTier
+		f.Sources["tier"] = SourceFleet
+	}
 	if f.Tier == 0 {
 		f.Tier, f.TierReason = defaultTier(f)
 		f.Sources["tier"] = SourceDefault
@@ -171,10 +180,13 @@ func applyOverrides(f *Facts, ov Overrides) {
 }
 
 // TierSource says where the tier came from, with the deciding fact when it
-// was inferred: "configured", "default" or "inferred from CI".
+// was inferred: "configured", "fleet file", "default" or "inferred from CI".
 func (f Facts) TierSource() string {
 	if f.Sources["tier"] == SourceInferred && f.TierReason != "" {
 		return "inferred from " + f.TierReason
+	}
+	if f.Sources["tier"] == SourceFleet {
+		return "fleet file"
 	}
 	return string(f.Sources["tier"])
 }

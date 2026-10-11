@@ -32,8 +32,41 @@ type Spec struct {
 	Version int     `yaml:"version"`
 	Cache   string  `yaml:"cache,omitempty"`
 	Repos   []Entry `yaml:"repos"`
+	// Defaults apply to every repository, Groups to the repositories of a
+	// group (discovered ones too); an entry's own values win.
+	Defaults Settings            `yaml:"defaults,omitempty"`
+	Groups   map[string]Settings `yaml:"groups,omitempty"`
 	// Unversioned is filled by discovery, never read from a fleet file.
 	Unversioned []string `yaml:"-"`
+}
+
+// Settings are the values a fleet file sets for many repositories at once.
+type Settings struct {
+	Team       string `yaml:"team,omitempty"`
+	Tier       int    `yaml:"tier,omitempty"`
+	Visibility string `yaml:"visibility,omitempty"`
+}
+
+func (s Settings) validate() error {
+	if s.Tier < 0 || s.Tier > 3 {
+		return fmt.Errorf("tier %d must be 1, 2 or 3", s.Tier)
+	}
+	if s.Visibility != "" && s.Visibility != string(facts.VisibilityPublic) && s.Visibility != string(facts.VisibilityPrivate) {
+		return fmt.Errorf("visibility %q must be public or private", s.Visibility)
+	}
+	return nil
+}
+
+// settle fills what the entry leaves open from its group, then the defaults.
+func (s *Spec) settle(e Entry) Entry {
+	for _, from := range []Settings{s.Groups[e.Group], s.Defaults} {
+		e.Team = firstNonEmpty(e.Team, from.Team)
+		e.Visibility = firstNonEmpty(e.Visibility, from.Visibility)
+		if e.Tier == 0 {
+			e.Tier = from.Tier
+		}
+	}
+	return e
 }
 
 // Entry is one repository: a local path or a git URL (cloned into the cache).
@@ -48,6 +81,8 @@ type Entry struct {
 	// Visibility (public or private) is what the forge says about the
 	// repository; it applies when the repository does not say itself.
 	Visibility string `yaml:"visibility,omitempty"`
+	// Tier applies when the repository's configuration does not pin one.
+	Tier int `yaml:"tier,omitempty"`
 	// Token authenticates the clone over https the way the forge API call
 	// was authenticated; set by discovery, never read from a fleet file.
 	Token string `yaml:"-"`
@@ -68,6 +103,14 @@ func LoadSpec(path string) (*Spec, error) {
 	}
 	if s.Version != 1 {
 		return nil, fmt.Errorf("%s: version must be 1", path)
+	}
+	if err := s.Defaults.validate(); err != nil {
+		return nil, fmt.Errorf("%s: defaults: %w", path, err)
+	}
+	for name, g := range s.Groups {
+		if err := g.validate(); err != nil {
+			return nil, fmt.Errorf("%s: groups.%s: %w", path, name, err)
+		}
 	}
 	base := filepath.Dir(path)
 	names := map[string]bool{}
@@ -96,8 +139,8 @@ func (e *Entry) normalize(base string) error {
 	if e.URL != "" && !validCloneURL(e.URL) {
 		return fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path)", e.URL)
 	}
-	if e.Visibility != "" && e.Visibility != string(facts.VisibilityPublic) && e.Visibility != string(facts.VisibilityPrivate) {
-		return fmt.Errorf("visibility %q must be public or private", e.Visibility)
+	if err := (Settings{Tier: e.Tier, Visibility: e.Visibility}).validate(); err != nil {
+		return err
 	}
 	if e.Name == "" {
 		e.Name = deriveName(*e)
@@ -123,6 +166,9 @@ type Options struct {
 	// MarkFixable flags the results `fleetlint fix --apply` can repair; the
 	// planner lives with the fix command, so the caller passes it in.
 	MarkFixable func(*repo.Repo, *engine.Run)
+	// Visibility asks the forge when neither the entry nor the repository
+	// says whether it is public; nil asks no one.
+	Visibility func(context.Context, *repo.Repo, facts.Facts) facts.Visibility
 }
 
 // RepoReport is one repository's outcome.
@@ -215,7 +261,7 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		rr := checkOne(ctx, e, spec, opts)
+		rr := checkOne(ctx, spec.settle(e), spec, opts)
 		rep.Repos = append(rep.Repos, rr)
 		for _, res := range rr.Results {
 			seen[res.Rule.ID] = true
@@ -244,7 +290,6 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		rr.Err = err.Error()
 		return rr
 	}
-	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	eff, err := config.Load(r.Root, config.Options{Now: opts.Now, Loader: catalog.RemoteLoader(ctx)})
 	if err == nil {
 		err = eff.Requires(opts.Require)
@@ -253,18 +298,29 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		rr.Err = err.Error()
 		return rr
 	}
-	run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: facts.Visibility(e.Visibility)})
+	run, err := evaluate(ctx, e, r, eff, opts)
 	if err != nil {
 		rr.Err = err.Error()
 		return rr
 	}
-	if opts.MarkFixable != nil {
-		opts.MarkFixable(r, run)
-	}
+	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
 	rr.Disabled, rr.Weakened = eff.Disabled, eff.Weakened
 	rr.Exceptions = append(append([]model.Exception{}, eff.Exceptions...), run.ScopeExceptions...)
 	return rr
+}
+
+// evaluate checks the repository with what the fleet knows about it.
+func evaluate(ctx context.Context, e Entry, r *repo.Repo, eff *config.Effective, opts Options) (*engine.Run, error) {
+	vis := facts.Visibility(e.Visibility)
+	if vis == "" && opts.Visibility != nil {
+		vis = opts.Visibility(ctx, r, facts.Discover(r, eff.File.Facts.ToFacts()))
+	}
+	run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: vis, Tier: e.Tier})
+	if err == nil && opts.MarkFixable != nil {
+		opts.MarkFixable(r, run)
+	}
+	return run, err
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)

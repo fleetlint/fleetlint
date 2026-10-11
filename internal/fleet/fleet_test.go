@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
+	"github.com/fleetlint/fleetlint/internal/repo"
 	_ "github.com/fleetlint/fleetlint/internal/rules/builtin"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
@@ -220,5 +222,61 @@ func TestFleetRequireReportsMissingBaseline(t *testing.T) {
 	rep, _ = fleet.Run(context.Background(), spec, fleet.Options{Require: []string{"fleetlint:minimal"}})
 	if rep.Repos[0].Err != "" {
 		t.Fatalf("satisfied requirement: %+v", rep.Repos[0])
+	}
+}
+
+func TestFleetFileSettingsFillWhatRepositoriesLeaveOpen(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	open := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\n"})
+	pinned := testutil.GitFixture(t, map[string]string{"go.mod": "module y\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"})
+	body := "version: 1\ndefaults: {tier: 2, team: core}\ngroups:\n  tools: {tier: 3, visibility: private}\nrepos:\n" +
+		"  - {path: " + open.Root + ", name: grouped, group: tools}\n" +
+		"  - {path: " + open.Root + ", name: plain}\n" +
+		"  - {path: " + open.Root + ", name: own, group: tools, tier: 1, team: web}\n" +
+		"  - {path: " + pinned.Root + ", name: pinned}\n"
+	p := filepath.Join(dir, "fleet.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	spec, err := fleet.LoadSpec(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	asked := 0
+	rep, err := fleet.Run(context.Background(), spec, fleet.Options{Visibility: func(context.Context, *repo.Repo, facts.Facts) facts.Visibility {
+		asked++
+		return facts.VisibilityPublic
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type got struct {
+		tier       int
+		source     facts.Source
+		team       string
+		visibility facts.Visibility
+	}
+	want := map[string]got{
+		"grouped": {3, facts.SourceFleet, "core", facts.VisibilityPrivate},
+		"plain":   {2, facts.SourceFleet, "core", facts.VisibilityPublic},
+		"own":     {1, facts.SourceFleet, "web", facts.VisibilityPrivate},
+		"pinned":  {3, facts.SourceConfigured, "core", facts.VisibilityPublic},
+	}
+	for _, r := range rep.Repos {
+		if g := (got{r.Facts.Tier, r.Facts.Sources["tier"], r.Team, r.Facts.Visibility}); g != want[r.Name] {
+			t.Errorf("%s: %+v, want %+v (entry over group over defaults; the repository's own pin over all)", r.Name, g, want[r.Name])
+		}
+	}
+	if asked != 2 {
+		t.Errorf("the forge is asked only where the fleet file sets no visibility: asked %d times, want 2", asked)
+	}
+	for _, bad := range []string{"defaults: {tier: 4}", "groups: {x: {visibility: internal}}", "repos: [{path: a, tier: 9}]"} {
+		if err := os.WriteFile(p, []byte("version: 1\n"+bad+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fleet.LoadSpec(p); err == nil {
+			t.Errorf("%s must be refused", bad)
+		}
 	}
 }

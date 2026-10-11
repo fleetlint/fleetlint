@@ -4,20 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/forge"
+	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
+// fleetFlags are the fleet command's flags.
+type fleetFlags struct {
+	specPath, out, cache         string
+	from, discoverRoots, exclude []string
+	update, fail                 bool
+}
+
 func fleetCmd(g *globals, code *int) *cobra.Command {
-	var specPath, out, cache string
-	var from, discoverRoots, exclude []string
-	var update, failOnFindings bool
+	var f fleetFlags
 	cmd := &cobra.Command{
 		Use:   "fleet [path...]",
 		Short: "Check many repositories and write one report (matrix, per-repo tasks, history)",
@@ -29,43 +39,99 @@ GITEA_TOKEN from the environment, if set) and clones them over https with the
 same token; without one, public repositories only. --discover walks a
 directory for git repositories (groups follow the directory layout) and
 lists project directories that are in no repository of their own.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			spec, err := buildSpec(specPath, args)
-			if err == nil {
-				err = addWalked(spec, discoverRoots, exclude)
-			}
-			if err == nil {
-				err = addDiscovered(cmd.Context(), spec, from)
-			}
-			if err != nil {
-				return &configError{err}
-			}
-			rep, err := fleet.Run(cmd.Context(), spec, fleet.Options{Deep: g.deep, Update: update, Cache: cache, Require: g.require, Version: Version, MarkFixable: markFixable})
-			if err != nil {
-				return err
-			}
-			if err := fleet.Write(out, rep); err != nil {
-				return err
-			}
-			failing, errs := tally(rep)
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%d repositories checked, %d with errors, %d could not be checked. Report: %s\n",
-				len(rep.Repos), failing, errs, filepath.Join(out, "fleet.html"))
-			if failOnFindings && (failing > 0 || errs > 0) {
-				*code = ExitFindings
-			}
-			return err
-		},
+		RunE: func(cmd *cobra.Command, args []string) error { return runFleet(cmd, g, code, f, args) },
 	}
-	cmd.Flags().StringVar(&specPath, "repos", "", "fleet file (version, cache, repos: [{path|url, name, team}])")
-	cmd.Flags().StringArrayVar(&from, "from", nil, "discover repositories on a forge: github:<owner> or gitea:<host>/<owner> (repeatable; archived repositories and forks are skipped)")
-	cmd.Flags().StringArrayVar(&discoverRoots, "discover", nil, fmt.Sprintf("find git repositories under a directory, up to %d levels down (repeatable)", fleet.DiscoverDepth))
-	cmd.Flags().StringArrayVar(&exclude, "exclude", nil, "with --discover: skip paths matching this glob, relative to the directory (e.g. '*/third_party/*'; repeatable)")
-	cmd.Flags().StringVar(&out, "out", "fleet-report", "output directory")
-	cmd.Flags().StringVar(&cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
-	cmd.Flags().BoolVar(&update, "update", false, "git pull cached clones before checking")
-	cmd.Flags().BoolVar(&failOnFindings, "fail", false, "exit 1 if any repository has errors")
+	cmd.Flags().StringVar(&f.specPath, "repos", "", "fleet file (version, cache, defaults, groups, repos: [{path|url, name, team, group, tier, visibility}])")
+	cmd.Flags().StringArrayVar(&f.from, "from", nil, "discover repositories on a forge: github:<owner> or gitea:<host>/<owner> (repeatable; archived repositories and forks are skipped)")
+	cmd.Flags().StringArrayVar(&f.discoverRoots, "discover", nil, fmt.Sprintf("find git repositories under a directory, up to %d levels down (repeatable)", fleet.DiscoverDepth))
+	cmd.Flags().StringArrayVar(&f.exclude, "exclude", nil, "with --discover: skip paths matching this glob, relative to the directory (e.g. '*/third_party/*'; repeatable)")
+	cmd.Flags().StringVar(&f.out, "out", "fleet-report", "output directory")
+	cmd.Flags().StringVar(&f.cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
+	cmd.Flags().BoolVar(&f.update, "update", false, "git pull cached clones before checking")
+	cmd.Flags().BoolVar(&f.fail, "fail", false, "exit 1 if any repository has errors")
 	cmd.Flags().BoolVar(&g.deep, "deep", false, "also run rules that execute repository code")
 	return cmd
+}
+
+func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []string) error {
+	spec, err := fleetSpec(cmd.Context(), f, args)
+	if err != nil {
+		return &configError{err}
+	}
+	asked := &visibilityLookup{}
+	opts := fleet.Options{
+		Deep: g.deep, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
+		MarkFixable: markFixable, Visibility: asked.lookup,
+	}
+	rep, err := fleet.Run(cmd.Context(), spec, opts)
+	if err != nil {
+		return err
+	}
+	asked.note(cmd.ErrOrStderr())
+	if err := fleet.Write(f.out, rep); err != nil {
+		return err
+	}
+	failing, errs := tally(rep)
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%d repositories checked, %d with errors, %d could not be checked. Report: %s\n",
+		len(rep.Repos), failing, errs, filepath.Join(f.out, "fleet.html"))
+	if f.fail && (failing > 0 || errs > 0) {
+		*code = ExitFindings
+	}
+	return err
+}
+
+// fleetSpec assembles the repositories from the fleet file, the arguments,
+// --discover and --from.
+func fleetSpec(ctx context.Context, f fleetFlags, args []string) (*fleet.Spec, error) {
+	spec, err := buildSpec(f.specPath, args)
+	if err != nil {
+		return nil, err
+	}
+	if err := addWalked(spec, f.discoverRoots, f.exclude); err != nil {
+		return nil, err
+	}
+	return spec, addDiscovered(ctx, spec, f.from)
+}
+
+// visibilityLookup asks the forge for each repository whose visibility is
+// unknown and keeps the failures for one note instead of one per repository.
+type visibilityLookup struct {
+	hidden map[string]int // host -> repositories it did not show
+	failed []string
+}
+
+func (v *visibilityLookup) lookup(ctx context.Context, r *repo.Repo, f facts.Facts) facts.Visibility {
+	vis, host, err := lookupVisibility(ctx, r, f)
+	switch {
+	case errors.Is(err, forge.ErrNotFound):
+		if v.hidden == nil {
+			v.hidden = map[string]int{}
+		}
+		v.hidden[host]++
+	case err != nil:
+		v.failed = append(v.failed, fmt.Sprintf("%s (%v)", r.Name(), err))
+	}
+	return vis
+}
+
+func (v *visibilityLookup) note(w io.Writer) {
+	for _, host := range slices.Sorted(maps.Keys(v.hidden)) {
+		hint := "GITEA_TOKEN"
+		if host == "github.com" {
+			hint = "GITHUB_TOKEN, e.g. GITHUB_TOKEN=$(gh auth token)"
+		}
+		fmt.Fprintf(w, "visibility: %s does not show %s without a token; left unknown (set %s, or visibility in the fleet file)\n", host, plural(v.hidden[host], "repository", "repositories"), hint) //nolint:errcheck // a note on stderr
+	}
+	if len(v.failed) > 0 {
+		fmt.Fprintf(w, "visibility: lookup failed for %s; left unknown\n", strings.Join(v.failed, ", ")) //nolint:errcheck // a note on stderr
+	}
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return fmt.Sprintf("%d %s", n, many)
 }
 
 // tally counts repositories with error findings and repositories that could not be checked.
