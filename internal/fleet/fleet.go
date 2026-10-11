@@ -169,6 +169,10 @@ type Options struct {
 	// Visibility asks the forge when neither the entry nor the repository
 	// says whether it is public; nil asks no one.
 	Visibility func(context.Context, *repo.Repo, facts.Facts) facts.Visibility
+	// Fix plans (and may apply) the mechanical fixes in a local repository
+	// and returns how many changes it wrote; the repository is checked again
+	// when it wrote any. Cloned repositories are left alone.
+	Fix func(name string, r *repo.Repo, run *engine.Run) (int, error)
 }
 
 // RepoReport is one repository's outcome.
@@ -298,7 +302,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		rr.Err = err.Error()
 		return rr
 	}
-	run, err := evaluate(ctx, e, r, eff, opts)
+	r, run, err := evaluate(ctx, e, path, r, eff, opts)
 	if err != nil {
 		rr.Err = err.Error()
 		return rr
@@ -310,17 +314,34 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
-// evaluate checks the repository with what the fleet knows about it.
-func evaluate(ctx context.Context, e Entry, r *repo.Repo, eff *config.Effective, opts Options) (*engine.Run, error) {
+// evaluate checks the repository and, with opts.Fix, fixes it and checks
+// the fixed repository again.
+func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *config.Effective, opts Options) (*repo.Repo, *engine.Run, error) {
 	vis := facts.Visibility(e.Visibility)
 	if vis == "" && opts.Visibility != nil {
 		vis = opts.Visibility(ctx, r, facts.Discover(r, eff.File.Facts.ToFacts()))
 	}
-	run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: vis, Tier: e.Tier})
-	if err == nil && opts.MarkFixable != nil {
-		opts.MarkFixable(r, run)
+	once := func(r *repo.Repo) (*engine.Run, error) {
+		run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: vis, Tier: e.Tier})
+		if err == nil && opts.MarkFixable != nil {
+			opts.MarkFixable(r, run)
+		}
+		return run, err
 	}
-	return run, err
+	run, err := once(r)
+	if err != nil || opts.Fix == nil || e.Path == "" {
+		return r, run, err
+	}
+	applied, err := opts.Fix(e.Name, r, run)
+	if err != nil || applied == 0 {
+		return r, run, err
+	}
+	// The repository caches what it read; the fixed one is read afresh.
+	if r, err = repo.Open(ctx, path); err != nil {
+		return nil, nil, err
+	}
+	run, err = once(r)
+	return r, run, err
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)

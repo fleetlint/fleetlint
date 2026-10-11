@@ -63,6 +63,8 @@ func TestFleetSpecErrors(t *testing.T) {
 		{"invalid fleet file", []string{"--repos", filepath.Join(work, "bad.yaml")}, "version must be 1"},
 		{"exclude without discover", []string{"--exclude", "x/*", work}, "--exclude needs --discover"},
 		{"discover a missing directory", []string{"--discover", filepath.Join(work, "missing")}, "no such file"},
+		{"apply without fix", []string{"--apply", work}, "--apply and --rule need --fix"},
+		{"rule without fix", []string{"--rule", "repo/gitattributes", work}, "--apply and --rule need --fix"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -100,5 +102,63 @@ func TestFleetDiscover(t *testing.T) {
 		if !strings.Contains(string(md), want) {
 			t.Errorf("report lacks %q:\n%s", want, md)
 		}
+	}
+}
+
+func TestFleetFix(t *testing.T) {
+	t.Parallel()
+	messy := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".DS_Store": "x", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"}).Root
+	work := t.TempDir()
+	out := filepath.Join(work, "report")
+	junk := func() string {
+		b, err := os.ReadFile(filepath.Join(out, "fleet.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rep struct {
+			Repos []struct {
+				Results []struct {
+					Rule   string `json:"rule"`
+					Status string `json:"status"`
+				} `json:"results"`
+			} `json:"repos"`
+		}
+		if err := json.Unmarshal(b, &rep); err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rep.Repos[0].Results {
+			if r.Rule == "repo/no-tracked-junk" {
+				return r.Status
+			}
+		}
+		return ""
+	}
+
+	code, stdout, stderr := runCLI(t, work, "fleet", "--fix", "--rule", "repo/no-tracked-junk", "--out", out, messy)
+	if code != cli.ExitOK || !strings.Contains(stdout, "untrack .DS_Store") || !strings.Contains(stdout, "2 change(s) planned in 1 repositories") {
+		t.Fatalf("dry run: exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if got := junk(); got != "fail" {
+		t.Fatalf("a dry run changes nothing: %s", got)
+	}
+
+	code, stdout, stderr = runCLI(t, work, "fleet", "--fix", "--apply", "--rule", "repo/no-tracked-junk", "--out", out, messy)
+	if code != cli.ExitOK || !strings.Contains(stdout, "applied 2 change(s) in 1 repositories") {
+		t.Fatalf("apply: exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if got := junk(); got != "pass" {
+		t.Fatalf("the report shows the state after the fix: %s", got)
+	}
+}
+
+func TestFleetFixPassesOverWhatItCannotPlan(t *testing.T) {
+	t.Parallel()
+	commented := testutil.GitFixture(t, map[string]string{
+		"package.json": `{"name": "x", "scripts": {"build": "tsc"}}`, "tsconfig.json": "{\n  // loose for now\n  \"compilerOptions\": {}\n}\n",
+	}).Root
+	work := t.TempDir()
+	code, stdout, stderr := runCLI(t, work, "fleet", "--fix", "--out", filepath.Join(work, "report"), commented)
+	if code != cli.ExitOK || !strings.Contains(stdout, "skipped lint/node-config") || !strings.Contains(stdout, "0 could not be checked") {
+		t.Fatalf("a rule fix cannot plan is skipped, the repository still checked: exit %d\n%s\n%s", code, stdout, stderr)
 	}
 }

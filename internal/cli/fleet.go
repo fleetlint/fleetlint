@@ -13,7 +13,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/forge"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -21,9 +23,9 @@ import (
 
 // fleetFlags are the fleet command's flags.
 type fleetFlags struct {
-	specPath, out, cache         string
-	from, discoverRoots, exclude []string
-	update, fail                 bool
+	specPath, out, cache               string
+	from, discoverRoots, exclude, rule []string
+	update, fail, fix, apply           bool
 }
 
 func fleetCmd(g *globals, code *int) *cobra.Command {
@@ -38,7 +40,10 @@ and history/<timestamp>.json into --out. URL entries are cloned into --cache.
 GITEA_TOKEN from the environment, if set) and clones them over https with the
 same token; without one, public repositories only. --discover walks a
 directory for git repositories (groups follow the directory layout) and
-lists project directories that are in no repository of their own.`,
+lists project directories that are in no repository of their own.
+--fix plans the mechanical fixes (fleetlint fix) in every local repository;
+with --apply it writes them and the report shows the state after them.
+Nothing is committed.`,
 		RunE: func(cmd *cobra.Command, args []string) error { return runFleet(cmd, g, code, f, args) },
 	}
 	cmd.Flags().StringVar(&f.specPath, "repos", "", "fleet file (version, cache, defaults, groups, repos: [{path|url, name, team, group, tier, visibility}])")
@@ -49,6 +54,9 @@ lists project directories that are in no repository of their own.`,
 	cmd.Flags().StringVar(&f.cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
 	cmd.Flags().BoolVar(&f.update, "update", false, "git pull cached clones before checking")
 	cmd.Flags().BoolVar(&f.fail, "fail", false, "exit 1 if any repository has errors")
+	cmd.Flags().BoolVar(&f.fix, "fix", false, "plan the mechanical fixes in every local repository (dry run)")
+	cmd.Flags().BoolVar(&f.apply, "apply", false, "with --fix: write the changes; nothing is committed")
+	cmd.Flags().StringArrayVar(&f.rule, "rule", nil, "with --fix: only fix this rule (repeatable)")
 	cmd.Flags().BoolVar(&g.deep, "deep", false, "also run rules that execute repository code")
 	return cmd
 }
@@ -63,11 +71,20 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 		Deep: g.deep, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
 		MarkFixable: markFixable, Visibility: asked.lookup,
 	}
+	fixer := &fleetFixer{w: cmd.OutOrStdout(), apply: f.apply, rules: f.rule}
+	if f.fix {
+		opts.Fix = fixer.fix
+	}
 	rep, err := fleet.Run(cmd.Context(), spec, opts)
 	if err != nil {
 		return err
 	}
 	asked.note(cmd.ErrOrStderr())
+	if f.fix {
+		if err := fixer.summary(); err != nil {
+			return err
+		}
+	}
 	if err := fleet.Write(f.out, rep); err != nil {
 		return err
 	}
@@ -83,6 +100,9 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 // fleetSpec assembles the repositories from the fleet file, the arguments,
 // --discover and --from.
 func fleetSpec(ctx context.Context, f fleetFlags, args []string) (*fleet.Spec, error) {
+	if !f.fix && (f.apply || len(f.rule) > 0) {
+		return nil, errors.New("--apply and --rule need --fix")
+	}
 	spec, err := buildSpec(f.specPath, args)
 	if err != nil {
 		return nil, err
@@ -91,6 +111,60 @@ func fleetSpec(ctx context.Context, f fleetFlags, args []string) (*fleet.Spec, e
 		return nil, err
 	}
 	return spec, addDiscovered(ctx, spec, f.from)
+}
+
+// fleetFixer plans the mechanical fixes of each repository, lists them and
+// writes them with --apply.
+type fleetFixer struct {
+	w              io.Writer
+	apply          bool
+	rules          []string
+	changes, repos int
+}
+
+func (f *fleetFixer) fix(name string, r *repo.Repo, run *engine.Run) (int, error) {
+	// A rule that cannot be planned here is left to a person; the others go ahead.
+	var skipped []string
+	changes, _, err := planEach(r, run, f.rules, func(id string, err error) error {
+		skipped = append(skipped, fmt.Sprintf("  skipped %s: %v\n", id, err))
+		return nil
+	})
+	if err != nil || len(changes)+len(skipped) == 0 {
+		return 0, err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s:\n", name)
+	for _, c := range changes {
+		fmt.Fprintf(&b, "  %-7s %s\n", c.Kind, c.Path)
+	}
+	b.WriteString(strings.Join(skipped, ""))
+	if len(changes) > 0 {
+		f.repos++
+		f.changes += len(changes)
+	}
+	if _, err := io.WriteString(f.w, b.String()); err != nil {
+		return 0, err
+	}
+	if !f.apply {
+		return 0, nil
+	}
+	if err := fix.Apply(changes); err != nil {
+		return 0, fmt.Errorf("fix: %w", err)
+	}
+	return len(changes), nil
+}
+
+func (f *fleetFixer) summary() error {
+	var err error
+	switch {
+	case f.changes == 0:
+		_, err = fmt.Fprintln(f.w, "nothing to fix")
+	case f.apply:
+		_, err = fmt.Fprintf(f.w, "\napplied %d change(s) in %d repositories; the report shows the state after them. Nothing is committed.\n", f.changes, f.repos)
+	default:
+		_, err = fmt.Fprintf(f.w, "\n%d change(s) planned in %d repositories. Re-run with --apply to write them (`fleetlint fix` in a repository shows the diff).\n", f.changes, f.repos)
+	}
+	return err
 }
 
 // visibilityLookup asks the forge for each repository whose visibility is

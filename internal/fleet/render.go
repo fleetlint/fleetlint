@@ -281,7 +281,7 @@ func (v *view) levers() table {
 		})
 	}
 	if len(t.Rows) > 0 {
-		t.Intro = fmt.Sprintf("Rules ranked by the repositories they fail at error severity, then by all failures. %d failing rule × repository pairs, %d of them errors (these fail CI). Fixing the first %d rules closes %s of the errors; the long tail of warnings is in the rules table.",
+		t.Intro = fmt.Sprintf("Rules ranked by the repositories they fail at error severity, then by all failures. %d failing rule × repository pairs, %d of them errors (these fail CI). Fixing the first %d rules closes %s of the errors; the long tail of warnings is in the rules table. `fleetlint fleet --fix --apply --rule <rule>` with the same repositories applies a rule's mechanical fix everywhere at once.",
 			total, totalErr, max(errRules, 1), share(cumErr, totalErr))
 	}
 	return t

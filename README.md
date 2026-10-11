@@ -27,6 +27,7 @@ fleetlint facts           # what was discovered, and where each value came from
 fleetlint fleet a/ b/ c/  # many repositories: one HTML/Markdown/JSON report plus per-repo task lists
 fleetlint fleet --from github:your-org   # or every repository of an owner
 fleetlint fleet --discover ~/src         # or every repository below a directory
+fleetlint fleet --discover ~/src --fix --apply --rule hooks/config-present   # one fix, everywhere
 fleetlint baseline        # grandfather today's findings; from now on only new ones fail
 ```
 

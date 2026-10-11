@@ -60,6 +60,12 @@ type manualFix struct {
 }
 
 func planFixes(r *repo.Repo, run *engine.Run, only []string) ([]fix.Change, []manualFix, error) {
+	return planEach(r, run, only, func(id string, err error) error { return fmt.Errorf("rule %s: %w", id, err) })
+}
+
+// planEach plans the failing rules; onErr decides whether a rule that
+// cannot be planned stops the plan (an error) or is passed over (nil).
+func planEach(r *repo.Repo, run *engine.Run, only []string, onErr func(id string, err error) error) ([]fix.Change, []manualFix, error) {
 	want := map[string]bool{}
 	for _, id := range only {
 		want[id] = true
@@ -73,7 +79,10 @@ func planFixes(r *repo.Repo, run *engine.Run, only []string) ([]fix.Change, []ma
 		}
 		planned, err := planRule(r, run, res)
 		if err != nil {
-			return nil, nil, fmt.Errorf("rule %s: %w", res.Rule.ID, err)
+			if err := onErr(res.Rule.ID, err); err != nil {
+				return nil, nil, err
+			}
+			continue
 		}
 		if len(planned) == 0 {
 			manual = append(manual, manualFix{res})
