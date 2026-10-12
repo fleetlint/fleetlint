@@ -6,7 +6,7 @@ project_name: fleetlint
 
 before:
   hooks:
-    - go mod tidy
+    - go mod verify
 
 builds:
   - main: ./cmd/fleetlint
@@ -171,7 +171,7 @@ release:
     Verify the checksums signature (keyless, GitHub-built releases):
 
         cosign verify-blob --bundle checksums.txt.sigstore.json \
-          --certificate-identity-regexp 'https://github.com/fleetlint/fleetlint/.github/workflows/release.yml@refs/tags/v' \
+          --certificate-identity 'https://github.com/fleetlint/fleetlint/.github/workflows/release.yml@refs/tags/{{ .Tag }}' \
           --certificate-oidc-issuer https://token.actions.githubusercontent.com \
           checksums.txt
 

@@ -1,22 +1,22 @@
-# GitLab CI job for fleetlint. Include it and pin the version:
+# GitLab CI job for fleetlint. Include it from a release tag:
 #
 #   include:
-#     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.3.0/ci/gitlab/fleetlint.yml
-#   variables:
-#     FLEETLINT_VERSION: v0.3.0
+#     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.2.0/ci/gitlab/fleetlint.yml
 #
-# Findings show in the merge request's Code Quality widget; the job fails at
-# FLEETLINT_FAIL_ON (error, warning, info or never).
+# The job installs that same release with the install script of that tag and
+# requires the cosign signature of its checksums. Findings show in the merge
+# request's Code Quality widget; the job fails at FLEETLINT_FAIL_ON (error,
+# warning, info or never).
 fleetlint:
   stage: test
   image: alpine:3.22
   variables:
-    FLEETLINT_VERSION: latest
+    FLEETLINT_VERSION: v0.2.0     # set by `make release` to the tag this file is part of
     FLEETLINT_FAIL_ON: error
-    FLEETLINT_INSTALLER: https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh
+    FLEETLINT_VERIFY: cosign
   before_script:
-    - apk add --no-cache curl git jq
-    - curl -fsSL "$FLEETLINT_INSTALLER" | sh -s -- "$FLEETLINT_VERSION" /usr/local/bin
+    - apk add --no-cache curl git jq cosign
+    - curl -fsSL --proto '=https' "https://raw.githubusercontent.com/fleetlint/fleetlint/${FLEETLINT_VERSION}/scripts/install.sh" | sh -s -- "$FLEETLINT_VERSION" /usr/local/bin
     - git config --global --add safe.directory "$CI_PROJECT_DIR"
   script:
     - fleetlint check --format json --fail-on never > fleetlint.json

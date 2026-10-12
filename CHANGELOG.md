@@ -35,6 +35,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - `--deep` runs `make check` with an environment without credentials (tokens, cloud keys, CI secrets), like command rules: the variables a shell and the common toolchains need, minus any whose name looks like a secret.
 - On timeout the whole process group of a command rule, `--deep` or git is killed and waiting for its output is bounded, so a background process left behind can no longer hang a run.
 - git runs without variables that redirect it to another repository (`GIT_DIR`, `GIT_INDEX_FILE` and the like, which git hooks export) and without fsmonitor.
+- The release workflow verifies in a separate job without write permissions: the PyPI and Go tools of `make check` no longer run next to the signing identity and the deploy keys. The release job restores no build cache and pins GoReleaser to an exact version; GoReleaser runs `go mod verify` instead of `go mod tidy`. The verification command in the release notes names the exact signing identity of the tag.
+- The GitLab job installs the release it belongs to, with the install script of that tag, and requires the cosign signature (`FLEETLINT_VERIFY=cosign`, which `scripts/install.sh` now understands). Before, it ran the install script from `main` and installed `latest` without a signature check. `make release` sets the version in the job.
 - A fleet file `url` with credentials (`https://user:token@…`) is refused instead of being written into `fleet.json`, the HTML, CSV and history.
 
 ## [0.2.0] - 2026-10-11

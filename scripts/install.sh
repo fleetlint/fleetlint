@@ -3,7 +3,8 @@
 #   sh install.sh [version] [directory]   version: v0.2.0 or latest (default),
 #                                          directory: default ~/.local/bin
 # The archive is checked against checksums.txt; when cosign is installed, the
-# signature of checksums.txt is verified first.
+# signature of checksums.txt is verified first. FLEETLINT_VERIFY=cosign makes
+# the signature check required.
 set -eu
 
 repo=https://github.com/fleetlint/fleetlint
@@ -40,6 +41,9 @@ cd "$tmp"
 curl -fsSLO "$base/$archive" || fail "no $archive in release v$v"
 curl -fsSLO "$base/checksums.txt"
 
+if [ "${FLEETLINT_VERIFY:-}" = cosign ] && ! command -v cosign >/dev/null 2>&1; then
+  fail "FLEETLINT_VERIFY=cosign but cosign is not installed"
+fi
 if command -v cosign >/dev/null 2>&1; then
   curl -fsSLO "$base/checksums.txt.sigstore.json"
   cosign verify-blob --bundle checksums.txt.sigstore.json \
