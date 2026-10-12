@@ -498,14 +498,16 @@ func TestInitPicksUpTheSetup(t *testing.T) {
 	for _, want := range []string{
 		"stacks=[go]", "layout=nested", "taskrunner=just", "container=devcontainer",
 		"# scopes (each checked as its own project): frontend.",
-		"# task runners found: just, task. just is used; set `facts.taskrunner` to choose another.",
+		"# task runners found: just, task. just is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init output lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "taskrunner: ") || strings.Contains(out, "container: ") || strings.Contains(out, "scopes:\n") {
-		t.Errorf("detected facts are not pinned:\n%s", out)
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "#") && (strings.Contains(line, "taskrunner:") || strings.Contains(line, "container:") || strings.Contains(line, "scopes:")) {
+			t.Errorf("detected facts are not pinned: %q", line)
+		}
 	}
 	_, facts, _ := runCLI(t, dir, "facts")
 	for _, want := range []string{"container    devcontainer", "taskrunner   just (lint)", "scope        frontend stacks=node"} {

@@ -93,12 +93,12 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 	fmt.Fprintf(&b, "# discovered: stacks=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
 		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
 	if len(runners) > 1 {
-		fmt.Fprintf(&b, "# task runners found: %s. %s is used; set `facts.taskrunner` to choose another.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
+		fmt.Fprintf(&b, "# task runners found: %s. %s is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
 	}
 	if len(f.Members) > 0 {
 		fmt.Fprintf(&b, "# scopes (each checked as its own project): %s. List them under `scopes:` to change that.\n", strings.Join(f.Members, ", "))
 	}
-	b.WriteString("# Facts are re-detected on every run; pin one under `facts:` only when detection is wrong.\n")
+	b.WriteString("# Facts are re-detected on every run. Pin one only when detection is wrong: tier or visibility under `facts:`,\n# a directory's stacks or task runner under `scopes:` (`- {path: ., stacks: [go]}` for the root).\n")
 	return b.String()
 }
 
