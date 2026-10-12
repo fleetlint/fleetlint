@@ -1,0 +1,37 @@
+# GitLab CI job for fleetlint. Include it and pin the version:
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.3.0/ci/gitlab/fleetlint.yml
+#   variables:
+#     FLEETLINT_VERSION: v0.3.0
+#
+# Findings show in the merge request's Code Quality widget; the job fails at
+# FLEETLINT_FAIL_ON (error, warning, info or never).
+fleetlint:
+  stage: test
+  image: alpine:3.22
+  variables:
+    FLEETLINT_VERSION: latest
+    FLEETLINT_FAIL_ON: error
+    FLEETLINT_INSTALLER: https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh
+  before_script:
+    - apk add --no-cache curl git jq
+    - curl -fsSL "$FLEETLINT_INSTALLER" | sh -s -- "$FLEETLINT_VERSION" /usr/local/bin
+    - git config --global --add safe.directory "$CI_PROJECT_DIR"
+  script:
+    - fleetlint check --format json --fail-on never > fleetlint.json
+    # GitLab's Code Quality format: one entry per finding, located when the finding has a path.
+    - >-
+      jq '[.results[] | select(.status == "fail") | . as $r
+        | (if (.findings // []) | length > 0 then .findings[] else {message: $r.rule.title} end)
+        | {description: "\($r.rule.id): \(.message)", check_name: $r.rule.id,
+           fingerprint: ("\($r.rule.id)|\(.path // "")|\(.line // 0)|\(.message)" | @base64),
+           severity: ({"error": "major", "warning": "minor"}[$r.severity] // "info"),
+           location: {path: (.path // ".fleetlint.yaml"), lines: {begin: ((.line // 0) | if . > 0 then . else 1 end)}}}]'
+      fleetlint.json > gl-code-quality-report.json
+    - fleetlint check --fail-on "$FLEETLINT_FAIL_ON"
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    paths: [fleetlint.json]

@@ -12,11 +12,12 @@ scoop bucket add fleetlint https://github.com/fleetlint/scoop-bucket
 scoop install fleetlint/fleetlint                        # Windows
 nix profile install github:fleetlint/nur#fleetlint      # Nix
 mise use github:fleetlint/fleetlint                      # mise
+curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh   # ~/.local/bin
 docker run --rm -v "$PWD:/repo" ghcr.io/fleetlint/fleetlint check
 go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
 ```
 
-The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archives for Linux, macOS and Windows and `.deb`, `.rpm`, `.apk` and Arch packages. Each release has `checksums.txt`, a signature bundle for it and one SBOM per archive and package; the release notes show the `cosign verify-blob` command. The container image is signed with cosign as well. In CI, use the [GitHub Action](https://github.com/fleetlint/action).
+The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archives for Linux, macOS and Windows and `.deb`, `.rpm`, `.apk` and Arch packages. Each release has `checksums.txt`, a signature bundle for it and one SBOM per archive and package; the release notes show the `cosign verify-blob` command. The container image is signed with cosign as well. In CI, use the [GitHub Action](https://github.com/fleetlint/action) or the GitLab job in `ci/gitlab/fleetlint.yml`.
 
 ## Quickstart
 

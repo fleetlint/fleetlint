@@ -5,6 +5,15 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/install.sh` installs a release for Linux or macOS, checked against `checksums.txt` and, with `cosign` installed, against the signature: `curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh`.
+- `ci/gitlab/fleetlint.yml`, a GitLab CI job that reports findings in the merge request's Code Quality widget.
+
+### Changed
+
+- The composite action in `action/` is deprecated in favour of [fleetlint/action](https://github.com/fleetlint/action), which installs a verified release instead of building with Go and annotates findings.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

@@ -1,5 +1,5 @@
 name: fleetlint
-description: "Check a repository's setup (hooks, task runner, lint config, CI, release) against its .fleetlint.yaml."
+description: "Deprecated: use fleetlint/action, which installs a verified release instead of building with Go. Checks a repository's setup against its .fleetlint.yaml."
 author: fleetlint
 branding:
   icon: shield
