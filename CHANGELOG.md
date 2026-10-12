@@ -10,6 +10,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - **Output formats.** Every field of the check JSON and of `fleet.json` is snake_case. `summary`, `scopes`, `disabled`, `weakened` and `catalogs` used Go field names (`Pass`, `NotApplicable`, `Layer`) before. The summary's count of rules that could not run is `rule_errors`, apart from `errors`, the error-severity failures. The check JSON is now `version: 2` and `fleet.json` is `version: 3`. Both shapes are pinned by golden tests, so a change needs a new version. The fleet report still compares with history from earlier versions; it picks the format by `version` and passes over files it cannot read instead of failing the run.
 - CEL expressions are type-checked when the configuration loads, for every rule, whether it applies to the repository or not: a typo is a configuration error (exit 2) naming the rule and the field (`when`, `expr`, `foreach`, a satisfier or partial). It was a rule error before, and only where the rule applied. Each expression is checked once per process instead of once per scope and repository.
 - An expression evaluation stops at a cost limit and when the run is cancelled, so a catalog's comprehension over every file cannot run for hours. Regular expressions in `matches`, `grep`, `codegrep` and `scan` are compiled once instead of once per item.
+- `exists()`, `glob()` and stack detection match against one file index per repository: with git, the tracked files plus the untracked ones git does not ignore, so a gitignored local file no longer makes a rule pass on a developer's machine and fail in CI. The tree was walked on every call before, and included ignored files. Vendored and build directories stay out, as before.
 - `fleet.json` names, per repository, the catalog version it pinned (`catalog`), next to the built-in one the report names at the top.
 
 ### Added
@@ -29,6 +30,9 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - A pinned catalog version now brings its rule library (`rules/`) along with presets and templates, so presets that select rules from the library work with a pin.
 - Every catalog file of an OCI artifact takes effect. All of them carried the artifact's digest before, and only the first was loaded.
 - `--from` reads every page of a forge's repository list: paging follows GitHub's `Link` header and Gitea's `X-Total-Count`, so a server that caps the page size below 50 no longer cuts the list after the first page. A rate limit is reported as such, with its reset time.
+- A `.csproj`, `.sln` or `.gemspec` below `testdata/`, `examples/` and the like, or more than two directories down, no longer marks the repository as .NET or Ruby.
+- Within a scope, a workspace member with its own `.git` is recognised as well (the check looked relative to the repository root).
+- The built-in rule library is parsed once per process; in fleet mode it was parsed again for every repository and kept in memory each time.
 - Merging into a JSON file no longer rewrites `&&`, `<` and `>` in it as `\u0026`, `\u003c` and `\u003e`.
 - Several fixes to one file all land: each edit applies to the file as the previous one left it, instead of the content seen when planning.
 - A directory that is no git repository but holds repositories is no longer checked as one repository; fleetlint points to `fleetlint fleet --discover` instead. Running `fleetlint` in a directory whose `go.work` lists separate checkouts failed with `unknown field "extends"`.

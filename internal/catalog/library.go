@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
@@ -34,25 +33,11 @@ type Library struct {
 	ids    []string
 }
 
-var (
-	libraries   = map[*Source]*Library{}
-	librariesMu sync.Mutex
-)
-
 // Library parses the source's rules/ directory once. A source without one
 // has an empty library.
 func (s *Source) Library() (*Library, error) {
-	librariesMu.Lock()
-	defer librariesMu.Unlock()
-	if lib, ok := libraries[s]; ok {
-		return lib, nil
-	}
-	lib, err := loadLibrary(s.Rules, "library "+s.Version)
-	if err != nil {
-		return nil, err
-	}
-	libraries[s] = lib
-	return lib, nil
+	s.lib.once.Do(func() { s.lib.val, s.lib.err = loadLibrary(s.Rules, "library "+s.Version) })
+	return s.lib.val, s.lib.err
 }
 
 func loadLibrary(fsys fs.FS, source string) (*Library, error) {
@@ -232,7 +217,7 @@ func (l Loader) expand(c *Catalog) error {
 				continue
 			}
 			have[id] = true
-			r := lib.rules[id]
+			r := lib.rules[id].Clone()
 			r.Source = lib.source[id]
 			r.SelectedBy = c.Metadata.Name + "@" + c.Metadata.Version
 			out = append(out, r)

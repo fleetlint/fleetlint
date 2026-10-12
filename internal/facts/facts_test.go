@@ -101,13 +101,14 @@ func TestLargeOrgStacks(t *testing.T) {
 		files map[string]string
 		want  []string
 	}{
-		"maven":        {map[string]string{"pom.xml": "<project/>\n"}, []string{"java"}},
-		"dotnet sln":   {map[string]string{"App.sln": "\n", "src/App/App.csproj": "<Project/>\n"}, []string{"dotnet"}},
-		"dotnet props": {map[string]string{"Directory.Build.props": "<Project/>\n"}, []string{"dotnet"}},
-		"cmake":        {map[string]string{"CMakeLists.txt": "project(x)\n"}, []string{"cpp"}},
-		"gemspec":      {map[string]string{"x.gemspec": "Gem::Specification.new\n"}, []string{"ruby"}},
-		"composer":     {map[string]string{"composer.json": "{}\n"}, []string{"php"}},
-		"php and node": {map[string]string{"composer.json": "{}\n", "package.json": "{}\n"}, []string{"node", "php"}},
+		"maven":           {map[string]string{"pom.xml": "<project/>\n"}, []string{"java"}},
+		"dotnet sln":      {map[string]string{"App.sln": "\n", "src/App/App.csproj": "<Project/>\n"}, []string{"dotnet"}},
+		"dotnet props":    {map[string]string{"Directory.Build.props": "<Project/>\n"}, []string{"dotnet"}},
+		"fixture project": {map[string]string{"go.mod": "module x\n", "internal/x/testdata/App.csproj": "<Project/>\n", "deep/a/b/c/App.csproj": "<Project/>\n"}, []string{"go"}},
+		"cmake":           {map[string]string{"CMakeLists.txt": "project(x)\n"}, []string{"cpp"}},
+		"gemspec":         {map[string]string{"x.gemspec": "Gem::Specification.new\n"}, []string{"ruby"}},
+		"composer":        {map[string]string{"composer.json": "{}\n"}, []string{"php"}},
+		"php and node":    {map[string]string{"composer.json": "{}\n", "package.json": "{}\n"}, []string{"node", "php"}},
 	} {
 		if f := facts.Discover(testutil.Fixture(t, c.files), facts.Overrides{}); !reflect.DeepEqual(f.Stacks, c.want) {
 			t.Errorf("%s: stacks = %v, want %v", name, f.Stacks, c.want)

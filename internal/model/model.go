@@ -5,6 +5,7 @@ package model
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -160,6 +161,51 @@ type Rule struct {
 	// PolicyBy is the catalog that locked the rule or set its floor when that
 	// is not the catalog that defined it.
 	PolicyBy string `yaml:"-" json:"policy_by,omitempty"`
+}
+
+// Clone copies the rule with its own params, lists and actions, so a
+// layer that adjusts it never changes the definition it came from (library
+// rules are shared by every repository of a run).
+func (r Rule) Clone() Rule {
+	r.Tiers = slices.Clone(r.Tiers)
+	r.Stacks = slices.Clone(r.Stacks)
+	r.Satisfiers = slices.Clone(r.Satisfiers)
+	r.Partials = slices.Clone(r.Partials)
+	r.Refs = slices.Clone(r.Refs)
+	r.Params, _ = deepCopy(r.Params).(map[string]any)
+	actions := make([]map[string]any, len(r.Fix.Actions))
+	for i, a := range r.Fix.Actions {
+		actions[i], _ = deepCopy(a).(map[string]any)
+	}
+	if r.Fix.Actions != nil {
+		r.Fix.Actions = actions
+	}
+	if r.AllowExceptions != nil {
+		v := *r.AllowExceptions
+		r.AllowExceptions = &v
+	}
+	return r
+}
+
+func deepCopy(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		if t == nil {
+			return t
+		}
+		m := make(map[string]any, len(t))
+		for k, val := range t {
+			m[k] = deepCopy(val)
+		}
+		return m
+	case []any:
+		l := make([]any, len(t))
+		for i, val := range t {
+			l[i] = deepCopy(val)
+		}
+		return l
+	}
+	return v
 }
 
 // PolicySource names the catalog whose lock or floor applies to the rule.

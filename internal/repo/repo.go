@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -54,6 +55,8 @@ type gitState struct {
 	tracked  []string
 	trackErr error
 	trackOK  bool
+	files    []string
+	filesOK  bool
 	cfg      map[string]string
 	hasGit   *bool
 }
@@ -291,19 +294,65 @@ func InGitDir(rel string) bool {
 	return false
 }
 
-// Glob returns scope-relative paths matching a doublestar-style pattern,
-// walking the working tree and skipping .git and common vendored directories.
+// Glob returns scope-relative paths matching a doublestar-style pattern.
+// It matches against one file index per checkout (see Files), so a rule
+// that globs many times does not walk the tree each time.
 func (r *Repo) Glob(pattern string) []string {
-	var out []string
-	root, err := r.Abs(".")
-	if err != nil {
-		return nil
+	prefix := ""
+	if r.Scope != "" {
+		prefix = r.Scope + "/"
 	}
-	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	var out []string
+	for _, f := range r.files() {
+		rel, ok := strings.CutPrefix(f, prefix)
+		if ok && MatchGlob(pattern, rel) {
+			out = append(out, rel)
+		}
+	}
+	return out
+}
+
+// Files returns the scope-relative paths of the index.
+func (r *Repo) Files() []string { return r.Glob("**") }
+
+// files is the index, relative to the root and sorted: with git, the
+// tracked files and the untracked ones git does not ignore, which is what
+// a fresh clone plus the work in progress contains; without git, a walk of
+// the tree. Vendored and build directories are left out either way.
+func (r *Repo) files() []string {
+	g := r.git
+	g.mu.Lock()
+	if g.filesOK {
+		defer g.mu.Unlock()
+		return g.files
+	}
+	g.mu.Unlock()
+	var files []string
+	if out, err := r.Git("ls-files", "-z", "--cached", "--others", "--exclude-standard"); r.HasGit() && err == nil {
+		for _, f := range strings.Split(out, "\x00") {
+			if f != "" && !inSkippedDir(f) {
+				files = append(files, f)
+			}
+		}
+	} else {
+		files = r.walk()
+	}
+	slices.Sort(files)
+	files = slices.Compact(files)
+	g.mu.Lock()
+	g.files, g.filesOK = files, true
+	g.mu.Unlock()
+	return files
+}
+
+// walk lists the working tree without following symlinks.
+func (r *Repo) walk() []string {
+	var out []string
+	_ = filepath.WalkDir(r.Root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil //nolint:nilerr // unreadable entries are skipped, not fatal
 		}
-		rel, _ := filepath.Rel(root, p)
+		rel, _ := filepath.Rel(r.Root, p)
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			if rel != "." && skipDir(d.Name()) {
@@ -311,13 +360,20 @@ func (r *Repo) Glob(pattern string) []string {
 			}
 			return nil
 		}
-		if MatchGlob(pattern, rel) {
-			out = append(out, rel)
-		}
+		out = append(out, rel)
 		return nil
 	})
-	sort.Strings(out)
 	return out
+}
+
+func inSkippedDir(rel string) bool {
+	parts := strings.Split(rel, "/")
+	for _, p := range parts[:len(parts)-1] {
+		if skipDir(p) {
+			return true
+		}
+	}
+	return false
 }
 
 func skipDir(name string) bool {
@@ -392,8 +448,8 @@ func (r *Repo) TrackedFiles() ([]string, error) {
 				}
 			}
 		}
-	} else if rootView, serr := r.Scoped(""); serr == nil {
-		files = rootView.Glob("**")
+	} else {
+		files = r.walk()
 	}
 	sort.Strings(files)
 

@@ -83,16 +83,18 @@ func parseDoc(format Format, text string) (any, error) {
 
 // Normalize converts parser-specific containers into map[string]any / []any
 // with string keys, and every integer kind into int64, so CEL sees one shape
-// whether a value came from a document or from rule params.
+// whether a value came from a document or from rule params. It returns new
+// containers and leaves v as it was: rule params are shared between runs.
 func Normalize(v any) any { return normalize(v) }
 
 func normalize(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
+		m := make(map[string]any, len(t))
 		for k, val := range t {
-			t[k] = normalize(val)
+			m[k] = normalize(val)
 		}
-		return t
+		return m
 	case map[any]any:
 		m := make(map[string]any, len(t))
 		for k, val := range t {
@@ -100,10 +102,11 @@ func normalize(v any) any {
 		}
 		return m
 	case []any:
+		l := make([]any, len(t))
 		for i, val := range t {
-			t[i] = normalize(val)
+			l[i] = normalize(val)
 		}
-		return t
+		return l
 	case float64:
 		if t == float64(int64(t)) {
 			return int64(t)

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
@@ -68,12 +69,20 @@ type Source struct {
 	Version string
 	// Pinned is true when the repository chose the version.
 	Pinned bool
+
+	// lib is the parsed rules/ directory, read once per source.
+	lib struct {
+		once sync.Once
+		val  *Library
+		err  error
+	}
 }
 
-// Builtin returns the catalog the binary was built with.
-func Builtin() *Source {
+// Builtin returns the catalog the binary was built with: one Source per
+// process, so its library is parsed once.
+var Builtin = sync.OnceValue(func() *Source {
 	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Version: ModuleVersion()}
-}
+})
 
 // Describe names the source for a report.
 func (s *Source) Describe() string {

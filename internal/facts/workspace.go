@@ -41,7 +41,7 @@ func workspaceMembers(r *repo.Repo) []string {
 }
 
 func ownRepo(r *repo.Repo, dir string) bool {
-	_, err := os.Stat(filepath.Join(r.Root, filepath.FromSlash(dir), ".git"))
+	_, err := os.Stat(filepath.Join(r.ScopeRoot(), filepath.FromSlash(dir), ".git"))
 	return err == nil
 }
 

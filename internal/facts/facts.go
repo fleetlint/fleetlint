@@ -215,6 +215,20 @@ var stackGlobs = map[string][]string{
 	"ruby":   {"*.gemspec"},
 }
 
+// hasProjectFile looks for a project file at most two directories down
+// (src/App/App.csproj), outside directories that hold examples, fixtures
+// or dependencies, so a testdata/x.csproj does not make a repository .NET.
+func hasProjectFile(r *repo.Repo, pattern string) bool {
+	for _, f := range r.Glob(pattern) {
+		dirs := strings.Split(f, "/")
+		dirs = dirs[:len(dirs)-1]
+		if len(dirs) <= 2 && !slices.ContainsFunc(dirs, func(d string) bool { return notProjects[d] || strings.HasPrefix(d, ".") }) {
+			return true
+		}
+	}
+	return false
+}
+
 func detectStacks(r *repo.Repo) []string {
 	var out []string
 	for stack, markers := range stackMarkers {
@@ -223,7 +237,7 @@ func detectStacks(r *repo.Repo) []string {
 		}
 	}
 	for stack, globs := range stackGlobs {
-		if !slices.Contains(out, stack) && anyMarker(globs, func(g string) bool { return len(r.Glob(g)) > 0 }) {
+		if !slices.Contains(out, stack) && anyMarker(globs, func(g string) bool { return hasProjectFile(r, g) }) {
 			out = append(out, stack)
 		}
 	}
