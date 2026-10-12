@@ -18,6 +18,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- `--from` reads every page of a forge's repository list: paging follows GitHub's `Link` header and Gitea's `X-Total-Count`, so a server that caps the page size below 50 no longer cuts the list after the first page. A rate limit is reported as such, with its reset time.
 - Merging into a JSON file no longer rewrites `&&`, `<` and `>` in it as `\u0026`, `\u003c` and `\u003e`.
 - Several fixes to one file all land: each edit applies to the file as the previous one left it, instead of the content seen when planning.
 - A directory that is no git repository but holds repositories is no longer checked as one repository; fleetlint points to `fleetlint fleet --discover` instead. Running `fleetlint` in a directory whose `go.work` lists separate checkouts failed with `unknown field "extends"`.
@@ -28,6 +29,13 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - Local catalogs and sources files named in `.fleetlint.yaml` must be inside the repository. An absolute path, `..` or a symlink to elsewhere is refused, so a repository's configuration can no longer read other files (such as `/proc/self/environ`) into error messages and reports. Catalogs shared between repositories come from https, git or OCI.
 - Reads of repository files go through `os.Root`: a symlink that leads outside the repository reads as absent, and only regular files are read, so a link to `/dev/zero` or a FIFO no longer exhausts memory or blocks.
 - `fix --apply` writes through the same boundary: it never follows a symlink out of the repository, never writes inside `.git` (in any letter case), and creates new files exclusively. A catalog's fix actions are checked when they load: targets must be paths inside the repository outside `.git`, and `append` only extends TOML and YAML files and Gemfiles.
+
+- `GITEA_TOKEN` goes only to Gitea hosts you name, in `GITEA_HOST` (comma-separated) or as the host of a `--from` source. Before, any remote host that was not github.com was taken for Gitea and sent the token. A host you did not name is not contacted at all; its repositories' visibility stays unknown, with a note how to name it.
+- Clones of repositories listed by `--from` send the forge token only when the clone URL points at the forge itself.
+- `--deep` runs `make check` with an environment without credentials (tokens, cloud keys, CI secrets), like command rules: the variables a shell and the common toolchains need, minus any whose name looks like a secret.
+- On timeout the whole process group of a command rule, `--deep` or git is killed and waiting for its output is bounded, so a background process left behind can no longer hang a run.
+- git runs without variables that redirect it to another repository (`GIT_DIR`, `GIT_INDEX_FILE` and the like, which git hooks export) and without fsmonitor.
+- A fleet file `url` with credentials (`https://user:token@…`) is refused instead of being written into `fleet.json`, the HTML, CSV and history.
 
 ## [0.2.0] - 2026-10-11
 

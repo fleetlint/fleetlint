@@ -165,7 +165,7 @@ func (v *view) changes() table {
 		row[0].Href = "actions/" + name + ".html"
 		t.Rows = append(t.Rows, row)
 	}
-	t.Intro = fmt.Sprintf("Compared with the run of %s: rules failing at error severity %d → %d; %d rule × repository pairs newly failing, %d fixed.",
+	t.Intro = fmt.Sprintf("Compared with the run of %s: rules failing at error severity %d -> %d; %d rule x repository pairs newly failing, %d fixed.",
 		prev.At.Format("2006-01-02 15:04 MST"), errsBefore, errsNow, newly, fixed)
 	if len(t.Rows) == 0 {
 		t.Rows = [][]tcell{{txt("no changes"), txt(""), txt(""), txt(""), txt("")}}
@@ -208,7 +208,7 @@ func diffRules(before, now map[string]model.Severity) (added, gone []string) {
 }
 
 func delta(before, now int) tcell {
-	c := tcell{Text: fmt.Sprintf("%d → %d", before, now), Sort: fmt.Sprint(now - before)}
+	c := tcell{Text: fmt.Sprintf("%d -> %d", before, now), Sort: fmt.Sprint(now - before)}
 	switch {
 	case now > before:
 		c.Class = "err"

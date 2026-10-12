@@ -136,8 +136,11 @@ func (e *Entry) normalize(base string) error {
 	if e.Path != "" && !filepath.IsAbs(e.Path) {
 		e.Path = filepath.Join(base, e.Path)
 	}
+	if hasCredentials(e.URL) {
+		return fmt.Errorf("url %q must not carry credentials, which would end up in reports; use git's credential helper, or GITHUB_TOKEN/GITEA_TOKEN with --from", redact(e.URL))
+	}
 	if e.URL != "" && !validCloneURL(e.URL) {
-		return fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path)", e.URL)
+		return fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path)", redact(e.URL))
 	}
 	if err := (Settings{Tier: e.Tier, Visibility: e.Visibility}).validate(); err != nil {
 		return err
@@ -364,8 +367,8 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 	if cache == "" {
 		return "", errors.New("a cache directory is required for url entries (fleet file `cache:` or --cache)")
 	}
-	if !validCloneURL(e.URL) {
-		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path)", e.URL)
+	if !validCloneURL(e.URL) || hasCredentials(e.URL) {
+		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path), without credentials", redact(e.URL))
 	}
 	cache = expandHome(cache)
 	dest := filepath.Join(cache, unsafeName.ReplaceAllString(strings.TrimPrefix(strings.TrimPrefix(e.URL, "https://"), "git@"), "_"))
@@ -404,6 +407,26 @@ func cloneAuth(e Entry) []string {
 		"GIT_CONFIG_KEY_0=http." + u.Scheme + "://" + u.Host + "/.extraheader",
 		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic " + basic,
 	}
+}
+
+// hasCredentials reports a URL with a password or an https user name.
+func hasCredentials(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return false
+	}
+	_, hasPassword := u.User.Password()
+	return hasPassword || u.Scheme == "https" || u.Scheme == "http"
+}
+
+// redact hides the user information of a URL for messages.
+func redact(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = url.User("REDACTED")
+	return u.String()
 }
 
 func validCloneURL(u string) bool {

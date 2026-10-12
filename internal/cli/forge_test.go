@@ -18,7 +18,13 @@ import (
 func fakeGitHub(t *testing.T, repos []map[string]any) {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/orgs/acme/repos", func(w http.ResponseWriter, _ *http.Request) { _ = json.NewEncoder(w).Encode(repos) })
+	mux.HandleFunc("/orgs/acme/repos", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") != "1" {
+			_ = json.NewEncoder(w).Encode([]any{})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(repos)
+	})
 	mux.HandleFunc("/repos/acme/open", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": "open", "private": false})
 	})

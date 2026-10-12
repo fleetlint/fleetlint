@@ -32,10 +32,10 @@ func TestChangesSinceTheLastRun(t *testing.T) {
 	md, _ = os.ReadFile(filepath.Join(dir, "fleet.md"))
 	for _, want := range []string{
 		"## Since the last run",
-		"Compared with the run of 2026-10-09 12:00 UTC: rules failing at error severity 2 → 2; 1 rule × repository pairs newly failing, 1 fixed.",
+		"Compared with the run of 2026-10-09 12:00 UTC: rules failing at error severity 2 -> 2; 1 rule x repository pairs newly failing, 1 fixed.",
 		"| added | new in the fleet |",
-		"| new | 1 → 2 | 1 → 1 | `f/new` |  |",
-		"| old | 1 → 0 | 0 → 0 |  | `a/hooks` |",
+		"| new | 1 -> 2 | 1 -> 1 | `f/new` |  |",
+		"| old | 1 -> 0 | 0 -> 0 |  | `a/hooks` |",
 	} {
 		if !strings.Contains(string(md), want) {
 			t.Errorf("missing %q:\n%s", want, md)

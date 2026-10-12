@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/proc"
 
 	"github.com/spf13/cobra"
 
@@ -68,8 +69,8 @@ func openOnboardingPR(cmd *cobra.Command, r *repo.Repo, run *engine.Run) error {
 func createPR(ctx context.Context, dir, body string) error {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	push := exec.CommandContext(ctx, "git", "-C", dir, "push", "-q", "-u", "origin", onboardingBranch) //nolint:gosec // fixed git arguments; dir is the repository root
-	push.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	push := proc.Command(ctx, "git", "-C", dir, "push", "-q", "-u", "origin", onboardingBranch)
+	push.Env = proc.GitEnv()
 	if out, err := push.CombinedOutput(); err != nil {
 		return fmt.Errorf("push: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -89,7 +90,7 @@ func lookPath(name string) bool {
 }
 
 func runIn(ctx context.Context, dir string, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // callers pass the fixed names gh or tea
+	cmd := proc.Command(ctx, name, args...)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(out)))

@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/proc"
 )
 
 const (
@@ -197,8 +198,8 @@ func fetchRev(ctx context.Context, dir, repoURL, rev string) error {
 }
 
 func gitOut(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // the binary is fixed; arguments are validated by parseGitRef and passed without a shell
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmd := proc.Command(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = proc.GitEnv()
 	var errOut bytes.Buffer
 	cmd.Stderr = &errOut
 	out, err := cmd.Output()

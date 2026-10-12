@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/proc"
 
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -46,9 +46,9 @@ func (c checkPasses) CheckDeep(ctx context.Context, rc rules.Context) ([]model.F
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	start := time.Now()
-	cmd := exec.CommandContext(ctx, cmdline[0], cmdline[1:]...) //nolint:gosec // fixed task-runner invocations, see checkCommand
+	cmd := proc.Command(ctx, cmdline[0], cmdline[1:]...)
 	cmd.Dir = rc.Repo.ScopeRoot()
-	cmd.Env = append(os.Environ(), "CI=true", "NO_COLOR=1")
+	cmd.Env = proc.SafeEnv("CI=true", "NO_COLOR=1")
 	out := &tailBuffer{limit: 64 << 10}
 	cmd.Stdout, cmd.Stderr = out, out
 	runErr := cmd.Run()

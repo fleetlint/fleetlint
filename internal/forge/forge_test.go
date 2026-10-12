@@ -69,13 +69,20 @@ func TestPublicUsesTheTokenFromTheEnvironment(t *testing.T) {
 		t.Fatalf("a private repository without a token must be ErrNotFound, got %v", err)
 	}
 	authed := forge.Client{BaseURL: url, Getenv: func(k string) string {
-		if k == "GITEA_TOKEN" {
-			return "t0ken"
-		}
-		return ""
+		return map[string]string{"GITEA_TOKEN": "t0ken", "GITEA_HOST": "other.example, git.example.com"}[k]
 	}}
 	if pub, err := authed.Public(context.Background(), "gitea", "git.example.com", "solo", "secret"); err != nil || pub {
 		t.Fatalf("secret with token: public=%v err=%v", pub, err)
+	}
+	if _, err := authed.Public(context.Background(), "gitea", "evil.example", "solo", "open"); !errors.Is(err, forge.ErrUnknownHost) {
+		t.Fatalf("a host the user did not name must not be contacted, got %v", err)
+	}
+	if tok := authed.Token(forge.Source{Kind: "gitea", Host: "evil.example"}); tok != "" {
+		t.Fatal("GITEA_TOKEN must not go to a host the user did not name")
+	}
+	named := forge.Client{BaseURL: url, Hosts: []string{"evil.example"}, Getenv: authed.Getenv}
+	if tok := named.Token(forge.Source{Kind: "gitea", Host: "evil.example"}); tok != "t0ken" {
+		t.Fatal("a --from host is named by the user")
 	}
 	if _, err := anon.Public(context.Background(), "github", "github.com", "solo/..", "x"); err == nil {
 		t.Fatal("names with path separators must be rejected before any request")
@@ -108,5 +115,52 @@ func TestParseSourceAndRemote(t *testing.T) {
 		if _, _, _, ok := forge.ParseRemote(bad); ok {
 			t.Errorf("%q must not parse", bad)
 		}
+	}
+}
+
+// Paging follows GitHub's Link header and Gitea's X-Total-Count, so a
+// server that caps the page size below what was asked loses nothing.
+func TestListFollowsPagingHeaders(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	page := func(r *http.Request) int {
+		var p int
+		_, _ = fmt.Sscan(r.URL.Query().Get("page"), &p)
+		return p
+	}
+	repos := func(p, size, total int) []forge.Repo {
+		var out []forge.Repo
+		for i := (p - 1) * size; i < p*size && i < total; i++ {
+			out = append(out, forge.Repo{Name: fmt.Sprintf("r%d", i)})
+		}
+		return out
+	}
+	mux.HandleFunc("/orgs/capped/repos", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Total-Count", "70")
+		_ = json.NewEncoder(w).Encode(repos(page(r), 30, 70))
+	})
+	mux.HandleFunc("/orgs/linked/repos", func(w http.ResponseWriter, r *http.Request) {
+		if page(r) < 3 {
+			w.Header().Set("Link", `<x?page=next>; rel="next"`)
+		} else {
+			w.Header().Set("Link", `<x?page=1>; rel="first"`)
+		}
+		_ = json.NewEncoder(w).Encode(repos(page(r), 10, 25))
+	})
+	mux.HandleFunc("/orgs/limited/repos", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.WriteHeader(http.StatusForbidden)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	c := forge.Client{BaseURL: srv.URL, Getenv: func(string) string { return "" }}
+	for owner, want := range map[string]int{"capped": 70, "linked": 25} {
+		got, err := c.List(context.Background(), forge.Source{Kind: "github", Host: "github.com", Owner: owner})
+		if err != nil || len(got) != want {
+			t.Errorf("%s: %d repositories, %v", owner, len(got), err)
+		}
+	}
+	if _, err := c.List(context.Background(), forge.Source{Kind: "github", Host: "github.com", Owner: "limited"}); !errors.Is(err, forge.ErrRateLimited) {
+		t.Errorf("rate limit: %v", err)
 	}
 }

@@ -179,6 +179,13 @@ func TestSpecNamesAreSafeAndUnique(t *testing.T) {
 			t.Errorf("url %q must be rejected", bad)
 		}
 	}
+	_, err = fleet.LoadSpec(write("version: 1\nrepos:\n  - {url: \"https://u:ghp_secret@git.example/o/r.git\"}\n"))
+	if err == nil || strings.Contains(err.Error(), "ghp_secret") {
+		t.Errorf("a url with credentials must be rejected without repeating them: %v", err)
+	}
+	if _, err := fleet.LoadSpec(write("version: 1\nrepos:\n  - {url: \"ssh://git@git.example/o/r.git\"}\n")); err != nil {
+		t.Errorf("an ssh user is no credential: %v", err)
+	}
 }
 
 func TestComplianceWithoutApplicableRules(t *testing.T) {

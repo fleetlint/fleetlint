@@ -11,12 +11,13 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/proc"
 
 	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
@@ -320,8 +321,8 @@ func (r *Repo) Git(args ...string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(r.ctx, gitTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", r.Root}, args...)...) //nolint:gosec // callers pass fixed git verbs; the repository root is the only variable
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	cmd := proc.Command(ctx, "git", append([]string{"-C", r.Root, "-c", "core.fsmonitor=false"}, args...)...)
+	cmd.Env = proc.GitEnv("LC_ALL=C")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -1,6 +1,8 @@
 // Package forge asks GitHub and Gitea two questions over their REST APIs:
 // which repositories an owner has, and whether one repository is public.
-// It sends a token only when the environment provides one and never writes.
+// It never writes. A Gitea host is contacted only when the user named it
+// (GITEA_HOST or a --from source), since a repository's remote, not the
+// user, says which host that is; tokens go to those hosts only.
 package forge
 
 import (
@@ -13,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,6 +51,26 @@ type Client struct {
 	// BaseURL overrides the API root for every forge and host; tests point
 	// it at a local server.
 	BaseURL string
+	// Hosts are Gitea hosts the user named besides GITEA_HOST, such as the
+	// host of a --from source.
+	Hosts []string
+}
+
+// ErrUnknownHost means a Gitea host the user did not name: fleetlint does
+// not contact it, and never sends it a token.
+var ErrUnknownHost = errors.New("not contacted: name the host in GITEA_HOST to let fleetlint ask it")
+
+// ErrRateLimited means the forge refused the request for its rate limit.
+var ErrRateLimited = errors.New("rate limited by the forge; a token raises the limit")
+
+// Trusted reports whether a Gitea host was named by the user.
+func (c Client) Trusted(host string) bool {
+	for _, h := range append(strings.Split(c.getenv("GITEA_HOST"), ","), c.Hosts...) {
+		if h = strings.TrimSpace(h); h != "" && strings.EqualFold(h, host) {
+			return true
+		}
+	}
+	return false
 }
 
 var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -95,15 +118,29 @@ func (c Client) listPath(ctx context.Context, src Source, kind string) ([]Repo, 
 	for page := 1; page <= maxPages; page++ {
 		q := fmt.Sprintf("per_page=%d&limit=%d&page=%d", pageSize, pageSize, page)
 		var batch []Repo
-		if err := c.get(ctx, src.Kind, src.Host, "/"+kind+"/"+src.Owner+"/repos?"+q, &batch); err != nil {
+		h, err := c.get(ctx, src.Kind, src.Host, "/"+kind+"/"+src.Owner+"/repos?"+q, &batch)
+		if err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
-		if len(batch) < pageSize {
+		if !morePages(h, len(all), len(batch)) {
 			return all, nil
 		}
 	}
 	return nil, fmt.Errorf("more than %d repositories; narrow the source", maxPages*pageSize)
+}
+
+// morePages reads GitHub's Link header and Gitea's X-Total-Count; without
+// either, only an empty page ends the list, since a server may cap the page
+// size below what was asked.
+func morePages(h http.Header, have, got int) bool {
+	if link := h.Get("Link"); link != "" {
+		return strings.Contains(link, `rel="next"`)
+	}
+	if total, err := strconv.Atoi(h.Get("X-Total-Count")); err == nil {
+		return have < total && got > 0
+	}
+	return got > 0
 }
 
 // Public reports whether a repository is public. A repository the caller
@@ -113,37 +150,29 @@ func (c Client) Public(ctx context.Context, kind, host, owner, name string) (boo
 		return false, fmt.Errorf("%s/%s is not a repository name", owner, name)
 	}
 	var r Repo
-	if err := c.get(ctx, kind, host, "/repos/"+owner+"/"+name, &r); err != nil {
+	if _, err := c.get(ctx, kind, host, "/repos/"+owner+"/"+name, &r); err != nil {
 		return false, err
 	}
 	return !r.Private, nil
 }
 
-func (c Client) get(ctx context.Context, kind, host, path string, into any) error {
-	base := c.BaseURL
-	if base == "" {
-		switch kind {
-		case "github":
-			// GITHUB_API_URL is GitHub's own variable: set in Actions and
-			// pointed at the instance on GitHub Enterprise Server.
-			if base = c.getenv("GITHUB_API_URL"); base == "" {
-				base = "https://api.github.com"
-			}
-		case "gitea":
-			base = "https://" + host + "/api/v1"
-		default:
-			return fmt.Errorf("forge %q has no API client", kind)
-		}
+func (c Client) get(ctx context.Context, kind, host, path string, into any) (http.Header, error) {
+	if kind == "gitea" && !c.Trusted(host) {
+		return nil, fmt.Errorf("%s: %w", host, ErrUnknownHost)
+	}
+	base, err := c.apiBase(kind, host)
+	if err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "fleetlint")
-	if tok := c.token(kind); tok != "" {
+	if tok := c.token(kind, host); tok != "" {
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	client := c.HTTP
@@ -152,39 +181,85 @@ func (c Client) get(ctx context.Context, kind, host, path string, into any) erro
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // read side; nothing to do on close failure
-	switch {
-	case resp.StatusCode == http.StatusNotFound:
-		return ErrNotFound
-	case resp.StatusCode != http.StatusOK:
-		return fmt.Errorf("%s%s: HTTP %d", base, strings.SplitN(path, "?", 2)[0], resp.StatusCode)
+	endpoint := base + strings.SplitN(path, "?", 2)[0]
+	if err := checkStatus(resp, endpoint); err != nil {
+		return nil, err
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := json.Unmarshal(body, into); err != nil {
-		return fmt.Errorf("%s%s: %w", base, strings.SplitN(path, "?", 2)[0], err)
+		return nil, fmt.Errorf("%s: %w", endpoint, err)
 	}
-	return nil
+	return resp.Header, nil
+}
+
+func (c Client) apiBase(kind, host string) (string, error) {
+	if c.BaseURL != "" {
+		return c.BaseURL, nil
+	}
+	switch kind {
+	case "github":
+		// GITHUB_API_URL is GitHub's own variable: set in Actions and
+		// pointed at the instance on GitHub Enterprise Server.
+		if base := c.getenv("GITHUB_API_URL"); base != "" {
+			return base, nil
+		}
+		return "https://api.github.com", nil
+	case "gitea":
+		return "https://" + host + "/api/v1", nil
+	}
+	return "", fmt.Errorf("forge %q has no API client", kind)
+}
+
+func checkStatus(resp *http.Response, endpoint string) error {
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		return nil
+	case resp.StatusCode == http.StatusNotFound:
+		return ErrNotFound
+	case rateLimited(resp):
+		reset := ""
+		if t, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil {
+			reset = ", resets " + time.Unix(t, 0).Format(time.Kitchen)
+		}
+		return fmt.Errorf("%s: %w%s", endpoint, ErrRateLimited, reset)
+	}
+	return fmt.Errorf("%s: HTTP %d", endpoint, resp.StatusCode)
+}
+
+func rateLimited(resp *http.Response) bool {
+	switch resp.StatusCode {
+	case http.StatusTooManyRequests:
+		return true
+	case http.StatusForbidden:
+		return resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.Header.Get("Retry-After") != ""
+	}
+	return false
 }
 
 // Token returns the token the client would use for the source, so clones
 // of what it listed can authenticate the same way; "" when none is set.
-func (c Client) Token(src Source) string { return c.token(src.Kind) }
+func (c Client) Token(src Source) string { return c.token(src.Kind, src.Host) }
 
 // token returns the forge's token from the environment: GITHUB_TOKEN or
-// GH_TOKEN for GitHub, GITEA_TOKEN for Gitea.
-func (c Client) token(kind string) string {
-	if kind == "github" {
+// GH_TOKEN for GitHub (sent to its API only), GITEA_TOKEN for a Gitea host
+// the user named.
+func (c Client) token(kind, host string) string {
+	switch {
+	case kind == "github":
 		if t := c.getenv("GITHUB_TOKEN"); t != "" {
 			return t
 		}
 		return c.getenv("GH_TOKEN")
+	case kind == "gitea" && c.Trusted(host):
+		return c.getenv("GITEA_TOKEN")
 	}
-	return c.getenv("GITEA_TOKEN")
+	return ""
 }
 
 func (c Client) getenv(key string) string {

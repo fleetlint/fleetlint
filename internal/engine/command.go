@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/proc"
+
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -81,9 +83,9 @@ func evalCommand(ctx context.Context, r *repo.Repo, f facts.Facts, rule model.Ru
 	}
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path) //nolint:gosec // path is a tracked, executable, user-owned file inside the repository, verified by commandPath
+	cmd := proc.Command(ctx, path)
 	cmd.Dir = r.ScopeRoot()
-	cmd.Env = scrubbedEnv()
+	cmd.Env = proc.SafeEnv("FLEETLINT=1")
 	cmd.Stdin = bytes.NewReader(input)
 	stdout := &limitedBuffer{limit: maxOutput}
 	stderr := &limitedBuffer{limit: maxOutput}
@@ -148,17 +150,6 @@ func commandPath(r *repo.Repo, run string) (string, error) {
 		return "", fmt.Errorf("run %q is in a world-writable directory", run)
 	}
 	return abs, nil
-}
-
-func scrubbedEnv() []string {
-	keep := []string{"PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TERM"}
-	env := make([]string, 0, len(keep)+1)
-	for _, k := range keep {
-		if v, ok := os.LookupEnv(k); ok {
-			env = append(env, k+"="+v)
-		}
-	}
-	return append(env, "FLEETLINT=1")
 }
 
 func parseFindings(out []byte) ([]model.Finding, error) {

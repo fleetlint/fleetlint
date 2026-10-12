@@ -45,6 +45,8 @@ func initCmd(g *globals, code *int) *cobra.Command {
 func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visibility {
 	vis, host, err := lookupVisibility(cmd.Context(), r, f)
 	switch {
+	case errors.Is(err, forge.ErrUnknownHost):
+		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s was not asked; left undetected (set GITEA_HOST=%s to let fleetlint ask it, or pin facts.visibility)\n", host, host) //nolint:errcheck // a note on stderr
 	case errors.Is(err, forge.ErrNotFound):
 		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s does not show this repository without a token; left undetected (set GITHUB_TOKEN or GITEA_TOKEN, or pin facts.visibility)\n", host) //nolint:errcheck // a note on stderr
 	case err != nil:
