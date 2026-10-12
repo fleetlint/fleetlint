@@ -156,6 +156,21 @@ func (c Client) Public(ctx context.Context, kind, host, owner, name string) (boo
 	return !r.Private, nil
 }
 
+// RemoteVisibility asks the forge of a git remote whether the repository
+// is public. asked is false when there is nothing to ask: no forge API for
+// the kind, or a remote that names no owner and repository.
+func (c Client) RemoteVisibility(ctx context.Context, kind, remote string) (public, asked bool, host string, err error) {
+	if kind != "github" && kind != "gitea" {
+		return false, false, "", nil
+	}
+	host, owner, name, ok := ParseRemote(remote)
+	if !ok {
+		return false, false, "", nil
+	}
+	public, err = c.Public(ctx, kind, host, owner, name)
+	return public, true, host, err
+}
+
 func (c Client) get(ctx context.Context, kind, host, path string, into any) (http.Header, error) {
 	if kind == "gitea" && !c.Trusted(host) {
 		return nil, fmt.Errorf("%s: %w", host, ErrUnknownHost)

@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/forge"
 	"github.com/fleetlint/fleetlint/internal/model"
+	"github.com/fleetlint/fleetlint/internal/onboard"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
@@ -58,15 +59,13 @@ func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visi
 // lookupVisibility asks the forge of the repository's remote whether it is
 // public. It returns "" and no error when there is nothing to ask.
 func lookupVisibility(ctx context.Context, r *repo.Repo, f facts.Facts) (facts.Visibility, string, error) {
-	if f.Visibility != facts.VisibilityUnknown || (f.Forge != "github" && f.Forge != "gitea") {
+	if f.Visibility != facts.VisibilityUnknown {
 		return "", "", nil
 	}
-	host, owner, name, ok := forge.ParseRemote(r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
-	if !ok {
-		return "", "", nil
-	}
-	public, err := forge.Client{}.Public(ctx, f.Forge, host, owner, name)
+	public, asked, host, err := forge.Client{}.RemoteVisibility(ctx, f.Forge, r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	switch {
+	case !asked:
+		return "", "", nil
 	case err != nil:
 		return "", host, err
 	case public:
@@ -288,7 +287,11 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	if !o.pr {
 		return nil
 	}
-	return openOnboardingPR(cmd, r, run)
+	err = onboard.Open(cmd.Context(), cmd.OutOrStdout(), r, run, Version)
+	if errors.Is(err, onboard.ErrNotReady) {
+		return &configError{err}
+	}
+	return err
 }
 
 func reevaluate(ctx context.Context, r *repo.Repo) (*engine.Run, error) {

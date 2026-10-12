@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
+	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -129,7 +130,7 @@ func checkCmd(g *globals, code *int) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			markFixable(r, run)
+			fixplan.MarkFixable(r, run)
 			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version, Catalog: eff.Source.Describe()}); err != nil {
 				return &configError{err}
 			}
