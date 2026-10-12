@@ -182,10 +182,13 @@ type Options struct {
 
 // RepoReport is one repository's outcome.
 type RepoReport struct {
-	Name       string            `json:"name"`
-	Team       string            `json:"team,omitempty"`
-	Group      string            `json:"group,omitempty"`
-	Source     string            `json:"source"`
+	Name   string `json:"name"`
+	Team   string `json:"team,omitempty"`
+	Group  string `json:"group,omitempty"`
+	Source string `json:"source"`
+	// Catalog is the catalog version the repository pinned, when it did;
+	// the report's own catalog is the one built in.
+	Catalog    string            `json:"catalog,omitempty"`
 	Git        *GitState         `json:"git,omitempty"`
 	Facts      facts.Facts       `json:"facts"`
 	Summary    model.Counts      `json:"summary"`
@@ -315,6 +318,9 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
 	rr.Disabled, rr.Weakened = eff.Disabled, eff.Weakened
+	if eff.Source != nil && eff.Source.Pinned {
+		rr.Catalog = eff.Source.Version
+	}
 	rr.Exceptions = append(append([]model.Exception{}, eff.Exceptions...), run.ScopeExceptions...)
 	return rr
 }

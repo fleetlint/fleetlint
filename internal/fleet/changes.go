@@ -1,7 +1,6 @@
 package fleet
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -53,8 +52,9 @@ func snapshotOf(rep *Report) *snapshot {
 func hasKey[K comparable, V any](m map[K]V, k K) bool { _, ok := m[k]; return ok }
 
 // historyFile is the part of a fleet.json a comparison needs. Version 1
-// wrote the whole rule in each result, version 2 only its id.
+// wrote the whole rule in each result, versions 2 and 3 only its id.
 type historyFile struct {
+	Version     int       `json:"version"`
 	GeneratedAt time.Time `json:"generated_at"`
 	Repos       []struct {
 		Name    string `json:"name"`
@@ -67,8 +67,9 @@ type historyFile struct {
 	} `json:"repos"`
 }
 
-// loadPrevious reads the latest run in dir/history from before now; nil
-// when there is none.
+// loadPrevious reads the latest readable run in dir/history from before
+// now; nil when there is none. A file that does not parse, or comes from a
+// newer fleetlint, is passed over for the one before it.
 func loadPrevious(dir string, now time.Time) (*snapshot, error) {
 	files, err := filepath.Glob(filepath.Join(dir, "history", "*.json"))
 	if err != nil {
@@ -82,11 +83,11 @@ func loadPrevious(dir string, now time.Time) (*snapshot, error) {
 		}
 		b, err := os.ReadFile(f) //nolint:gosec // the report's own history directory
 		if err != nil {
-			return nil, err
+			continue
 		}
 		var h historyFile
-		if err := json.Unmarshal(b, &h); err != nil {
-			return nil, fmt.Errorf("%s: %w", f, err)
+		if err := json.Unmarshal(b, &h); err != nil || h.Version < 1 || h.Version > jsonFormat {
+			continue
 		}
 		return h.snapshot(), nil
 	}
@@ -98,7 +99,7 @@ func (h historyFile) snapshot() *snapshot {
 	for _, r := range h.Repos {
 		st := repoState{Checked: r.Err == "", Failing: map[string]model.Severity{}}
 		for _, res := range r.Results {
-			id := ruleID(res.Rule)
+			id := ruleID(h.Version, res.Rule)
 			if res.Status == model.StatusFail && id != "" && (!hasKey(st.Failing, id) || st.Failing[id] < res.Severity) {
 				st.Failing[id] = res.Severity
 			}
@@ -108,9 +109,11 @@ func (h historyFile) snapshot() *snapshot {
 	return s
 }
 
-func ruleID(raw json.RawMessage) string {
-	var id string
-	if bytes.HasPrefix(bytes.TrimSpace(raw), []byte(`"`)) {
+// ruleID reads a result's rule: the whole definition in version 1, its id
+// from version 2 on.
+func ruleID(version int, raw json.RawMessage) string {
+	if version >= 2 {
+		var id string
 		_ = json.Unmarshal(raw, &id)
 		return id
 	}

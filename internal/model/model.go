@@ -296,8 +296,17 @@ type Result struct {
 
 // Counts summarizes results by status.
 type Counts struct {
-	Pass, Fail, Excepted, Baselined, NotApplicable, Error int
-	Errors, Warnings, Infos                               int
+	Pass          int `json:"pass"`
+	Fail          int `json:"fail"`
+	Excepted      int `json:"excepted"`
+	Baselined     int `json:"baselined"`
+	NotApplicable int `json:"not_applicable"`
+	// Error counts rules that could not run; Errors, Warnings and Infos
+	// count failing rules by severity.
+	Error    int `json:"rule_errors"`
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+	Infos    int `json:"infos"`
 }
 
 // Summarize tallies a result set.

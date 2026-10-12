@@ -50,10 +50,10 @@ func TestChangesSinceTheLastRun(t *testing.T) {
 
 func TestRuleIDReadsBothHistoryFormats(t *testing.T) {
 	t.Parallel()
-	if got := ruleID([]byte(`"a/b"`)); got != "a/b" {
+	if got := ruleID(2, []byte(`"a/b"`)); got != "a/b" {
 		t.Errorf("version 2: %q", got)
 	}
-	if got := ruleID([]byte(`{"id":"a/b","title":"x"}`)); got != "a/b" {
+	if got := ruleID(1, []byte(`{"id":"a/b","title":"x"}`)); got != "a/b" {
 		t.Errorf("version 1: %q", got)
 	}
 }

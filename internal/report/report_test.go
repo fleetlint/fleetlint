@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/report"
+	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
 func sampleRun() *engine.Run {
@@ -141,7 +143,7 @@ func TestJSONAndSARIFRenderers(t *testing.T) {
 	if doc["repo"] == nil || doc["results"] == nil || doc["disabled"] == nil {
 		t.Errorf("json keys: %v", doc)
 	}
-	if d, _ := doc["disabled"].([]any); len(d) != 1 || d[0].(map[string]any)["Layer"] != "repo" {
+	if d, _ := doc["disabled"].([]any); len(d) != 1 || d[0].(map[string]any)["layer"] != "repo" {
 		t.Errorf("disabled entries must carry their layer: %v", doc["disabled"])
 	}
 	var sarif map[string]any
@@ -240,4 +242,21 @@ func TestRepositoryTextIsInert(t *testing.T) {
 			}
 		}
 	}
+}
+
+// The check JSON is a contract: its key paths are pinned in a golden file.
+// A change here needs a new checkFormat version and a CHANGELOG entry;
+// regenerate with UPDATE_GOLDEN=1.
+func TestCheckJSONShape(t *testing.T) {
+	t.Parallel()
+	run := sampleRun()
+	run.Scopes = []engine.ScopeRun{{Path: "web"}}
+	run.Config.Catalogs = []*catalog.Catalog{{Ref: "fleetlint:minimal", Digest: "d", Layer: "preset"}}
+	run.Config.Weakened = run.Config.Disabled
+	run.Results[0].Findings[0].Exception = &model.Exception{Rule: "r", Reason: "r"}
+	var b bytes.Buffer
+	if err := report.Write(&b, run, report.FormatJSON, report.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Golden(t, "testdata/check-json.keys", testutil.JSONKeys(t, b.Bytes(), ".facts.sources", ".scopes[].facts.sources"))
 }

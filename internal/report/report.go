@@ -89,16 +89,30 @@ func orUnknown(s string) string {
 }
 
 type disabledOut struct {
-	ID, Reason, Where, Layer string
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+	Where  string `json:"where"`
+	Layer  string `json:"layer"`
 }
 
+// checkFormat versions the check JSON. 2: every field is snake_case
+// (summary, scopes, disabled, catalogs were Go field names in 1), and the
+// summary's rule-error count is rule_errors.
+const checkFormat = 2
+
 type catalogOut struct {
-	Ref, Name, Version, Digest, Layer, Alias string
+	Ref      string `json:"ref"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Digest   string `json:"digest,omitempty"`
+	Artifact string `json:"artifact,omitempty"`
+	Layer    string `json:"layer"`
+	Alias    string `json:"alias,omitempty"`
 }
 
 func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 	out := jsonOut{
-		Version: 1, Tool: toolOut{Name: "fleetlint", Version: orUnknown(opts.Version), Catalog: orUnknown(opts.Catalog)}, Repo: run.Facts.Name, Facts: run.Facts, Scopes: run.Scopes,
+		Version: checkFormat, Tool: toolOut{Name: "fleetlint", Version: orUnknown(opts.Version), Catalog: orUnknown(opts.Catalog)}, Repo: run.Facts.Name, Facts: run.Facts, Scopes: run.Scopes,
 		Summary: model.Summarize(run.Results), Results: run.Results,
 	}
 	for _, d := range run.Config.Disabled {
@@ -108,7 +122,7 @@ func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 		out.Weakened = append(out.Weakened, disabledOut(d))
 	}
 	for _, c := range run.Config.Catalogs {
-		out.Catalogs = append(out.Catalogs, catalogOut{c.Ref, c.Metadata.Name, c.Metadata.Version, c.Digest, c.Layer, c.Alias})
+		out.Catalogs = append(out.Catalogs, catalogOut{Ref: c.Ref, Name: c.Metadata.Name, Version: c.Metadata.Version, Digest: c.Digest, Artifact: c.Artifact, Layer: c.Layer, Alias: c.Alias})
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

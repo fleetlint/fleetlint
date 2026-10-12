@@ -5,6 +5,11 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Output formats.** Every field of the check JSON and of `fleet.json` is snake_case. `summary`, `scopes`, `disabled`, `weakened` and `catalogs` used Go field names (`Pass`, `NotApplicable`, `Layer`) before. The summary's count of rules that could not run is `rule_errors`, apart from `errors`, the error-severity failures. The check JSON is now `version: 2` and `fleet.json` is `version: 3`. Both shapes are pinned by golden tests, so a change needs a new version. The fleet report still compares with history from earlier versions; it picks the format by `version` and passes over files it cannot read instead of failing the run.
+- `fleet.json` names, per repository, the catalog version it pinned (`catalog`), next to the built-in one the report names at the top.
+
 ### Added
 
 - `scripts/install.sh` installs a release for Linux or macOS, checked against `checksums.txt` and, with `cosign` installed, against the signature: `curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh`.

@@ -12,8 +12,9 @@ import (
 )
 
 // jsonFormat versions fleet.json. 2: results name their rule by id and the
-// definitions are stored once, under `definitions`.
-const jsonFormat = 2
+// definitions are stored once, under `definitions`. 3: summary fields are
+// snake_case, its rule-error count is rule_errors.
+const jsonFormat = 3
 
 type reportOut struct {
 	Version     int                   `json:"version"`

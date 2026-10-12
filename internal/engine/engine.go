@@ -44,8 +44,8 @@ type BaselineInfo struct {
 
 // ScopeRun records the facts of one scope (the root scope has Path "").
 type ScopeRun struct {
-	Path  string
-	Facts facts.Facts
+	Path  string      `json:"path"`
+	Facts facts.Facts `json:"facts"`
 }
 
 // Options tune an evaluation.

@@ -57,6 +57,12 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 	if err := fleet.Write(out, rep); err != nil {
 		t.Fatal(err)
 	}
+	// fleet.json is a contract: its key paths are pinned (see jsonFormat).
+	doc, err := os.ReadFile(filepath.Join(out, "fleet.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.Golden(t, "testdata/fleet-json.keys", testutil.JSONKeys(t, doc, ".definitions", ".repos[].facts.sources"))
 	for _, f := range []string{"fleet.md", "fleet.html", "fleet.json", "fleet.csv", "index.html", "actions/clean.md", "actions/messy.md", "actions/messy.html", "actions/missing.md", "history/2026-10-04T120000Z.json"} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Errorf("missing output %s", f)

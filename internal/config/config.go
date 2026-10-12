@@ -100,7 +100,10 @@ type RuleConf struct {
 // Layer is who did it: repo for configuration files, org or team for a
 // catalog that lowered a rule of an earlier layer.
 type Disabled struct {
-	ID, Reason, Where, Layer string
+	ID     string `json:"id"`
+	Reason string `json:"reason"`
+	Where  string `json:"where"`
+	Layer  string `json:"layer"`
 }
 
 // Effective is the resolved configuration for one repository.
