@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-13
+
 ### Changed
 
 - **Stacks and task runner are set per directory, under `scopes:`.** `path: .` is the repository root: `scopes: [{path: ., stacks: [go], taskrunner: make}, {path: web, stacks: [node]}]`. `facts:` holds what applies to the whole repository: tier, visibility, forge, container. A root listed alone adds no scope, and workspace members are still discovered. Before, `facts.stacks` and `facts.taskrunner` applied to every scope too, so a member had to restate its own stack. The 0.2 forms are still read for this release and print a deprecation warning (in `fleet`, per repository): `facts.stacks` and `facts.taskrunner` now pin the root only, and a scope's `facts: {stacks: ...}` is read as its `stacks:`.
