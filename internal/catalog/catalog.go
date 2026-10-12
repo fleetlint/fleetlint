@@ -169,9 +169,11 @@ type Catalog struct {
 	// Exceptions are per-finding exceptions the catalog grants to every
 	// repository that extends it, bound by `exceptions: false` set earlier.
 	Exceptions []model.Exception `yaml:"exceptions,omitempty"`
-	// Ref is how the catalog was referenced; Digest is its sha256 (hex).
-	Ref    string `yaml:"-"`
-	Digest string `yaml:"-"`
+	// Ref is how the catalog was referenced; Digest is its sha256 (hex);
+	// Artifact is the manifest digest of the OCI artifact it came in.
+	Ref      string `yaml:"-"`
+	Digest   string `yaml:"-"`
+	Artifact string `yaml:"-"`
 	// Trusted is true only for the repo's own config and local rule files it
 	// points to; presets and remote catalogs are untrusted.
 	Trusted bool `yaml:"-"`

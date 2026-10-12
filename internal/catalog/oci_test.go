@@ -191,7 +191,7 @@ func TestLoadOCIByDigest(t *testing.T) {
 		t.Fatal(err)
 	}
 	own := cats[len(cats)-1]
-	if own.Ref != ref || own.Metadata.Name != "acme" || own.Digest != strings.TrimPrefix(desc.Digest.String(), "sha256:") {
+	if own.Ref != ref || own.Metadata.Name != "acme" || own.Artifact != strings.TrimPrefix(desc.Digest.String(), "sha256:") {
 		t.Fatalf("catalog: %+v", own)
 	}
 	if cats[0].Ref != "fleetlint:minimal" {
@@ -329,5 +329,19 @@ func TestOverlayAndMemFS(t *testing.T) {
 	}
 	if _, err := f.Read(make([]byte, 1)); err == nil {
 		t.Error("reading a directory fails")
+	}
+}
+
+// Each catalog file of an artifact keeps its own digest, so two files are
+// two catalogs; both name the artifact they came in.
+func TestArtifactWithSeveralCatalogs(t *testing.T) {
+	t.Parallel()
+	second := strings.Replace(ociCatalog, "name: acme", "name: acme-extra", 1)
+	cats, err := catalogsFromArtifact("oci://r/x@sha256:abc", &OCIArtifact{Digest: "abc", Files: map[string][]byte{"a.yaml": []byte(ociCatalog), "b.yaml": []byte(second)}})
+	if err != nil || len(cats) != 2 {
+		t.Fatalf("cats=%d err=%v", len(cats), err)
+	}
+	if cats[0].Digest == cats[1].Digest || cats[0].Artifact != "abc" || cats[1].Artifact != "abc" {
+		t.Errorf("digests %s %s, artifact %s %s", cats[0].Digest, cats[1].Digest, cats[0].Artifact, cats[1].Artifact)
 	}
 }

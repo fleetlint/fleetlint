@@ -265,7 +265,9 @@ func catalogsFromArtifact(ref string, art *OCIArtifact) ([]*Catalog, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%s (%s): %w", ref, name, err)
 		}
-		c.Ref, c.Digest, c.Templates, c.Library = ref, art.Digest, templates, library
+		// Each file keeps its own digest, so the files of one artifact are
+		// distinct catalogs; Artifact names the manifest they came in.
+		c.Ref, c.Artifact, c.Templates, c.Library = ref, art.Digest, templates, library
 		out = append(out, c)
 	}
 	return out, nil

@@ -6,19 +6,35 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 )
 
-// commitFile records, inside a cached catalog, the commit it was taken from.
-const commitFile = "COMMIT"
+// commitFile records, inside a cached catalog, the commit it was taken
+// from; digestFile the digest of its files, checked on every read.
+const (
+	commitFile = "COMMIT"
+	digestFile = "DIGEST"
+)
+
+// pinnedDirs are the parts of a catalog repository a run reads.
+var pinnedDirs = []string{"presets", "templates", "rules"}
+
+// maxPinnedBytes bounds one cached catalog version.
+const maxPinnedBytes = 64 << 20
 
 // PinFetch returns a FetchCatalog function for Loader. A catalog version
 // is fetched once with git (shallow, with the credentials git already has)
 // into cacheRoot and read from there afterwards, so a pinned repository
 // works offline after its first run. An empty cacheRoot is the user's cache
-// directory.
+// directory. A cache entry whose files no longer match their digest is
+// fetched again.
 func PinFetch(ctx context.Context, cacheRoot string) func(repoURL, rev string) (dir, commit string, err error) {
 	return func(repoURL, rev string) (string, string, error) {
 		if !tagRe.MatchString(rev) || strings.Contains(rev, "..") {
@@ -29,8 +45,12 @@ func PinFetch(ctx context.Context, cacheRoot string) func(repoURL, rev string) (
 			return "", "", err
 		}
 		dir := CachePath(root, repoURL, rev)
-		if b, err := os.ReadFile(filepath.Join(dir, commitFile)); err == nil { //nolint:gosec // a file fleetlint wrote in its own cache
-			return dir, strings.TrimSpace(string(b)), nil
+		if commit, err := readCacheEntry(dir); err == nil {
+			return dir, commit, nil
+		}
+		// Missing, incomplete or modified: replace it.
+		if err := os.RemoveAll(dir); err != nil {
+			return "", "", err
 		}
 		commit, err := fetchCatalogTree(ctx, repoURL, rev, dir)
 		return dir, commit, err
@@ -55,34 +75,128 @@ func cacheDir(root string) (string, error) {
 	return filepath.Join(base, "fleetlint", "catalogs"), nil
 }
 
-// CachePath is where one version of one catalog repository is kept.
+// CachePath is where one version of one catalog repository is kept: the
+// version stays readable, and a hash of it keeps `a/b` and `a_b` apart.
 func CachePath(root, repoURL, rev string) string {
-	sum := sha256.Sum256([]byte(repoURL))
-	return filepath.Join(root, hex.EncodeToString(sum[:8]), strings.ReplaceAll(rev, "/", "_"))
+	repoSum := sha256.Sum256([]byte(repoURL))
+	revSum := sha256.Sum256([]byte(rev))
+	return filepath.Join(root, hex.EncodeToString(repoSum[:8]), strings.ReplaceAll(rev, "/", "_")+"-"+hex.EncodeToString(revSum[:4]))
 }
 
-// fetchCatalogTree checks presets/ and templates/ of one revision out into
-// dest. It builds the directory next to dest and renames it into place, so
-// an interrupted fetch never leaves a half-filled cache entry.
-func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, gitFetchTimeout)
-	defer cancel()
+// WriteCacheEntry stores a catalog version's files with its commit and
+// their digest. It builds the directory next to dest and renames it into
+// place, so an interrupted write never leaves a half-filled entry.
+func WriteCacheEntry(dest string, files map[string][]byte, commit string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
-		return "", err
+		return err
 	}
 	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".fetch-")
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer os.RemoveAll(tmp) //nolint:errcheck // best-effort cleanup; after a successful rename there is nothing left
-	if _, err := gitOut(ctx, tmp, "init", "-q"); err != nil {
+	all := maps.Clone(files)
+	all[commitFile] = []byte(commit + "\n")
+	all[digestFile] = []byte(treeDigest(files) + "\n")
+	if err := writeTree(tmp, all); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		// Another run filled the entry first: use theirs.
+		if _, statErr := readCacheEntry(dest); statErr == nil {
+			return nil
+		}
+		return errors.Join(errors.New("store the catalog in the cache"), err)
+	}
+	return nil
+}
+
+// writeTree writes files below dir, refusing paths that leave it.
+func writeTree(dir string, files map[string][]byte) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close() //nolint:errcheck // nothing to do on close failure after the writes
+	for name, body := range files {
+		if !fs.ValidPath(name) {
+			return fmt.Errorf("%q is not a relative path", name)
+		}
+		if err := root.MkdirAll(path.Dir(name), 0o750); err != nil {
+			return err
+		}
+		if err := root.WriteFile(name, body, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// readCacheEntry returns the commit of a complete, unmodified entry. A
+// changed, added or missing file fails, and the entry is fetched again.
+func readCacheEntry(dir string) (string, error) {
+	commit, err := os.ReadFile(filepath.Join(dir, commitFile)) //nolint:gosec // a file fleetlint wrote in its own cache
+	if err != nil {
 		return "", err
 	}
-	refspec := rev
-	if !commitRe.MatchString(rev) {
-		refspec = "refs/tags/" + rev
+	want, err := os.ReadFile(filepath.Join(dir, digestFile)) //nolint:gosec // a file fleetlint wrote in its own cache
+	if err != nil {
+		return "", err
 	}
-	if _, err := gitOut(ctx, tmp, "fetch", "-q", "--depth=1", "--no-tags", "--", repoURL, refspec); err != nil {
+	files := map[string][]byte{}
+	fsys := os.DirFS(dir)
+	for _, top := range pinnedDirs {
+		err := fs.WalkDir(fsys, top, func(p string, d fs.DirEntry, err error) error {
+			switch {
+			case errors.Is(err, fs.ErrNotExist) && p == top:
+				return fs.SkipDir
+			case err != nil:
+				return err
+			case !d.Type().IsRegular() && !d.IsDir():
+				return fmt.Errorf("%s is not a regular file", p)
+			case d.IsDir():
+				return nil
+			}
+			files[p], err = fs.ReadFile(fsys, p)
+			return err
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	if treeDigest(files) != strings.TrimSpace(string(want)) {
+		return "", errors.New("cached catalog does not match its digest")
+	}
+	return strings.TrimSpace(string(commit)), nil
+}
+
+// treeDigest hashes file names and contents in a fixed order.
+func treeDigest(files map[string][]byte) string {
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	h := sha256.New()
+	for _, n := range names {
+		sum := sha256.Sum256(files[n])
+		_, _ = fmt.Fprintf(h, "%s\x00%x\n", n, sum) // hash writes never fail
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// fetchCatalogTree reads presets/, templates/ and rules/ of one revision
+// from git's objects, without a checkout, so no filter or hook configured
+// for the user runs on fetched content, and stores them in dest.
+func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitFetchTimeout)
+	defer cancel()
+	tmp, err := os.MkdirTemp("", "fleetlint-pin-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmp) //nolint:errcheck // best-effort cleanup of a temp dir
+	if err := fetchRev(ctx, tmp, repoURL, rev); err != nil {
 		return "", err
 	}
 	out, err := gitOut(ctx, tmp, "rev-parse", "--verify", "FETCH_HEAD^{commit}")
@@ -90,24 +204,28 @@ func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, e
 		return "", err
 	}
 	commit := strings.TrimSpace(string(out))
-	if commitRe.MatchString(rev) && commit != rev {
-		return "", fmt.Errorf("fetched %s instead of commit %s", commit, rev)
-	}
-	if _, err := gitOut(ctx, tmp, "checkout", "-q", "FETCH_HEAD", "--", "presets", "templates"); err != nil {
-		return "", fmt.Errorf("the repository has no presets/ and templates/ at %s: %w", rev, err)
-	}
-	if err := os.RemoveAll(filepath.Join(tmp, ".git")); err != nil {
+	listing, err := gitOut(ctx, tmp, append([]string{"ls-tree", "-r", "-z", "--name-only", "FETCH_HEAD", "--"}, pinnedDirs...)...)
+	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(filepath.Join(tmp, commitFile), []byte(commit+"\n"), 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmp, dest); err != nil {
-		// Another run filled the entry first: use theirs.
-		if _, statErr := os.Stat(filepath.Join(dest, commitFile)); statErr == nil {
-			return commit, nil
+	files := map[string][]byte{}
+	total := 0
+	for _, name := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
+		if name == "" {
+			continue
 		}
-		return "", errors.Join(fmt.Errorf("store the catalog in the cache"), err)
+		if len(files) >= ociMaxFiles {
+			return "", fmt.Errorf("more than %d files", ociMaxFiles)
+		}
+		if files[name], err = readBlob(ctx, tmp, treeObject(name)); err != nil {
+			return "", fmt.Errorf("%s: %w", name, err)
+		}
+		if total += len(files[name]); total > maxPinnedBytes {
+			return "", fmt.Errorf("larger than %d bytes", maxPinnedBytes)
+		}
 	}
-	return commit, nil
+	if !slices.ContainsFunc(slices.Collect(maps.Keys(files)), func(n string) bool { return strings.HasPrefix(n, "presets/") }) {
+		return "", fmt.Errorf("the repository has no presets/ at %s", rev)
+	}
+	return commit, WriteCacheEntry(dest, files, commit)
 }

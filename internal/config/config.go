@@ -920,24 +920,22 @@ func (e *Effective) Requires(refs []string) error {
 func (e *Effective) hasRequired(ref string) bool {
 	if i := strings.Index(ref, "#sha256-"); i >= 0 {
 		want := strings.ToLower(ref[i+len("#sha256-"):])
-		for _, c := range e.Catalogs {
-			if c.Digest == want {
-				return true
-			}
-		}
-		return false
+		return slices.ContainsFunc(e.Catalogs, func(c *catalog.Catalog) bool {
+			return c.Digest == want || (c.Artifact != "" && c.Artifact == want)
+		})
 	}
-	for _, c := range e.Catalogs {
-		if c.Ref == ref {
-			return true
-		}
-		// A name or alias counts only for a catalog the repository did not
-		// write: a file in the repository could call itself anything.
-		if (c.Metadata.Name == ref || (c.Alias != "" && c.Alias == ref)) && notFromRepository(c) {
-			return true
-		}
+	return slices.ContainsFunc(e.Catalogs, func(c *catalog.Catalog) bool { return satisfies(c, ref) })
+}
+
+// satisfies matches a required name or ref. A name or alias counts only for
+// a catalog the repository did not write: a file in the repository could
+// call itself anything.
+func satisfies(c *catalog.Catalog, ref string) bool {
+	if c.Ref == ref {
+		return true
 	}
-	return false
+	named := c.Metadata.Name == ref || (c.Alias != "" && c.Alias == ref)
+	return named && notFromRepository(c)
 }
 
 func (e *Effective) isDisabled(id string) bool {

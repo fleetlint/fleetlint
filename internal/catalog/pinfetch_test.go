@@ -46,6 +46,16 @@ func TestPinFetchCachesOneVersion(t *testing.T) {
 			t.Errorf("only presets and templates are kept, found %s", absent)
 		}
 	}
+	// A modified cache entry is not trusted: it is fetched again.
+	if err := os.WriteFile(filepath.Join(dir, "presets/recommended.yaml"), []byte("tampered"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if again, _, err := fetch(src, "v9.9.9"); err != nil || again != dir {
+		t.Fatalf("refetch after tampering: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "presets/recommended.yaml")); string(b) != pinnedPreset {
+		t.Fatalf("the tampered file was kept: %q", b)
+	}
 	// The second use needs neither the repository nor the network.
 	if err := os.RemoveAll(src); err != nil {
 		t.Fatal(err)
@@ -63,6 +73,13 @@ func TestPinFetchCachesOneVersion(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Dir(dir))
 	if len(entries) != 1 {
 		t.Errorf("failed fetches must leave nothing behind: %v", entries)
+	}
+}
+
+func TestCachePathsDoNotCollide(t *testing.T) {
+	t.Parallel()
+	if catalog.CachePath("/c", "r", "a/b") == catalog.CachePath("/c", "r", "a_b") {
+		t.Error("tags a/b and a_b share a cache entry")
 	}
 }
 

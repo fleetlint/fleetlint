@@ -18,6 +18,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- A pinned catalog version now brings its rule library (`rules/`) along with presets and templates, so presets that select rules from the library work with a pin.
+- Every catalog file of an OCI artifact takes effect. All of them carried the artifact's digest before, and only the first was loaded.
 - `--from` reads every page of a forge's repository list: paging follows GitHub's `Link` header and Gitea's `X-Total-Count`, so a server that caps the page size below 50 no longer cuts the list after the first page. A rate limit is reported as such, with its reset time.
 - Merging into a JSON file no longer rewrites `&&`, `<` and `>` in it as `\u0026`, `\u003c` and `\u003e`.
 - Several fixes to one file all land: each edit applies to the file as the previous one left it, instead of the content seen when planning.
@@ -42,6 +44,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - Policy cannot be faked from inside the repository. A catalog file in the repository belongs to the repository layer, whatever its `metadata.layer` says or a sources file calls it; only presets and catalogs fetched by digest, commit or signature can be org or team. `--require <name>` and `--require <alias>` count only such catalogs, so a local file named `acme-baseline` no longer satisfies `--require acme-baseline`; `--require <ref>#sha256-<digest>` is unchanged.
 - A rule redefined by a later catalog keeps `exceptions: false` from the earlier one, which stays named as the one that set it; a redefinition that allows exceptions again is refused.
 - `catalog.repo` in a sources file is validated like the one in `.fleetlint.yaml` (https or ssh git URL), and the loader checks it again before fetching, so a sources file can no longer point the run's catalog at a local path or another git transport.
+- A pinned catalog version is read from git's objects instead of a checkout, so no filter or hook from the user's git configuration runs on fetched content. Each cache entry records a digest of its files and is fetched again when they no longer match, so a modified or poisoned cache (for example one restored in CI) is not used. Versions `a/b` and `a_b` no longer share a cache entry.
 - A fleet file `url` with credentials (`https://user:token@…`) is refused instead of being written into `fleet.json`, the HTML, CSV and history.
 
 ## [0.2.0] - 2026-10-11
