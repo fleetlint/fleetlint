@@ -201,7 +201,11 @@ func (c *Catalog) UsesLibrary() bool { return len(c.used) > 0 }
 
 const presetPrefix = "fleetlint:"
 
-// isPinnedRef reports whether ref names an https or git source.
+// IsRemoteRef reports whether ref names a catalog fetched by digest, commit
+// or signature rather than a file of the repository.
+func IsRemoteRef(ref string) bool { return isPinnedRef(ref) }
+
+// isPinnedRef reports whether ref names an https, git or oci source.
 func isPinnedRef(ref string) bool {
 	return strings.HasPrefix(ref, "https://") || strings.HasPrefix(ref, gitPrefix) || strings.HasPrefix(ref, ociPrefix)
 }
@@ -324,10 +328,23 @@ type Loader struct {
 // repository names another.
 const DefaultRepo = "https://github.com/fleetlint/catalog.git"
 
+// ValidRepoURL checks where a pinned catalog version may come from: an
+// https or ssh git URL, never a local path, file:// or another transport.
+func ValidRepoURL(u string) error {
+	gitURL := strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "ssh://") || strings.HasPrefix(u, "git@")
+	if !gitURL || strings.ContainsAny(u, " \t\n") {
+		return fmt.Errorf("catalog.repo %q must be an https or ssh git URL", u)
+	}
+	return nil
+}
+
 // Pin switches the loader to another version of the catalog and returns it.
 func (l *Loader) Pin(repoURL, version string) (*Source, error) {
 	if repoURL == "" {
 		repoURL = DefaultRepo
+	}
+	if err := ValidRepoURL(repoURL); err != nil {
+		return nil, err
 	}
 	if l.FetchCatalog == nil {
 		return nil, fmt.Errorf("catalog %s: pinned catalogs are disabled in this mode", version)

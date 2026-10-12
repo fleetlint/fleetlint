@@ -13,10 +13,10 @@ import (
 // written before the org catalog still resolves after it.
 func TestLayerOrderIsFixedWithoutASourcesFile(t *testing.T) {
 	t.Parallel()
+	team := remote("team.yaml", catHead("team-a", ", layer: team")+"rules:\n"+inlineRule("acme/x", "team", "warning"))
+	org := remote("org.yaml", catHead("acme", ", layer: org")+"rules:\n"+inlineRule("acme/x", "org", "error"))
 	dir := writeAll(t, map[string]string{
-		"team.yaml":     catHead("team-a", ", layer: team") + "rules:\n" + inlineRule("acme/x", "team", "warning"),
-		"org.yaml":      catHead("acme", ", layer: org") + "rules:\n" + inlineRule("acme/x", "org", "error"),
-		config.FileName: "version: 1\nextends: [team.yaml, org.yaml, fleetlint:minimal]\n",
+		config.FileName: "version: 1\nextends: [" + team + ", " + org + ", fleetlint:minimal]\n",
 	})
 	eff := loadDir(t, dir)
 	x, _ := ruleByID(eff, "acme/x")
@@ -36,11 +36,10 @@ func TestLayerOrderIsFixedWithoutASourcesFile(t *testing.T) {
 func TestDeclaredLayerAndAlias(t *testing.T) {
 	t.Parallel()
 	mismatch := writeAll(t, map[string]string{
-		"org.yaml":      catHead("acme", ", layer: team") + "rules: []\n",
-		"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n",
+		"s.yaml":        "version: 1\ncatalogs:\n  org: " + remote("org.yaml", catHead("acme", ", layer: team")+"rules: []\n") + "\n",
 		config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n",
 	})
-	if _, err := config.Load(mismatch, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "metadata.layer") {
+	if _, err := config.Load(mismatch, config.Options{Loader: testLoader()}); err == nil || !strings.Contains(err.Error(), "metadata.layer") {
 		t.Errorf("alias org with layer team: %v", err)
 	}
 	plain := writeAll(t, map[string]string{
@@ -129,9 +128,9 @@ func TestSourcesBaselineExtends(t *testing.T) {
 // to the catalog, and cannot grant one a catalog before it forbade.
 func TestCatalogExceptions(t *testing.T) {
 	t.Parallel()
+	org := remote("org.yaml", catHead("acme", ", layer: org, includes: [\"fleetlint:minimal\"]")+"rules: []\nexceptions:\n  - {rule: repo/no-tracked-junk, match: \"fixtures/*.log\", reason: \"parser fixtures\"}\n")
 	dir := writeAll(t, map[string]string{
-		"org.yaml":      catHead("acme", ", layer: org, includes: [\"fleetlint:minimal\"]") + "rules: []\nexceptions:\n  - {rule: repo/no-tracked-junk, match: \"fixtures/*.log\", reason: \"parser fixtures\"}\n",
-		config.FileName: "version: 1\nextends: [org.yaml]\nexceptions:\n  - {rule: repo/gitignore-present, reason: \"generated\"}\n",
+		config.FileName: "version: 1\nextends: [" + org + "]\nexceptions:\n  - {rule: repo/gitignore-present, reason: \"generated\"}\n",
 	})
 	eff := loadDir(t, dir)
 	if len(eff.Exceptions) != 2 {
@@ -141,7 +140,7 @@ func TestCatalogExceptions(t *testing.T) {
 	for _, ex := range eff.Exceptions {
 		byRule[ex.Rule] = ex
 	}
-	if ex := byRule["repo/no-tracked-junk"]; ex.Layer != catalog.LayerOrg || ex.Where != "org.yaml" {
+	if ex := byRule["repo/no-tracked-junk"]; ex.Layer != catalog.LayerOrg || ex.Where != org {
 		t.Errorf("catalog exception attributed to the catalog: %+v", ex)
 	}
 	if ex := byRule["repo/gitignore-present"]; ex.Layer != catalog.LayerRepo || ex.Where != config.FileName {

@@ -20,15 +20,16 @@ overrides:
 `
 
 func layered(repoCfg, org, team string) map[string]string {
-	files := map[string]string{
-		config.FileName: "version: 1\nsources: s.yaml\nextends: [org" + map[bool]string{true: ", team/a", false: ""}[team != ""] + "]\n" + repoCfg,
-		"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n" + map[bool]string{true: "  team/a: team.yaml\n", false: ""}[team != ""],
-		"org.yaml":      org,
-	}
+	sources := "version: 1\ncatalogs:\n  org: " + remote("org.yaml", org) + "\n"
+	extends := "org"
 	if team != "" {
-		files["team.yaml"] = team
+		sources += "  team/a: " + remote("team.yaml", team) + "\n"
+		extends += ", team/a"
 	}
-	return files
+	return map[string]string{
+		config.FileName: "version: 1\nsources: s.yaml\nextends: [" + extends + "]\n" + repoCfg,
+		"s.yaml":        sources,
+	}
 }
 
 // A catalog adjusts the rules it includes without restating them, and what
@@ -227,5 +228,29 @@ overrides:
 	}
 	if _, err := loadLayered(t, layered("", strings.Replace(org, `"docs/*"`, `"nothing/*"`, 1), "")); err != nil {
 		t.Errorf("a pattern matching nothing is not an error: %v", err)
+	}
+}
+
+// A team that redefines a rule keeps the earlier `exceptions: false`, and
+// the organisation stays named as the one who forbade them.
+func TestRedefinitionKeepsForbiddenExceptions(t *testing.T) {
+	t.Parallel()
+	org := catHead("acme", "") + "rules:\n" + inlineRule("acme/x", "org", "error") + "    exceptions: false\n"
+	team := catHead("team-a", "") + "rules:\n" + inlineRule("acme/x", "team", "error")
+	eff, err := loadLayered(t, layered("", org, team))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range eff.Rules {
+		if r.ID == "acme/x" && (r.ExceptionsAllowed() || r.PolicyBy != "acme@1.0.0") {
+			t.Errorf("redefined rule: exceptions allowed %v, policy by %q", r.ExceptionsAllowed(), r.PolicyBy)
+		}
+	}
+	if _, err := loadLayered(t, layered("exceptions:\n  - {rule: acme/x, reason: r}\n", org, team)); err == nil {
+		t.Error("an exception to a rule the organisation forbade exceptions for is refused")
+	}
+	reopen := catHead("team-a", "") + "rules:\n" + inlineRule("acme/x", "team", "error") + "    exceptions: true\n"
+	if _, err := loadLayered(t, layered("", org, reopen)); err == nil {
+		t.Error("a redefinition cannot allow exceptions again")
 	}
 }

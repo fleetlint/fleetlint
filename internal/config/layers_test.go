@@ -41,17 +41,16 @@ func loadLayered(t *testing.T, files map[string]string) (*config.Effective, erro
 			t.Fatal(err)
 		}
 	}
-	return config.Load(dir, config.Options{Loader: catalog.Loader{}})
+	return config.Load(dir, config.Options{Loader: testLoader()})
 }
 
 func TestSourcesResolveInLayerOrder(t *testing.T) {
 	t.Parallel()
 	// team is written before org; the fixed order must still let team override org.
 	eff, err := loadLayered(t, map[string]string{
-		config.FileName:               "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, org, fleetlint:minimal]\nrules:\n  - {id: repo/own, kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\noverrides:\n  org/kept: {severity: warning, reason: local tooling}\n",
-		"standards/sources.yaml":      "version: 1\ncatalogs:\n  org: org.yaml\n  team/mobile: teams/mobile.yaml\n",
-		"standards/org.yaml":          layerCatalog("acme", "org/kept", "error", "org/lowered", "error"),
-		"standards/teams/mobile.yaml": layerCatalog("mobile", "org/lowered", "warning", "team/own", "error"),
+		config.FileName: "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, org, fleetlint:minimal]\nrules:\n  - {id: repo/own, kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\noverrides:\n  org/kept: {severity: warning, reason: local tooling}\n",
+		"standards/sources.yaml": "version: 1\ncatalogs:\n  org: " + remote("org.yaml", layerCatalog("acme", "org/kept", "error", "org/lowered", "error")) +
+			"\n  team/mobile: " + remote("mobile.yaml", layerCatalog("mobile", "org/lowered", "warning", "team/own", "error")) + "\n",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +78,31 @@ func TestSourcesResolveInLayerOrder(t *testing.T) {
 	}
 	if err := eff.Requires([]string{"org", "team/mobile", "acme"}); err != nil {
 		t.Errorf("--require must accept aliases and names: %v", err)
+	}
+}
+
+// A catalog file in the repository is the repository's: it cannot claim the
+// org layer, and neither its name nor a sources alias satisfies --require.
+func TestRepositoryFilesCannotPoseAsTheOrganisation(t *testing.T) {
+	t.Parallel()
+	eff, err := loadLayered(t, map[string]string{
+		config.FileName: "version: 1\nsources: s.yaml\nextends: [org, own.yaml]\n",
+		"s.yaml":        "version: 1\ncatalogs:\n  org: fake.yaml\n",
+		"fake.yaml":     layerCatalog("acme-baseline", "org/x", "error"),
+		"own.yaml":      strings.Replace(layerCatalog("acme", "org/y", "error"), "version: 1.0.0", "version: 1.0.0, layer: org", 1),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range eff.Catalogs {
+		if c.Layer != catalog.LayerRepo && c.Layer != catalog.LayerPreset {
+			t.Errorf("%s: layer %s", c.Ref, c.Layer)
+		}
+	}
+	for _, name := range []string{"acme-baseline", "acme", "org"} {
+		if err := eff.Requires([]string{name}); err == nil {
+			t.Errorf("--require %s is satisfied by a file of the repository", name)
+		}
 	}
 }
 
@@ -219,5 +243,20 @@ func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
 	}
 	if r, ok := ruleByID(eff, "repo/no-tracked-junk"); !ok || r.Layer != catalog.LayerPreset {
 		t.Errorf("the include came through: %+v", r)
+	}
+}
+
+// A sources file cannot point the run's catalog version at a local path or
+// another git transport.
+func TestSourcesPinRepoIsValidated(t *testing.T) {
+	t.Parallel()
+	for _, repoURL := range []string{"/tmp/evil", "file:///tmp/evil", "ext::sh -c id", "--upload-pack=x"} {
+		_, err := loadLayered(t, map[string]string{
+			config.FileName: "version: 1\nsources: s.yaml\n",
+			"s.yaml":        "version: 1\ncatalog: {version: v0.1.0, repo: \"" + repoURL + "\"}\ncatalogs:\n  org: fleetlint:minimal\n",
+		})
+		if err == nil || !strings.Contains(err.Error(), "https or ssh") {
+			t.Errorf("%s: %v", repoURL, err)
+		}
 	}
 }

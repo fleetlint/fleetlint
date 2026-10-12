@@ -240,8 +240,10 @@ func validateChoices(f *File) error {
 		if pin.Version == "" {
 			return errors.New("catalog.version is required: a tag or a full commit SHA")
 		}
-		if pin.Repo != "" && !strings.HasPrefix(pin.Repo, "https://") && !strings.HasPrefix(pin.Repo, "ssh://") && !strings.HasPrefix(pin.Repo, "git@") {
-			return fmt.Errorf("catalog.repo %q must be an https or ssh git URL", pin.Repo)
+		if pin.Repo != "" {
+			if err := catalog.ValidRepoURL(pin.Repo); err != nil {
+				return err
+			}
 		}
 	}
 	switch f.Facts.Container {
@@ -481,18 +483,33 @@ func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*ca
 // settleLayer gives a catalog its layer: presets are the preset layer; a
 // catalog says org or team in its metadata, and a sources-file alias it is
 // loaded under must agree; anything else is the repository's.
+// notFromRepository reports a built-in preset or a catalog fetched by
+// digest, commit or signature.
+func notFromRepository(c *catalog.Catalog) bool {
+	return catalog.RefLayer(c.Ref) == catalog.LayerPreset || catalog.IsRemoteRef(c.Ref)
+}
+
 func settleLayer(c *catalog.Catalog, en extendsEntry) error {
 	declared := c.Metadata.Layer
+	if !notFromRepository(c) {
+		// A file in the repository is the repository's, whatever it
+		// declares or the sources file calls it; otherwise it could
+		// sort itself above the team and be reported as the organisation.
+		declared = ""
+	}
 	switch {
 	case catalog.RefLayer(c.Ref) == catalog.LayerPreset:
 		c.Layer = catalog.LayerPreset
 	case c.Ref != en.ref:
 		// An include of the entry: it takes the entry's layer unless it says otherwise.
-		c.Layer = firstNonEmpty(declared, en.layer)
+		c.Layer = firstNonEmpty(declared, en.layer, catalog.LayerRepo)
 	case en.alias != "" && declared != "" && declared != en.layer:
 		return fmt.Errorf("sources file names %s as %q but its metadata.layer is %q", c.Ref, en.alias, declared)
 	case en.alias != "":
 		c.Layer, c.Alias = en.layer, en.alias
+		if !notFromRepository(c) {
+			c.Layer = catalog.LayerRepo
+		}
 	default:
 		c.Layer = firstNonEmpty(declared, catalog.LayerRepo)
 	}
@@ -846,11 +863,30 @@ func (e *Effective) redefine(c *catalog.Catalog, prev, r *model.Rule) error {
 			r.MinSeverity = prev.MinSeverity
 		}
 	}
+	if err := keepExceptionPolicy(c, prev, r); err != nil {
+		return err
+	}
 	if r.Severity < prev.Severity {
 		e.Weakened = append(e.Weakened, Disabled{
 			ID: r.ID, Where: c.Ref, Layer: r.Layer,
 			Reason: fmt.Sprintf("%s lowers %s to %s", r.Source, prev.Severity, r.Severity),
 		})
+	}
+	return nil
+}
+
+// keepExceptionPolicy binds a redefinition to the earlier policy: a
+// forbidden exception stays forbidden, and the earlier catalog stays named
+// as the one that set it.
+func keepExceptionPolicy(c *catalog.Catalog, prev, r *model.Rule) error {
+	if !prev.ExceptionsAllowed() {
+		if r.AllowExceptions != nil && *r.AllowExceptions {
+			return fmt.Errorf("catalog %s: rule %s: exceptions were forbidden by %s and cannot be allowed again", c.Ref, r.ID, prev.PolicySource())
+		}
+		r.AllowExceptions = prev.AllowExceptions
+	}
+	if r.PolicyBy == "" && (prev.MinSeverity != "" || !prev.ExceptionsAllowed()) {
+		r.PolicyBy = prev.PolicySource()
 	}
 	return nil
 }
@@ -892,7 +928,12 @@ func (e *Effective) hasRequired(ref string) bool {
 		return false
 	}
 	for _, c := range e.Catalogs {
-		if c.Ref == ref || c.Metadata.Name == ref || (c.Alias != "" && c.Alias == ref) {
+		if c.Ref == ref {
+			return true
+		}
+		// A name or alias counts only for a catalog the repository did not
+		// write: a file in the repository could call itself anything.
+		if (c.Metadata.Name == ref || (c.Alias != "" && c.Alias == ref)) && notFromRepository(c) {
 			return true
 		}
 	}

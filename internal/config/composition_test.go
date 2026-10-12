@@ -1,9 +1,11 @@
 package config_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
@@ -21,6 +23,33 @@ func inlineRule(id, title, severity string) string {
 	return "  - id: " + id + "\n    title: " + title + "\n    kind: expr\n    severity: " + severity + "\n    expr: \"true\"\n    message: m\n    requirement: r\n    rationale: r\n    fix: {human: h, agent: a}\n"
 }
 
+// served holds catalogs that tests reference as remote: a catalog outside
+// the repository is the only kind whose declared layer and name count.
+var served sync.Map
+
+// remote serves body over a fake https URL and returns its pinned ref. A
+// remote catalog building on presets states the catalog version it builds
+// on; tests build on the one compiled in.
+func remote(name, body string) string {
+	if strings.Contains(body, "fleetlint:") && !strings.Contains(body, "catalog: {") {
+		body = strings.Replace(body, "version: 1.0.0", "version: 1.0.0, catalog: {version: \""+catalog.ModuleVersion()+"\"}", 1)
+		body = strings.Replace(body, "version: 2.0.0", "version: 2.0.0, catalog: {version: \""+catalog.ModuleVersion()+"\"}", 1)
+	}
+	d := catalog.Digest([]byte(body))
+	url := "https://catalogs.example/" + d + "/" + name
+	served.Store(url, []byte(body))
+	return url + "#sha256-" + d
+}
+
+func testLoader() catalog.Loader {
+	return catalog.Loader{Fetch: func(url string) ([]byte, error) {
+		if b, ok := served.Load(url); ok {
+			return b.([]byte), nil
+		}
+		return nil, fmt.Errorf("%s: not served", url)
+	}}
+}
+
 func writeAll(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -34,7 +63,7 @@ func writeAll(t *testing.T, files map[string]string) string {
 
 func loadDir(t *testing.T, dir string) *config.Effective {
 	t.Helper()
-	eff, err := config.Load(dir, config.Options{Loader: catalog.Loader{}})
+	eff, err := config.Load(dir, config.Options{Loader: testLoader()})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -156,6 +156,11 @@ func (s *Sources) validateBaseline() error {
 	if s.Catalog != nil && s.Catalog.Version == "" {
 		return errors.New("catalog.version is required: a tag or a full commit SHA")
 	}
+	if s.Catalog != nil && s.Catalog.Repo != "" {
+		if err := ValidRepoURL(s.Catalog.Repo); err != nil {
+			return err
+		}
+	}
 	for _, ref := range s.Extends {
 		if _, isAlias := s.Catalogs[ref]; !isAlias && !strings.HasPrefix(ref, presetPrefix) {
 			return fmt.Errorf("extends: %q must be a preset or a name from catalogs", ref)
