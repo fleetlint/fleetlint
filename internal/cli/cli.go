@@ -63,7 +63,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, err
 
 	var code int
 	//nolint:contextcheck // cobra hands the context from ExecuteContext to each command via cmd.Context()
-	root.AddCommand(checkCmd(g, &code), factsCmd(g), explainCmd(g), initCmd(g, &code), fixCmd(g, &code), fleetCmd(g, &code), baselineCmd(g), catalogCmd(), schemaCmd(), docsCmd())
+	root.AddCommand(checkCmd(g, &code), factsCmd(g), explainCmd(g), initCmd(g, &code), fixCmd(g, &code), fleetCmd(g, &code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
 	root.SetArgs(withDefaultCommand(root, args))
 	if err := root.ExecuteContext(ctx); err != nil {
 		return classify(err), err
@@ -212,8 +212,50 @@ func explainCmd(g *globals) *cobra.Command {
 	}
 }
 
-func catalogCmd() *cobra.Command {
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the fleetlint version and the catalog version built in",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "fleetlint version %s\n", cmd.Root().Version)
+			return err
+		},
+	}
+}
+
+func catalogVersionCmd(g *globals) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the catalog version the repository runs with and the catalogs it loads",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			_, eff, err := load(cmd.Context(), g)
+			if err != nil {
+				return err
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "catalog %s", eff.Source.Describe())
+			if eff.Source.Pinned {
+				fmt.Fprintf(&b, " (built in: %s)", catalog.ModuleVersion())
+			}
+			b.WriteString("\n")
+			for _, c := range eff.Catalogs {
+				line := fmt.Sprintf("  %-28s %-10s %-7s", c.Ref, orNone(c.Metadata.Version), c.Layer)
+				if c.Digest != "" {
+					line += " sha256-" + c.Digest[:min(12, len(c.Digest))]
+				}
+				b.WriteString(strings.TrimRight(line, " ") + "\n")
+			}
+			_, err = io.WriteString(cmd.OutOrStdout(), b.String())
+			return err
+		},
+	}
+}
+
+func catalogCmd(g *globals) *cobra.Command {
 	cmd := &cobra.Command{Use: "catalog", Short: "Inspect catalogs"}
+	cmd.AddCommand(catalogVersionCmd(g))
 	cmd.AddCommand(&cobra.Command{
 		Use:   "digest <file>",
 		Short: "Print the sha256 to pin a catalog with in extends",

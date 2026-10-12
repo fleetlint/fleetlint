@@ -49,6 +49,19 @@ func TestDirectoryOfRepositoriesPointsToFleet(t *testing.T) {
 	}
 }
 
+func TestVersionCommands(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	code, out, errOut := runCLI(t, dir, "version")
+	if code != cli.ExitOK || !strings.HasPrefix(out, "fleetlint version ") || !strings.Contains(out, "\ncatalog ") {
+		t.Fatalf("version: code %d, out %q, stderr %q", code, out, errOut)
+	}
+	code, out, errOut = runCLI(t, dir, "catalog", "version")
+	if code != cli.ExitOK || !strings.HasPrefix(out, "catalog ") || !strings.Contains(out, "fleetlint:recommended") || !strings.Contains(out, " preset ") {
+		t.Fatalf("catalog version: code %d, out %q, stderr %q", code, out, errOut)
+	}
+}
+
 func TestCheckExitCodesAndFormats(t *testing.T) {
 	t.Parallel()
 	dir := messyRepo(t)

@@ -9,6 +9,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 - `scripts/install.sh` installs a release for Linux or macOS, checked against `checksums.txt` and, with `cosign` installed, against the signature: `curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh`.
 - `ci/gitlab/fleetlint.yml`, a GitLab CI job that reports findings in the merge request's Code Quality widget.
+- `fleetlint version` prints what `--version` prints; before, `version` ran a check.
+- `fleetlint catalog version` shows the catalog version the repository runs with (built in or pinned) and each catalog it loads, with layer and digest.
 
 ### Changed
 
