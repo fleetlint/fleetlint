@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	data "github.com/fleetlint/catalog"
 	"github.com/goccy/go-yaml"
 
@@ -640,7 +642,7 @@ func Parse(b []byte) (*Catalog, error) {
 		return nil, err
 	}
 	var c Catalog
-	if err := yaml.UnmarshalWithOptions(b, &c, yaml.Strict()); err != nil {
+	if err := yamlsafe.Unmarshal(b, &c, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("parse: %w", err)
 	}
 	if c.APIVersion != APIVersion {
@@ -768,7 +770,7 @@ func probeEngine(b []byte) error {
 	var probe struct {
 		Metadata Metadata `yaml:"metadata"`
 	}
-	if err := yaml.Unmarshal(b, &probe); err != nil {
+	if err := yamlsafe.Unmarshal(b, &probe); err != nil {
 		return nil //nolint:nilerr // the strict decode reports the shape error with its position
 	}
 	return checkEngine(&Catalog{Metadata: probe.Metadata})
@@ -899,7 +901,7 @@ func requireSeverity(b []byte) error {
 	var raw struct {
 		Rules []map[string]any `yaml:"rules"`
 	}
-	if err := yaml.Unmarshal(b, &raw); err != nil {
+	if err := yamlsafe.Unmarshal(b, &raw); err != nil {
 		return fmt.Errorf("parse: %w", err)
 	}
 	for _, r := range raw.Rules {

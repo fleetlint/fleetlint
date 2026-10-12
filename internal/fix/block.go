@@ -9,8 +9,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/BurntSushi/toml"
-	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
@@ -139,7 +140,7 @@ func parses(file, text string) error {
 	case ".toml":
 		return toml.Unmarshal([]byte(text), &doc)
 	case ".yaml", ".yml":
-		return yaml.Unmarshal([]byte(text), &doc)
+		return yamlsafe.Unmarshal([]byte(text), &doc)
 	case ".json":
 		return json.Unmarshal([]byte(text), &doc)
 	}

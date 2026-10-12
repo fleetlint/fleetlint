@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
@@ -165,7 +167,7 @@ func Load(root string, opts Options) (*Effective, error) {
 		return nil, fmt.Errorf("read %s: %w", FileName, err)
 	default:
 		eff.Exists = true
-		if err := yaml.UnmarshalWithOptions(b, &eff.File, yaml.Strict()); err != nil {
+		if err := yamlsafe.Unmarshal(b, &eff.File, yaml.Strict()); err != nil {
 			return nil, fmt.Errorf("%s: %w", FileName, err)
 		}
 	}
@@ -358,7 +360,7 @@ func LoadNested(root, scope string, now time.Time) (*Nested, error) {
 		return nil, err
 	}
 	var n Nested
-	if err := yaml.UnmarshalWithOptions(b, &n, yaml.Strict()); err != nil {
+	if err := yamlsafe.Unmarshal(b, &n, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("%s/%s: %w", dir, FileName, err)
 	}
 	if err := validateNested(dir, &n); err != nil {

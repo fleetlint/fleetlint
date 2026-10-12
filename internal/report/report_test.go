@@ -208,3 +208,36 @@ func TestActionsStartWithTheMechanicalFixes(t *testing.T) {
 		t.Error("no fix-first step when nothing is mechanical")
 	}
 }
+
+// Text from the repository and its catalogs reaches terminals, CI logs, job
+// summaries and pull requests: no control characters, no workflow commands
+// on a line of their own, no Markdown or HTML that renders.
+func TestRepositoryTextIsInert(t *testing.T) {
+	t.Parallel()
+	run := sampleRun()
+	hostile := "x\x1b]52;c;cHduZWQ=\x07\x1b[2J\n::error file=a::fake\r\n<img src=https://t.example/p> [l](javascript:x) @admin </details> `c`"
+	run.Results[0].Findings[0].Message = hostile
+	run.Results[0].Rule.Fix.Agent = hostile
+	for _, f := range []report.Format{report.FormatTable, report.FormatMarkdown, report.FormatAgent} {
+		var b bytes.Buffer
+		if err := report.Write(&b, run, f, report.Options{}); err != nil {
+			t.Fatal(err)
+		}
+		out := b.String()
+		if strings.ContainsAny(out, "\x1b\x07\r") {
+			t.Errorf("%s: control characters pass through", f)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "::") {
+				t.Errorf("%s: a workflow command starts a line: %q", f, line)
+			}
+		}
+		if f == report.FormatMarkdown {
+			for _, raw := range []string{"<img", " [l](", "@admin", "</details> `c`"} {
+				if strings.Contains(out, raw) {
+					t.Errorf("markdown keeps %q", raw)
+				}
+			}
+		}
+	}
+}

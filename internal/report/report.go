@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
@@ -129,12 +130,38 @@ func countFixable(results []model.Result) int {
 type errWriter struct {
 	w   io.Writer
 	err error
+	// plain strips control characters from string arguments: they come
+	// from the repository and its catalogs.
+	plain bool
 }
 
 func (e *errWriter) printf(format string, args ...any) {
-	if e.err == nil {
-		_, e.err = fmt.Fprintf(e.w, format, args...)
+	if e.err != nil {
+		return
 	}
+	if e.plain {
+		for i, a := range args {
+			if s, ok := a.(string); ok {
+				args[i] = plainText(s)
+			}
+		}
+	}
+	_, e.err = fmt.Fprintf(e.w, format, args...)
+}
+
+// plainText makes s one line of printable text: tabs and line breaks become
+// spaces, other control characters (terminal escapes, which can rewrite the
+// screen, set the clipboard or inject CI workflow commands) are dropped.
+func plainText(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return ' '
+		case unicode.IsControl(r) || r == '\u2028' || r == '\u2029':
+			return -1
+		}
+		return r
+	}, s)
 }
 
 func (e *errWriter) line(args ...any) {
@@ -149,7 +176,7 @@ func writeTable(w io.Writer, run *engine.Run, opts Options) error {
 	c := model.Summarize(run.Results)
 	paint := painter(opts.Color)
 	ew.printf("%s  stacks: %s  forge: %s  visibility: %s  tier: %d (%s)  release: %s\n",
-		paint(bold, f.Name), orNone(strings.Join(f.Stacks, ",")), f.Forge, f.Visibility, f.Tier,
+		paint(bold, plainText(f.Name)), plainText(orNone(strings.Join(f.Stacks, ","))), f.Forge, f.Visibility, f.Tier,
 		f.TierSource(), yesNo(f.Release.Exists))
 	ew.printf("%s   %s   %s   %d excepted   %d not applicable",
 		paint(green, fmt.Sprintf("%d passed", c.Pass)), paint(yellow, fmt.Sprintf("%d warnings", c.Warnings)), paint(red, fmt.Sprintf("%d errors", c.Errors)), c.Excepted, c.NotApplicable)
@@ -163,7 +190,7 @@ func writeTable(w io.Writer, run *engine.Run, opts Options) error {
 	ew.line()
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	rows := &errWriter{w: tw}
+	rows := &errWriter{w: tw, plain: true}
 	for _, r := range sorted(run.Results) {
 		writeRow(rows, r, opts.Verbose)
 	}
@@ -249,7 +276,7 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 		w.line()
 		w.line(paint(dim, "disabled rules:"))
 		for _, d := range run.Config.Disabled {
-			w.printf("  %s (%s): %s\n", d.ID, d.Where, d.Reason)
+			w.printf("  %s (%s): %s\n", plainText(d.ID), plainText(d.Where), plainText(d.Reason))
 		}
 	}
 	var expired []model.Exception
@@ -262,13 +289,13 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 		w.line()
 		w.line(paint(yellow, "expired exceptions (findings are back at full severity):"))
 		for _, ex := range expired {
-			w.printf("  %s: %s (until %s)\n", ex.Rule, ex.Reason, ex.Until)
+			w.printf("  %s: %s (until %s)\n", plainText(ex.Rule), plainText(ex.Reason), plainText(ex.Until))
 		}
 	}
 	if run.Baseline != nil && run.Baseline.Exists {
 		w.line()
 		paid := run.Baseline.Entries - run.Baseline.Used
-		w.line(paint(dim, fmt.Sprintf("baseline %s: %d entries, %d still matching, %d paid off (run `fleetlint baseline` to shrink it)", run.Baseline.Path, run.Baseline.Entries, run.Baseline.Used, paid)))
+		w.line(paint(dim, fmt.Sprintf("baseline %s: %d entries, %d still matching, %d paid off (run `fleetlint baseline` to shrink it)", plainText(run.Baseline.Path), run.Baseline.Entries, run.Baseline.Used, paid)))
 	}
 	if !run.Config.Exists {
 		w.line()
@@ -315,8 +342,8 @@ func WriteActions(w io.Writer, name string, results []model.Result) error {
 		if r.Scope != "" {
 			id = r.Scope + ": " + id
 		}
-		ew.printf("## %d. %s: %s (%s)\n\n", i+1, id, r.Rule.Title, r.Severity)
-		ew.printf("Requirement: %s\n\n", strings.TrimSpace(r.Rule.Requirement))
+		ew.printf("## %d. %s: %s (%s)\n\n", i+1, sanitizeLine(id), sanitizeLine(r.Rule.Title), r.Severity)
+		ew.printf("Requirement: %s\n\n", sanitizeLine(strings.TrimSpace(r.Rule.Requirement)))
 		ew.line("Findings:")
 		ew.line("```")
 		for _, f := range r.Findings {
@@ -327,7 +354,7 @@ func WriteActions(w io.Writer, name string, results []model.Result) error {
 		if instr == "" {
 			instr = r.Rule.Fix.Human
 		}
-		ew.printf("\nInstruction: %s\n\n", strings.TrimSpace(instr))
+		ew.printf("\nInstruction: %s\n\n", sanitizeLine(strings.TrimSpace(instr)))
 		if r.Fixable {
 			ew.line("Mechanical: `fleetlint fix --apply " + r.Rule.ID + "` makes this change; review the result instead of writing it by hand.")
 			ew.line()
@@ -338,8 +365,7 @@ func WriteActions(w io.Writer, name string, results []model.Result) error {
 
 // sanitizeLine keeps a finding on one line and prevents it from closing the code fence.
 func sanitizeLine(s string) string {
-	s = strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
-	return strings.ReplaceAll(s, "```", "'''")
+	return strings.ReplaceAll(plainText(s), "```", "'''")
 }
 
 func sorted(in []model.Result) []model.Result {

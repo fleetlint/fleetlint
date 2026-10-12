@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"html"
 	"strings"
+
+	"github.com/fleetlint/fleetlint/internal/report"
 )
 
 // tcell is one table cell. Markdown renders Text (as code when Code is
@@ -57,9 +59,9 @@ func (t table) markdown(b *strings.Builder) {
 	for _, row := range t.Rows {
 		b.WriteString("|")
 		for _, c := range row {
-			s := escapeCell(c.Text)
-			if c.Code && s != "" {
-				s = "`" + s + "`"
+			s := report.MarkdownText(c.Text)
+			if c.Code && c.Text != "" {
+				s = "`" + report.CodeText(c.Text) + "`"
 			}
 			b.WriteString(" " + s + " |")
 		}

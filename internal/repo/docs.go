@@ -8,8 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/BurntSushi/toml"
-	"github.com/goccy/go-yaml"
 	"github.com/tailscale/hujson"
 )
 
@@ -55,7 +56,7 @@ func parseDoc(format Format, text string) (any, error) {
 	var v any
 	switch format {
 	case FormatYAML:
-		if err := yaml.Unmarshal([]byte(text), &v); err != nil {
+		if err := yamlsafe.Unmarshal([]byte(text), &v); err != nil {
 			return nil, fmt.Errorf("parse yaml: %w", err)
 		}
 	case FormatTOML:

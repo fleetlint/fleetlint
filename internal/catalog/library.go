@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -90,7 +92,7 @@ func loadLibrary(fsys fs.FS, source string) (*Library, error) {
 // parseLibraryRule reads one rule file; the id must spell the path.
 func parseLibraryRule(b []byte, p string) (model.Rule, error) {
 	var r model.Rule
-	if err := yaml.UnmarshalWithOptions(b, &r, yaml.Strict()); err != nil {
+	if err := yamlsafe.Unmarshal(b, &r, yaml.Strict()); err != nil {
 		return r, fmt.Errorf("%s: %w", p, err)
 	}
 	want := strings.TrimSuffix(strings.TrimPrefix(p, "rules/"), ".yaml")

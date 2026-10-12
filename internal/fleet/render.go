@@ -540,7 +540,7 @@ func renderMarkdown(v *view) []byte {
 	// Rules down, repositories across: the rule list is long, the fleet usually is not.
 	b.WriteString("\n## Matrix\n\n| Rule |")
 	for _, r := range v.rep.Repos {
-		fmt.Fprintf(&b, " %s |", escapeCell(r.Name))
+		fmt.Fprintf(&b, " %s |", report.MarkdownText(r.Name))
 	}
 	b.WriteString("\n|---|" + strings.Repeat("---|", len(v.rep.Repos)) + "\n")
 	for _, s := range v.stats {
@@ -571,12 +571,6 @@ func collectDisabled(rep *Report, weakened bool) [][]tcell {
 		}
 	}
 	return rows
-}
-
-// escapeCell makes repository-derived text safe inside a Markdown table cell.
-func escapeCell(s string) string {
-	s = strings.ReplaceAll(s, "|", "\\|")
-	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
 }
 
 func collectExceptions(rep *Report) [][]tcell {

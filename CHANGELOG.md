@@ -37,6 +37,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - git runs without variables that redirect it to another repository (`GIT_DIR`, `GIT_INDEX_FILE` and the like, which git hooks export) and without fsmonitor.
 - The release workflow verifies in a separate job without write permissions: the PyPI and Go tools of `make check` no longer run next to the signing identity and the deploy keys. The release job restores no build cache and pins GoReleaser to an exact version; GoReleaser runs `go mod verify` instead of `go mod tidy`. The verification command in the release notes names the exact signing identity of the tag.
 - The GitLab job installs the release it belongs to, with the install script of that tag, and requires the cosign signature (`FLEETLINT_VERIFY=cosign`, which `scripts/install.sh` now understands). Before, it ran the install script from `main` and installed `latest` without a signature check. `make release` sets the version in the job.
+- YAML from a repository or a catalog whose anchors and aliases expand to more than 200,000 nodes is refused before decoding. A few hundred bytes of nested aliases took minutes of CPU or tens of gigabytes of memory before.
+- Text from the repository and its catalogs is inert in every output: the table drops terminal escapes and other control characters and keeps each finding on one line, so it cannot clear the screen, write the clipboard or start a GitHub Actions workflow command. Markdown (job summaries, pull-request bodies, `fleet.md`) escapes emphasis, links, images, HTML tags and @mentions.
 - A fleet file `url` with credentials (`https://user:token@…`) is refused instead of being written into `fleet.json`, the HTML, CSV and history.
 
 ## [0.2.0] - 2026-10-11

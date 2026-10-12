@@ -52,7 +52,7 @@ func TestMarkdownTriageSections(t *testing.T) {
 		"2 repositories: 2 with errors, 0 could not be checked · 1 rule errors · 1 findings fixable",
 		"## Rule errors", "| old | `b/parse` |  | tsconfig.json: parse json |",
 		"## Facts to pin", "`facts: { tier: 1, visibility: public\\|private }`", "inferred from release pipeline",
-		"main @ abcdef1, 3 uncommitted", "(stale)",
+		"main &#64; abcdef1, 3 uncommitted", "(stale)",
 		"applicable in no repository (1, left out of the tables): c/cpp.",
 		"| `a/hooks` | FAIL* | FAIL |", // fixable marked
 		"| `e/warn` | · | warn |",      // not selected differs from n/a

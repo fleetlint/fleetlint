@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/rootfs"
@@ -92,7 +94,7 @@ func (l Loader) LoadSources(ref string) (*Sources, error) {
 		return nil, fmt.Errorf("sources %s: %w", ref, err)
 	}
 	var s Sources
-	if err := yaml.UnmarshalWithOptions(b, &s, yaml.Strict()); err != nil {
+	if err := yamlsafe.Unmarshal(b, &s, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("sources %s: %w", ref, err)
 	}
 	if err := s.validate(local); err != nil {

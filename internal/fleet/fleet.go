@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/yamlsafe"
+
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
@@ -98,7 +100,7 @@ func LoadSpec(path string) (*Spec, error) {
 		return nil, err
 	}
 	var s Spec
-	if err := yaml.UnmarshalWithOptions(b, &s, yaml.Strict()); err != nil {
+	if err := yamlsafe.Unmarshal(b, &s, yaml.Strict()); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	if s.Version != 1 {
