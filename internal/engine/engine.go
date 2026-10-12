@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -228,6 +227,10 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		res.Status, res.Evidence = model.StatusNotApplicable, why
 		return res
 	}
+	if executesCode(rule) && !opts.Deep {
+		res.Status, res.Evidence = model.StatusNotApplicable, "needs --deep (executes repository code)"
+		return res
+	}
 	var (
 		findings []model.Finding
 		evidence string
@@ -237,24 +240,14 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 	case model.KindExpr:
 		findings, err = evalExpr(env, rule)
 	case model.KindOutcome:
-		findings, evidence, err = evalOutcome(env, rule)
-		if len(findings) == 1 && findings[0].Exception == nil && findings[0].Evidence != "" && findings[0].Evidence != "unsatisfied" {
-			// a partial match reports at its own severity
-			if sev, ok := partialSeverity(rule, findings[0].Evidence); ok {
-				res.Severity = sev
-			}
+		var partial *model.Partial
+		findings, evidence, partial, err = evalOutcome(env, rule)
+		if partial != nil {
+			res.Severity = partial.Severity // a partial match reports at its own severity
 		}
 	case model.KindGo:
-		findings, evidence, err = evalGo(ctx, r, f, rule, opts)
-		if errors.Is(err, rules.ErrNeedsDeep) {
-			res.Status, res.Evidence = model.StatusNotApplicable, "needs --deep"
-			return res
-		}
+		findings, evidence, err = evalGo(ctx, r, f, rule)
 	case model.KindCommand:
-		if !opts.Deep {
-			res.Status, res.Evidence = model.StatusNotApplicable, "needs --deep (executes repository code)"
-			return res
-		}
 		findings, err = evalCommand(ctx, r, f, rule)
 	default:
 		err = fmt.Errorf("unknown rule kind %q", rule.Kind)
@@ -309,31 +302,32 @@ func evalExpr(env *celenv.Env, rule model.Rule) ([]model.Finding, error) {
 
 // evalOutcome tries each satisfier (catalog ones first, then the repo's
 // `accept` additions); the first that holds is the evidence of a pass.
-// Otherwise the first matching partial, or the rule's message, is the finding.
-func evalOutcome(env *celenv.Env, rule model.Rule) ([]model.Finding, string, error) {
-	for _, s := range append(rule.Satisfiers, rule.AcceptedSatisfiers()...) {
+// Otherwise the first matching partial, returned so its severity applies,
+// or the rule's message is the finding.
+func evalOutcome(env *celenv.Env, rule model.Rule) ([]model.Finding, string, *model.Partial, error) {
+	for _, s := range append(append([]model.Satisfier{}, rule.Satisfiers...), rule.AcceptedSatisfiers()...) {
 		ok, err := satisfied(env, rule, s)
 		if err != nil {
-			return nil, "", fmt.Errorf("satisfier %s: %w", s.Name, err)
+			return nil, "", nil, fmt.Errorf("satisfier %s: %w", s.Name, err)
 		}
 		if ok {
-			return nil, "satisfied by " + s.Name, nil
+			return nil, "satisfied by " + s.Name, nil, nil
 		}
 	}
-	for _, p := range rule.Partials {
+	for i, p := range rule.Partials {
 		ok, err := env.Check(p.Expr, rule.Params)
 		if err != nil {
-			return nil, "", fmt.Errorf("partial %s: %w", p.Name, err)
+			return nil, "", nil, fmt.Errorf("partial %s: %w", p.Name, err)
 		}
 		if ok {
-			return []model.Finding{{Message: p.Message, Evidence: p.Name}}, "", nil
+			return []model.Finding{{Message: p.Message, Evidence: p.Name}}, "", &rule.Partials[i], nil
 		}
 	}
 	msg := rule.Message
 	if msg == "" {
 		msg = rule.Title
 	}
-	return []model.Finding{{Message: msg, Evidence: "unsatisfied"}}, "", nil
+	return []model.Finding{{Message: msg, Evidence: "unsatisfied"}}, "", nil, nil
 }
 
 func satisfied(env *celenv.Env, rule model.Rule, s model.Satisfier) (bool, error) {
@@ -344,15 +338,6 @@ func satisfied(env *celenv.Env, rule model.Rule, s model.Satisfier) (bool, error
 		}
 	}
 	return env.Check(s.Expr, rule.Params)
-}
-
-func partialSeverity(rule model.Rule, name string) (model.Severity, bool) {
-	for _, p := range rule.Partials {
-		if p.Name == name {
-			return p.Severity, true
-		}
-	}
-	return 0, false
 }
 
 // evalForeach evaluates Expr once per element of Foreach; each false element
@@ -423,15 +408,25 @@ func itemLabel(m map[string]any) string {
 	return ""
 }
 
-func evalGo(ctx context.Context, r *repo.Repo, f facts.Facts, rule model.Rule, opts Options) ([]model.Finding, string, error) {
+// executesCode reports whether a rule runs repository code: command
+// rules, and Go rules that say so. They run only under --deep.
+func executesCode(rule model.Rule) bool {
+	if rule.Kind == model.KindCommand {
+		return true
+	}
+	if rule.Kind == model.KindGo {
+		c, ok := rules.Lookup(rule.ID)
+		return ok && c.Deep()
+	}
+	return false
+}
+
+func evalGo(ctx context.Context, r *repo.Repo, f facts.Facts, rule model.Rule) ([]model.Finding, string, error) {
 	checker, ok := rules.Lookup(rule.ID)
 	if !ok {
 		return nil, "", fmt.Errorf("no Go implementation registered for %s (binary too old for this catalog?)", rule.ID)
 	}
-	if dc, isDeep := checker.(rules.DeepChecker); isDeep {
-		return dc.CheckDeep(ctx, rules.Context{Repo: r, Facts: f, Params: rule.Params, Deep: opts.Deep})
-	}
-	out, err := checker.Check(rules.Context{Repo: r, Facts: f, Params: rule.Params, Deep: opts.Deep})
+	out, err := checker.Check(ctx, rules.Context{Repo: r, Facts: f, Params: rule.Params})
 	if err != nil {
 		return nil, "", err
 	}

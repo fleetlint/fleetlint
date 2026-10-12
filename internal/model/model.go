@@ -129,9 +129,12 @@ type Rule struct {
 	When     string   `yaml:"when,omitempty" json:"when,omitempty"`
 	// Foreach is a CEL expression yielding a list; Expr is then evaluated once
 	// per element as `item`, and every false element is its own finding.
-	Foreach     string         `yaml:"foreach,omitempty" json:"foreach,omitempty"`
-	Expr        string         `yaml:"expr,omitempty" json:"expr,omitempty"`
-	Satisfiers  []Satisfier    `yaml:"satisfiers,omitempty" json:"satisfiers,omitempty"`
+	Foreach    string      `yaml:"foreach,omitempty" json:"foreach,omitempty"`
+	Expr       string      `yaml:"expr,omitempty" json:"expr,omitempty"`
+	Satisfiers []Satisfier `yaml:"satisfiers,omitempty" json:"satisfiers,omitempty"`
+	// Accept are satisfiers a repository or later catalog added with
+	// `accept:`; they are tried after the rule's own.
+	Accept      []Satisfier    `yaml:"-" json:"accept,omitempty"`
 	Partials    []Partial      `yaml:"partials,omitempty" json:"partials,omitempty"`
 	Run         string         `yaml:"run,omitempty" json:"run,omitempty"`
 	Message     string         `yaml:"message,omitempty" json:"message,omitempty"`
@@ -170,6 +173,7 @@ func (r Rule) Clone() Rule {
 	r.Tiers = slices.Clone(r.Tiers)
 	r.Stacks = slices.Clone(r.Stacks)
 	r.Satisfiers = slices.Clone(r.Satisfiers)
+	r.Accept = slices.Clone(r.Accept)
 	r.Partials = slices.Clone(r.Partials)
 	r.Refs = slices.Clone(r.Refs)
 	r.Params, _ = deepCopy(r.Params).(map[string]any)
@@ -216,19 +220,14 @@ func (r Rule) PolicySource() string {
 	return r.Source
 }
 
-// AcceptedSatisfiers reads the `accept:` entries a repository added to an
-// outcome rule; they arrive in Params["accept"].
+// AcceptedSatisfiers returns the `accept:` satisfiers, each named
+// (accept[i] when it has no name of its own).
 func (r Rule) AcceptedSatisfiers() []Satisfier {
-	raw, _ := r.Params["accept"].([]any)
-	out := make([]Satisfier, 0, len(raw))
-	for i, item := range raw {
-		m, _ := item.(map[string]any)
-		s := Satisfier{Name: fmt.Sprintf("accept[%d]", i)}
-		if n, ok := m["name"].(string); ok && n != "" {
-			s.Name = n
+	out := make([]Satisfier, 0, len(r.Accept))
+	for i, s := range r.Accept {
+		if s.Name == "" {
+			s.Name = fmt.Sprintf("accept[%d]", i)
 		}
-		s.Expr, _ = m["expr"].(string)
-		s.When, _ = m["when"].(string)
 		if s.Expr != "" {
 			out = append(out, s)
 		}

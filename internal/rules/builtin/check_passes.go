@@ -21,27 +21,22 @@ type checkPasses struct{}
 
 func (checkPasses) ID() string { return "quality/check-passes" }
 
-// Check is the non-deep path: report that deep mode is needed.
-func (checkPasses) Check(rules.Context) (rules.Outcome, error) {
-	return rules.Outcome{}, rules.ErrNeedsDeep
-}
+// Deep: it runs the repository's own check.
+func (checkPasses) Deep() bool { return true }
 
 const (
 	defaultCheckBudget = 10 * time.Minute
 	checkTimeout       = 20 * time.Minute
 )
 
-func (c checkPasses) CheckDeep(ctx context.Context, rc rules.Context) ([]model.Finding, string, error) {
-	if !rc.Deep {
-		return nil, "", rules.ErrNeedsDeep
-	}
+func (c checkPasses) Check(ctx context.Context, rc rules.Context) (rules.Outcome, error) {
 	cmdline, ok := checkCommand(rc.Facts.TaskRunner.Kind)
 	if !ok {
-		return []model.Finding{{Message: "no task runner with a check target to run"}}, "", nil
+		return rules.Outcome{Findings: []model.Finding{{Message: "no task runner with a check target to run"}}}, nil
 	}
 	budget, err := durationParam(rc.Params, "budget", defaultCheckBudget)
 	if err != nil {
-		return nil, "", err
+		return rules.Outcome{}, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
@@ -67,7 +62,7 @@ func (c checkPasses) CheckDeep(ctx context.Context, rc rules.Context) ([]model.F
 			Evidence: "slow",
 		})
 	}
-	return findings, evidence, nil
+	return rules.Outcome{Findings: findings, Evidence: evidence}, nil
 }
 
 // tailBuffer keeps only the last limit bytes of output: enough to explain a

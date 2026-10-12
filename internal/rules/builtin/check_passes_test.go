@@ -2,7 +2,6 @@ package builtin_test
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -13,17 +12,13 @@ import (
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
-func checker(t *testing.T) rules.DeepChecker {
+func checker(t *testing.T) rules.Checker {
 	t.Helper()
 	c, ok := rules.Lookup("quality/check-passes")
 	if !ok {
 		t.Fatal("quality/check-passes is not registered")
 	}
-	dc, ok := c.(rules.DeepChecker)
-	if !ok {
-		t.Fatal("quality/check-passes must be a DeepChecker")
-	}
-	return dc
+	return c
 }
 
 // makeContext builds a deep rule context for a repository whose Makefile has the given check recipe.
@@ -34,24 +29,21 @@ func makeContext(t *testing.T, recipe string, params map[string]any) rules.Conte
 	if f.TaskRunner.Kind != "make" {
 		t.Fatalf("task runner %q, want make", f.TaskRunner.Kind)
 	}
-	return rules.Context{Repo: r, Facts: f, Params: params, Deep: true}
+	return rules.Context{Repo: r, Facts: f, Params: params}
 }
 
 func TestCheckPassesNeedsDeep(t *testing.T) {
 	t.Parallel()
-	c := checker(t)
-	if _, err := c.Check(rules.Context{}); !errors.Is(err, rules.ErrNeedsDeep) {
-		t.Errorf("Check: %v, want ErrNeedsDeep", err)
-	}
-	if _, _, err := c.CheckDeep(context.Background(), rules.Context{Deep: false}); !errors.Is(err, rules.ErrNeedsDeep) {
-		t.Errorf("CheckDeep without Deep: %v, want ErrNeedsDeep", err)
+	if !checker(t).Deep() {
+		t.Error("check-passes runs repository code: it must say so")
 	}
 }
 
 func TestCheckPassesWithoutRunner(t *testing.T) {
 	t.Parallel()
-	rc := rules.Context{Deep: true, Facts: facts.Facts{TaskRunner: facts.TaskRunner{Kind: "none"}}}
-	findings, _, err := checker(t).CheckDeep(context.Background(), rc)
+	rc := rules.Context{Facts: facts.Facts{TaskRunner: facts.TaskRunner{Kind: "none"}}}
+	out, err := checker(t).Check(context.Background(), rc)
+	findings := out.Findings
 	if err != nil || len(findings) != 1 || !strings.Contains(findings[0].Message, "no task runner") {
 		t.Fatalf("findings=%+v err=%v", findings, err)
 	}
@@ -62,8 +54,8 @@ func TestCheckPassesBudgetParam(t *testing.T) {
 	for name, params := range map[string]map[string]any{"not a string": {"budget": 10}, "not a duration": {"budget": "soon"}} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			rc := rules.Context{Deep: true, Facts: facts.Facts{TaskRunner: facts.TaskRunner{Kind: "make"}}, Params: params}
-			if _, _, err := checker(t).CheckDeep(context.Background(), rc); err == nil || !strings.Contains(err.Error(), "budget") {
+			rc := rules.Context{Facts: facts.Facts{TaskRunner: facts.TaskRunner{Kind: "make"}}, Params: params}
+			if _, err := checker(t).Check(context.Background(), rc); err == nil || !strings.Contains(err.Error(), "budget") {
 				t.Fatalf("err=%v, want a budget error", err)
 			}
 		})
@@ -98,7 +90,8 @@ func TestCheckPassesRunsMakeCheck(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			findings, evidence, err := checker(t).CheckDeep(context.Background(), makeContext(t, c.recipe, c.params))
+			out, err := checker(t).Check(context.Background(), makeContext(t, c.recipe, c.params))
+			findings, evidence := out.Findings, out.Evidence
 			if err != nil {
 				t.Fatal(err)
 			}

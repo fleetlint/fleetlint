@@ -175,8 +175,8 @@ func TestAcceptValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	r, _ := ruleByID(eff, "release/sbom")
-	if list, _ := r.Params["accept"].([]any); len(list) != 1 {
-		t.Fatalf("accept not stored: %+v", r.Params)
+	if len(r.Accept) != 1 || r.Accept[0].Name != "own" || r.Accept[0].Expr != "true" {
+		t.Fatalf("accept not stored: %+v", r.Accept)
 	}
 }
 

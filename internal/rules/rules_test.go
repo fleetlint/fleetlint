@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"strings"
@@ -12,8 +13,10 @@ import (
 
 type fake struct{ id string }
 
-func (f fake) ID() string                               { return f.id }
-func (fake) Check(rules.Context) (rules.Outcome, error) { return rules.Outcome{}, nil }
+func (f fake) ID() string { return f.id }
+func (fake) Deep() bool   { return false }
+
+func (fake) Check(context.Context, rules.Context) (rules.Outcome, error) { return rules.Outcome{}, nil }
 
 func TestRegistryListsSortedIDs(t *testing.T) {
 	t.Parallel()

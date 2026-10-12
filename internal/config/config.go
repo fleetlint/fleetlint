@@ -1029,12 +1029,12 @@ func mergeParams(r *model.Rule, rc RuleConf) {
 	for k, v := range rc.Params {
 		r.Params[k] = v
 	}
-	if len(rc.Accept) > 0 {
-		accept := make([]any, 0, len(rc.Accept))
-		for _, a := range rc.Accept {
-			accept = append(accept, a)
-		}
-		r.Params["accept"] = accept
+	for _, a := range rc.Accept {
+		s := model.Satisfier{}
+		s.Name, _ = a["name"].(string)
+		s.When, _ = a["when"].(string)
+		s.Expr, _ = a["expr"].(string)
+		r.Accept = append(r.Accept, s)
 	}
 }
 

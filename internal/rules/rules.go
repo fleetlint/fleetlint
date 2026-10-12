@@ -7,7 +7,6 @@ package rules
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -22,13 +21,7 @@ type Context struct {
 	Repo   *repo.Repo
 	Facts  facts.Facts
 	Params map[string]any
-	// Deep is true when the user opted into checks that execute repository
-	// code (`--deep`). Rules that need it return not-applicable otherwise.
-	Deep bool
 }
-
-// ErrNeedsDeep is returned by a checker when the rule only works in deep mode.
-var ErrNeedsDeep = errors.New("needs --deep")
 
 // Outcome is what a Go rule returns: findings (empty = pass) and optional
 // evidence explaining a pass, e.g. which satisfier matched.
@@ -41,15 +34,11 @@ type Outcome struct {
 type Checker interface {
 	// ID must equal the catalog rule id this implementation serves.
 	ID() string
+	// Deep reports whether the rule executes repository code; the engine
+	// runs it only under --deep and reports it as not applicable otherwise.
+	Deep() bool
 	// Check evaluates the rule. An error means the rule could not run.
-	Check(ctx Context) (Outcome, error)
-}
-
-// DeepChecker is a rule that runs repository code and therefore needs a
-// context for cancellation and timeouts.
-type DeepChecker interface {
-	Checker
-	CheckDeep(ctx context.Context, c Context) ([]model.Finding, string, error)
+	Check(ctx context.Context, c Context) (Outcome, error)
 }
 
 var (

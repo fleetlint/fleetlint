@@ -11,6 +11,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - CEL expressions are type-checked when the configuration loads, for every rule, whether it applies to the repository or not: a typo is a configuration error (exit 2) naming the rule and the field (`when`, `expr`, `foreach`, a satisfier or partial). It was a rule error before, and only where the rule applied. Each expression is checked once per process instead of once per scope and repository.
 - An expression evaluation stops at a cost limit and when the run is cancelled, so a catalog's comprehension over every file cannot run for hours. Regular expressions in `matches`, `grep`, `codegrep` and `scan` are compiled once instead of once per item.
 - `exists()`, `glob()` and stack detection match against one file index per repository: with git, the tracked files plus the untracked ones git does not ignore, so a gitignored local file no longer makes a rule pass on a developer's machine and fail in CI. The tree was walked on every call before, and included ignored files. Vendored and build directories stay out, as before.
+- A rule's `accept:` satisfiers are their own field (`accept` in the JSON output) instead of an entry in `params`.
 - `fleet.json` names, per repository, the catalog version it pinned (`catalog`), next to the built-in one the report names at the top.
 
 ### Added
