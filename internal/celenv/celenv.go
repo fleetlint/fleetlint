@@ -5,11 +5,12 @@
 package celenv
 
 import (
+	"context"
 	"fmt"
 	"reflect"
-	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/types"
@@ -18,6 +19,7 @@ import (
 	"cel.dev/cel-go/ext"
 
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
@@ -63,17 +65,36 @@ var Variables = []Accessor{
 	{"item", "In a rule with `foreach`, the current element; `\"\"` otherwise."},
 }
 
-// Env wraps a compiled CEL environment bound to one repository scope.
+// Env wraps a compiled CEL environment bound to one repository scope. It is
+// used by one goroutine at a time.
 type Env struct {
+	ctx   context.Context
 	env   *cel.Env
 	repo  *repo.Repo
 	facts facts.Facts
 	cache map[string]cel.Program
 }
 
-// New builds the environment for a repository scope.
-func New(r *repo.Repo, f facts.Facts) (*Env, error) {
-	e := &Env{repo: r, facts: f, cache: map[string]cel.Program{}}
+// costLimit bounds one evaluation (about half a minute at worst), so a
+// catalog's nested comprehension over every tracked file cannot run for
+// hours; interruptEvery is how often a comprehension checks for
+// cancellation.
+var costLimit uint64 = 10_000_000
+
+const interruptEvery = 100
+
+// checked holds type-checked ASTs by result type and expression, shared by
+// every Env: an expression is parsed and checked once per process, not once
+// per scope and repository. Every Env declares the same functions.
+var checked sync.Map
+
+// checker is an Env without a repository, for type-checking only.
+var checker = sync.OnceValues(func() (*Env, error) { return New(context.Background(), nil, facts.Facts{}) })
+
+// New builds the environment for a repository scope; evaluations stop when
+// ctx is done.
+func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
+	e := &Env{ctx: ctx, repo: r, facts: f, cache: map[string]cel.Program{}}
 	vars := []cel.EnvOption{
 		cel.Variable("repo", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("release", cel.MapType(cel.StringType, cel.DynType)),
@@ -81,7 +102,7 @@ func New(r *repo.Repo, f facts.Facts) (*Env, error) {
 		cel.Variable("params", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("item", cel.DynType),
 	}
-	fns, ci, code := e.functions(), e.ciAccessors(), e.codeAccessors()
+	fns, ci, code := e.functions(), e.ciAccessors(), e.codeAccessors() //nolint:contextcheck // git lookups run under the repository's own bounded context
 	opts := make([]cel.EnvOption, 0, len(vars)+len(fns)+len(ci)+len(code)+2)
 	opts = append(opts, vars...)
 	opts = append(opts, fns...)
@@ -112,20 +133,81 @@ func (e *Env) compile(expr string, want *cel.Type) (cel.Program, error) {
 	if p, ok := e.cache[key]; ok {
 		return p, nil
 	}
-	ast, iss := e.env.Compile(expr)
-	if iss.Err() != nil {
-		return nil, fmt.Errorf("compile %q: %w", expr, iss.Err())
+	ast, err := e.check(key, expr, want)
+	if err != nil {
+		return nil, err
 	}
-	got := ast.OutputType()
-	if !acceptable(got, want) {
-		return nil, fmt.Errorf("compile %q: result must be %s, got %s", expr, want, got)
-	}
-	prg, err := e.env.Program(ast, cel.EvalOptions(cel.OptOptimize))
+	prg, err := e.env.Program(ast, cel.EvalOptions(cel.OptOptimize), cel.CostLimit(costLimit), cel.InterruptCheckFrequency(interruptEvery))
 	if err != nil {
 		return nil, fmt.Errorf("program %q: %w", expr, err)
 	}
 	e.cache[key] = prg
 	return prg, nil
+}
+
+func (e *Env) check(key, expr string, want *cel.Type) (*cel.Ast, error) {
+	if ast, ok := checked.Load(key); ok {
+		return ast.(*cel.Ast), nil
+	}
+	ast, iss := e.env.Compile(expr)
+	if iss.Err() != nil {
+		return nil, fmt.Errorf("compile %q: %w", expr, iss.Err())
+	}
+	if got := ast.OutputType(); !acceptable(got, want) {
+		return nil, fmt.Errorf("compile %q: result must be %s, got %s", expr, want, got)
+	}
+	checked.Store(key, ast)
+	return ast, nil
+}
+
+// ValidateRules type-checks every expression of the rules: when, expr,
+// foreach, satisfiers, partials and accepted satisfiers. Config loading
+// calls it, so a typo fails every repository, not only those where the
+// rule happens to apply; the checked expressions are kept for evaluation.
+func ValidateRules(rules []model.Rule) error {
+	env, err := checker()
+	if err != nil {
+		return err
+	}
+	for _, r := range rules {
+		for _, x := range expressions(r) {
+			want := cel.BoolType
+			if x.list {
+				want = cel.ListType(cel.DynType)
+			}
+			if _, err := env.check(want.String()+"\x00"+x.expr, x.expr, want); err != nil {
+				return fmt.Errorf("rule %s: %s: %w", r.ID, x.where, err)
+			}
+		}
+	}
+	return nil
+}
+
+type expression struct {
+	where, expr string
+	list        bool
+}
+
+func expressions(r model.Rule) []expression {
+	var out []expression
+	add := func(where, expr string, list bool) {
+		if expr != "" {
+			out = append(out, expression{where, expr, list})
+		}
+	}
+	add("when", r.When, false)
+	add("foreach", r.Foreach, true)
+	if r.Kind == model.KindExpr || r.Kind == "" {
+		add("expr", r.Expr, false)
+	}
+	for _, s := range append(append([]model.Satisfier{}, r.Satisfiers...), r.AcceptedSatisfiers()...) {
+		add("satisfier "+s.Name+" when", s.When, false)
+		add("satisfier "+s.Name, s.Expr, false)
+	}
+	for _, p := range r.Partials {
+		add("partial "+p.Name, p.Expr, false)
+	}
+	return out
 }
 
 // acceptable reports whether a compiled expression's type satisfies the
@@ -139,7 +221,7 @@ func acceptable(got, want *cel.Type) bool {
 
 // EvalList evaluates a list expression.
 func (e *Env) EvalList(prg cel.Program, params map[string]any) ([]any, error) {
-	out, _, err := prg.Eval(e.activation(params, nil))
+	out, _, err := prg.ContextEval(e.ctx, e.activation(params, nil))
 	if err != nil {
 		return nil, fmt.Errorf("evaluate: %w", err)
 	}
@@ -153,7 +235,7 @@ func (e *Env) EvalList(prg cel.Program, params map[string]any) ([]any, error) {
 
 // EvalBoolWith evaluates a predicate with `item` bound.
 func (e *Env) EvalBoolWith(prg cel.Program, params map[string]any, item any) (bool, error) {
-	out, _, err := prg.Eval(e.activation(params, item))
+	out, _, err := prg.ContextEval(e.ctx, e.activation(params, item))
 	if err != nil {
 		return false, fmt.Errorf("evaluate: %w", err)
 	}
@@ -387,7 +469,7 @@ func (e *Env) scan(pathV, reV ref.Val) ref.Val {
 	if !ok1 || !ok2 {
 		return types.NewErr("scan: arguments must be strings")
 	}
-	re, err := regexp.Compile(pattern)
+	re, err := compileRegexp(pattern)
 	if err != nil {
 		return types.NewErr("scan: bad regex: %v", err)
 	}
@@ -415,7 +497,7 @@ func matchesAny(listV, reV ref.Val) ref.Val {
 	if !ok {
 		return types.NewErr("matchesAny: regex must be a string")
 	}
-	re, err := regexp.Compile(pattern)
+	re, err := compileRegexp(pattern)
 	if err != nil {
 		return types.NewErr("matchesAny: bad regex: %v", err)
 	}

@@ -184,7 +184,7 @@ func splitShortstat(chunk string) (lines int, rest string) {
 // the glob that matches the regular expression (case-insensitive). Files
 // over the text size cap are skipped, as everywhere else.
 func (e *Env) grep(pattern, re string) ([]any, error) {
-	rx, err := regexp.Compile("(?i)" + re)
+	rx, err := compileRegexp("(?i)" + re)
 	if err != nil {
 		return nil, err
 	}

@@ -190,7 +190,7 @@ func resolveScopes(root facts.Facts, eff *config.Effective) []config.Scope {
 }
 
 func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config.Effective, sc config.Scope, hostsMembers bool, opts Options) ([]model.Result, error) {
-	env, err := celenv.New(r, f)
+	env, err := celenv.New(ctx, r, f)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func evalExpr(env *celenv.Env, rule model.Rule) ([]model.Finding, error) {
 // `accept` additions); the first that holds is the evidence of a pass.
 // Otherwise the first matching partial, or the rule's message, is the finding.
 func evalOutcome(env *celenv.Env, rule model.Rule) ([]model.Finding, string, error) {
-	for _, s := range append(rule.Satisfiers, acceptedSatisfiers(rule)...) {
+	for _, s := range append(rule.Satisfiers, rule.AcceptedSatisfiers()...) {
 		ok, err := satisfied(env, rule, s)
 		if err != nil {
 			return nil, "", fmt.Errorf("satisfier %s: %w", s.Name, err)
@@ -344,25 +344,6 @@ func satisfied(env *celenv.Env, rule model.Rule, s model.Satisfier) (bool, error
 		}
 	}
 	return env.Check(s.Expr, rule.Params)
-}
-
-// acceptedSatisfiers reads `accept:` entries a repository added to the rule.
-func acceptedSatisfiers(rule model.Rule) []model.Satisfier {
-	raw, _ := rule.Params["accept"].([]any)
-	out := make([]model.Satisfier, 0, len(raw))
-	for i, item := range raw {
-		m, _ := item.(map[string]any)
-		s := model.Satisfier{Name: fmt.Sprintf("accept[%d]", i)}
-		if n, ok := m["name"].(string); ok && n != "" {
-			s.Name = n
-		}
-		s.Expr, _ = m["expr"].(string)
-		s.When, _ = m["when"].(string)
-		if s.Expr != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 func partialSeverity(rule model.Rule, name string) (model.Severity, bool) {

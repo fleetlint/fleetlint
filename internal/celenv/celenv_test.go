@@ -44,7 +44,7 @@ func TestExpressions(t *testing.T) {
 		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  contents: read\n",
 	})
 	f := facts.Discover(r, facts.Overrides{})
-	env, err := celenv.New(r, f)
+	env, err := celenv.New(context.Background(), r, f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestExpressions(t *testing.T) {
 func TestCompileErrors(t *testing.T) {
 	t.Parallel()
 	r := fixture(t, map[string]string{})
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestWorkflowAccessors(t *testing.T) {
 		".github/workflows/ci.yml":      "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n      - name: lint\n        run: make lint\n",
 		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  rel:\n    steps:\n      - uses: anchore/sbom-action@v0\n        with: { format: spdx-json }\n      - run: syft scan dir:.\n",
 	})
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestCIAndHistoryAccessors(t *testing.T) {
 	gitRun(t, r.Root, "tag", "release-2")
 	fakeSignedTag(t, r.Root, "v0.9.0")
 	gitRun(t, r.Root, "commit", "--allow-empty", "-q", "-m", "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestCodegrep(t *testing.T) {
 		"docs/notes.md":     "Marker here\n",
 		"scripts/deploy.sh": "# marker in lower case\n",
 	})
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestJobTimeoutMinutesTypes(t *testing.T) {
 	r := fixture(t, map[string]string{
 		".github/workflows/ci.yml": "on: push\njobs:\n  a: {timeout-minutes: 10}\n  b: {timeout-minutes: -5}\n  c: {timeout-minutes: 2.5}\n  d: {timeout-minutes: \"15\"}\n  e: {timeout-minutes: [1]}\n  f: {timeout-minutes: notanumber}\n",
 	})
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestUnreadableFilesAreErrors(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(r.Root, "link.txt")); err != nil {
 		t.Fatal(err)
 	}
-	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	env, err := celenv.New(context.Background(), r, facts.Discover(r, facts.Overrides{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,5 +288,23 @@ func TestUnreadableFilesAreErrors(t *testing.T) {
 		if _, err := env.EvalBool(prg, nil); (err != nil) != wantErr {
 			t.Errorf("%s: err=%v, want error %v", expr, err, wantErr)
 		}
+	}
+}
+
+// An evaluation stops at the cost limit instead of running for hours. Not
+// parallel: it lowers the limit for the expressions compiled here.
+func TestCostLimit(t *testing.T) {
+	t.Cleanup(celenv.SetCostLimit(100_000))
+	r := fixture(t, map[string]string{})
+	env, err := celenv.New(context.Background(), r, facts.Facts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prg, err := env.Compile(`lists.range(2000).all(x, lists.range(2000).all(y, x + y >= 0))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.EvalBool(prg, nil); err == nil || !strings.Contains(err.Error(), "cost") {
+		t.Fatalf("expected the cost limit, got %v", err)
 	}
 }

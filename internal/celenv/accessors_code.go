@@ -54,7 +54,7 @@ func (e *Env) codegrep(kind, re string) ([]any, error) {
 	if kind != "code" && kind != "test" && kind != "nontest" {
 		return nil, fmt.Errorf("kind %q is not code, test or nontest", kind)
 	}
-	rx, err := regexp.Compile(re)
+	rx, err := compileRegexp(re)
 	if err != nil {
 		return nil, err
 	}

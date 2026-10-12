@@ -95,7 +95,7 @@ exceptions:
 	}
 }
 
-func TestInlineRuleAndCompileErrorIsRuleError(t *testing.T) {
+func TestInlineRule(t *testing.T) {
 	t.Parallel()
 	cfg := `version: 1
 extends: [fleetlint:minimal]
@@ -106,19 +106,29 @@ rules:
     expr: file("docs/ARCHITECTURE.md")
     message: "no architecture doc"
     fix: { human: "write docs/ARCHITECTURE.md" }
-  - id: repo/broken
-    kind: expr
-    severity: warning
-    expr: nosuchfn("x")
-    message: "x"
-    fix: { human: "x" }
 `
 	out := run(t, map[string]string{"README.md": "x"}, cfg)
 	if s := status(t, out, "repo/arch-doc"); s.Status != model.StatusFail || s.Findings[0].Message != "no architecture doc" {
 		t.Fatalf("inline rule should fail with its message: %+v", s)
 	}
-	if s := status(t, out, "repo/broken"); s.Status != model.StatusError || s.Err == "" {
-		t.Fatalf("bad CEL must be a rule error, never a pass: %+v", s)
+}
+
+// Expressions are type-checked when the configuration loads, for every
+// rule, whether or not it applies to this repository: a typo in a tier-1
+// rule fails a tier-3 repository too, with the rule and the field named.
+func TestCompileErrorsFailTheLoad(t *testing.T) {
+	t.Parallel()
+	for field, rule := range map[string]string{
+		"expr":    "    expr: nosuchfn(\"x\")\n",
+		"when":    "    when: nosuchfn()\n    expr: \"true\"\n",
+		"foreach": "    foreach: \"1\"\n    expr: \"true\"\n",
+	} {
+		cfg := "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\nrules:\n  - id: repo/broken\n    kind: expr\n    severity: warning\n    tiers: [1]\n" + rule + "    message: x\n    fix: { human: x }\n"
+		r := testutil.GitFixture(t, map[string]string{config.FileName: cfg})
+		_, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}})
+		if err == nil || !strings.Contains(err.Error(), "repo/broken: "+field) {
+			t.Errorf("%s: %v", field, err)
+		}
 	}
 }
 
@@ -413,25 +423,6 @@ func TestNestedConfigInScope(t *testing.T) {
 	eff, _ := config.Load(r.Root, config.Options{Loader: catalog.Loader{}})
 	if _, err := engine.Evaluate(context.Background(), r, eff); err == nil || !strings.Contains(err.Error(), "unknown field \"rules\"") {
 		t.Fatalf("nested config defining a rule must be rejected, got %v", err)
-	}
-}
-
-func TestWhenCompileErrorIsRuleError(t *testing.T) {
-	t.Parallel()
-	cfg := `version: 1
-extends: [fleetlint:minimal]
-rules:
-  - id: repo/guarded
-    kind: expr
-    severity: warning
-    when: nosuchfn()
-    expr: "true"
-    message: x
-    fix: { human: x }
-`
-	out := run(t, map[string]string{"go.mod": "module x\n"}, cfg)
-	if s := status(t, out, "repo/guarded"); s.Status != model.StatusError || !strings.Contains(s.Err, "when") {
-		t.Fatalf("a broken when must be a rule error, never a silent n/a: %+v", s)
 	}
 }
 

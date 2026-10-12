@@ -170,6 +170,26 @@ func (r Rule) PolicySource() string {
 	return r.Source
 }
 
+// AcceptedSatisfiers reads the `accept:` entries a repository added to an
+// outcome rule; they arrive in Params["accept"].
+func (r Rule) AcceptedSatisfiers() []Satisfier {
+	raw, _ := r.Params["accept"].([]any)
+	out := make([]Satisfier, 0, len(raw))
+	for i, item := range raw {
+		m, _ := item.(map[string]any)
+		s := Satisfier{Name: fmt.Sprintf("accept[%d]", i)}
+		if n, ok := m["name"].(string); ok && n != "" {
+			s.Name = n
+		}
+		s.Expr, _ = m["expr"].(string)
+		s.When, _ = m["when"].(string)
+		if s.Expr != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // ExceptionsAllowed reports whether per-finding exceptions may target the rule.
 func (r Rule) ExceptionsAllowed() bool { return r.AllowExceptions == nil || *r.AllowExceptions }
 

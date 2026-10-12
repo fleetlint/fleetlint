@@ -21,6 +21,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
+	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -183,6 +184,9 @@ func Load(root string, opts Options) (*Effective, error) {
 		return nil, err
 	}
 	if err := eff.validateScopeRules(); err != nil {
+		return nil, err
+	}
+	if err := celenv.ValidateRules(eff.Rules); err != nil {
 		return nil, err
 	}
 	return eff, nil
