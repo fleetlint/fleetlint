@@ -18,6 +18,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- A rule that cannot read its input is a rule error, never a pass: `text()`, `lines()`, `scan()` and `yaml()`/`toml()`/`json()` fail for a file that exists but cannot be read (too large, not a regular file, a symlink out of the repository) instead of returning an empty value, and `commits()` fails when `git log` does. A command rule that exits 1 without printing a finding is a rule error (most often a crash), and command rules need a git repository whose tracked files can be listed.
 - A pinned catalog version now brings its rule library (`rules/`) along with presets and templates, so presets that select rules from the library work with a pin.
 - Every catalog file of an OCI artifact takes effect. All of them carried the artifact's digest before, and only the first was loaded.
 - `--from` reads every page of a forge's repository list: paging follows GitHub's `Link` header and Gitea's `X-Total-Count`, so a server that caps the page size below 50 no longer cuts the list after the first page. A rate limit is reported as such, with its reset time.

@@ -37,9 +37,9 @@ func (r *Repo) Doc(format Format, rel string) (any, bool, error) {
 	}
 	r.mu.Unlock()
 
-	text, ok := r.Text(rel)
-	if !ok {
-		return nil, false, nil
+	text, ok, err := r.TextErr(rel)
+	if err != nil || !ok {
+		return nil, ok, err
 	}
 	v, err := parseDoc(format, text)
 	if err != nil {

@@ -232,10 +232,19 @@ func (e *Env) functions() []cel.EnvOption {
 		unaryStr("glob", strList, func(s string) ref.Val { return strs(e.repo.Glob(s)) }),
 		cel.Function("tracked", cel.Overload("tracked_void", nil, strList,
 			cel.FunctionBinding(func(...ref.Val) ref.Val { return strs(e.repo.TrackedInScope()) }))),
-		unaryStr("text", str, func(s string) ref.Val { t, _ := e.repo.Text(s); return types.String(t) }),
+		unaryStr("text", str, func(s string) ref.Val {
+			t, _, err := e.repo.TextErr(s)
+			if err != nil {
+				return types.NewErr("text: %v", err)
+			}
+			return types.String(t)
+		}),
 		unaryStr("lines", strList, func(s string) ref.Val {
-			t, ok := e.repo.Text(s)
-			if !ok {
+			t, ok, err := e.repo.TextErr(s)
+			switch {
+			case err != nil:
+				return types.NewErr("lines: %v", err)
+			case !ok:
 				return strs(nil)
 			}
 			return strs(strings.Split(strings.TrimRight(t, "\n"), "\n"))
@@ -382,8 +391,11 @@ func (e *Env) scan(pathV, reV ref.Val) ref.Val {
 	if err != nil {
 		return types.NewErr("scan: bad regex: %v", err)
 	}
-	text, ok := e.repo.Text(path)
-	if !ok {
+	text, ok, err := e.repo.TextErr(path)
+	switch {
+	case err != nil:
+		return types.NewErr("scan: %v", err)
+	case !ok:
 		return types.DefaultTypeAdapter.NativeToValue([]any{})
 	}
 	var hits []any

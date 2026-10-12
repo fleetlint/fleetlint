@@ -54,7 +54,11 @@ func (e *Env) ciAccessors() []cel.EnvOption {
 				if !ok || count <= 0 {
 					return types.NewErr("commits: argument must be a positive int")
 				}
-				return types.DefaultTypeAdapter.NativeToValue(e.commits(int(count)))
+				list, err := e.commits(int(count))
+				if err != nil {
+					return types.NewErr("commits: %v", err)
+				}
+				return types.DefaultTypeAdapter.NativeToValue(list)
 			}))),
 	}
 }
@@ -121,13 +125,22 @@ func (e *Env) jobs(path string) []any {
 
 // commits returns the newest n commits as `{hash, author, email, subject,
 // body, trailers, lines}`; lines is insertions plus deletions.
-// Without git, or on error, the list is empty; rules that need history should
-// guard with `repo.has_git`.
-func (e *Env) commits(n int) []any {
+// Without git or without commits the list is empty (rules that need
+// history guard with `repo.has_git`); a failing git log is an error, so a
+// rule about commits never passes on history it could not read.
+func (e *Env) commits(n int) ([]any, error) {
 	const sep = "\x1f"
+	if !e.repo.HasGit() {
+		return []any{}, nil
+	}
 	out, err := e.repo.Git("log", "-n", strconv.Itoa(n), "--format=%H"+sep+"%an"+sep+"%ae"+sep+"%s"+sep+"%b"+sep+"%(trailers)"+"\x1e", "--shortstat")
-	if err != nil || out == "" {
-		return []any{}
+	switch {
+	case err != nil && strings.Contains(err.Error(), "does not have any commits"):
+		return []any{}, nil
+	case err != nil:
+		return nil, err
+	case out == "":
+		return []any{}, nil
 	}
 	// git prints each commit's shortstat after its record separator, so it
 	// arrives at the head of the next chunk.
@@ -150,7 +163,7 @@ func (e *Env) commits(n int) []any {
 			"body": strings.TrimSpace(f[4]), "trailers": strings.TrimSpace(f[5]), "lines": int64(0),
 		})
 	}
-	return list
+	return list, nil
 }
 
 var shortstatRe = regexp.MustCompile(`^\s*\d+ files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?\s*`)

@@ -257,3 +257,36 @@ func TestJobTimeoutMinutesTypes(t *testing.T) {
 		t.Fatalf("%s = %v, %v", expr, got, err)
 	}
 }
+
+// A file that exists but cannot be read is an error, never "", so a rule
+// like !text(x).contains(...) cannot pass on content it never saw.
+func TestUnreadableFilesAreErrors(t *testing.T) {
+	t.Parallel()
+	outside := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := fixture(t, map[string]string{"ok.txt": "fine\n"})
+	if err := os.Symlink(outside, filepath.Join(r.Root, "link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	env, err := celenv.New(r, facts.Discover(r, facts.Overrides{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for expr, wantErr := range map[string]bool{
+		`!text("link.txt").contains("x")`: true,
+		`size(lines("link.txt")) == 0`:    true,
+		`text("missing.txt") == ""`:       false,
+		`text("ok.txt").contains("fine")`: false,
+		`size(lines("missing.txt")) == 0`: false,
+	} {
+		prg, err := env.Compile(expr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := env.EvalBool(prg, nil); (err != nil) != wantErr {
+			t.Errorf("%s: err=%v, want error %v", expr, err, wantErr)
+		}
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,7 +101,14 @@ func evalCommand(ctx context.Context, r *repo.Repo, f facts.Facts, rule model.Ru
 	}
 	var exit *exec.ExitError
 	switch {
-	case runErr == nil, errors.As(runErr, &exit) && exit.ExitCode() == 1:
+	case runErr == nil:
+		return findings, nil
+	case errors.As(runErr, &exit) && exit.ExitCode() == 1:
+		// Exit 1 means "findings": without one it is more likely a crash
+		// (an uncaught exception, set -e) than a rule that passed.
+		if len(findings) == 0 {
+			return nil, fmt.Errorf("%s: exited 1 without a finding: %s", rule.Run, lastLine(stderr.String()))
+		}
 		return findings, nil
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		return nil, fmt.Errorf("%s: timed out after %s", rule.Run, commandTimeout)
@@ -116,15 +124,8 @@ func commandPath(r *repo.Repo, run string) (string, error) {
 		return "", fmt.Errorf("run %q must be a relative path to a tracked executable (./scripts/check), without arguments", run)
 	}
 	rel := strings.TrimPrefix(filepath.ToSlash(filepath.Clean(run)), "./")
-	tracked := false
-	for _, t := range r.TrackedInScope() {
-		if t == rel {
-			tracked = true
-			break
-		}
-	}
-	if !tracked {
-		return "", fmt.Errorf("run %q is not a git-tracked file", run)
+	if err := isTracked(r, run, rel); err != nil {
+		return "", err
 	}
 	abs, err := r.Abs(rel)
 	if err != nil {
@@ -150,6 +151,21 @@ func commandPath(r *repo.Repo, run string) (string, error) {
 		return "", fmt.Errorf("run %q is in a world-writable directory", run)
 	}
 	return abs, nil
+}
+
+// isTracked requires git and a successful listing that contains rel; a
+// directory without git would make every file count as tracked.
+func isTracked(r *repo.Repo, run, rel string) error {
+	if !r.HasGit() {
+		return fmt.Errorf("run %q: command rules need a git repository, to check the file is tracked", run)
+	}
+	if _, err := r.TrackedFiles(); err != nil {
+		return fmt.Errorf("run %q: cannot list tracked files: %w", run, err)
+	}
+	if !slices.Contains(r.TrackedInScope(), rel) {
+		return fmt.Errorf("run %q is not a git-tracked file", run)
+	}
+	return nil
 }
 
 func parseFindings(out []byte) ([]model.Finding, error) {

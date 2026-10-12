@@ -50,11 +50,12 @@ type Repo struct {
 // gitState caches git answers for one checkout under a single mutex, so
 // scoped views created concurrently never race on the shared maps.
 type gitState struct {
-	mu      sync.Mutex
-	tracked []string
-	trackOK bool
-	cfg     map[string]string
-	hasGit  *bool
+	mu       sync.Mutex
+	tracked  []string
+	trackErr error
+	trackOK  bool
+	cfg      map[string]string
+	hasGit   *bool
 }
 
 // Open creates a Repo for root. root must exist; it need not be a git
@@ -186,22 +187,49 @@ func (r *Repo) ReadFile(rel string) ([]byte, error) {
 	return b, err
 }
 
-// Text returns the contents of a file, cached. Missing files return "" and
-// ok=false rather than an error, because "file absent" is a normal outcome
-// for a rule.
+// Text returns the contents of a file, cached. Missing and unreadable
+// files return "" and ok=false; rules use TextErr, which tells them apart.
 func (r *Repo) Text(rel string) (string, bool) {
+	t, ok, err := r.TextErr(rel)
+	return t, ok && err == nil
+}
+
+// TextErr returns the contents of a file, cached: ok=false and no error
+// when it is absent, an error when it exists but cannot be read (too large,
+// not a regular file, a symlink out of the repository), so a rule never
+// mistakes an unreadable file for an empty one.
+func (r *Repo) TextErr(rel string) (string, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if t, ok := r.texts[rel]; ok {
-		return t, true
+		return t, true, nil
 	}
 	b, err := r.ReadFile(rel)
-	if err != nil {
-		return "", false
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		if _, lerr := r.lstat(rel); lerr == nil {
+			return "", true, fmt.Errorf("%s cannot be read: it points outside the repository or to nothing", rel)
+		}
+		return "", false, nil
+	case err != nil:
+		return "", true, fmt.Errorf("%s cannot be read: %w", rel, err)
 	}
 	s := string(b)
 	r.texts[rel] = s
-	return s, true
+	return s, true, nil
+}
+
+func (r *Repo) lstat(rel string) (fs.FileInfo, error) {
+	rootRel, err := r.rootRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	var st fs.FileInfo
+	err = r.withRoot(func(root *os.Root) error {
+		st, err = root.Lstat(rootRel)
+		return err
+	})
+	return st, err
 }
 
 // ErrGitDir refuses writes into git's own directory, where a config or a
@@ -333,21 +361,35 @@ func (r *Repo) Git(args ...string) (string, error) {
 }
 
 // Tracked returns all git-tracked paths relative to the repository root.
-// Without git it falls back to walking the working tree.
+// Without git it walks the working tree; when git is there but fails, the
+// list is empty (TrackedFiles reports the error).
 func (r *Repo) Tracked() []string {
+	files, _ := r.TrackedFiles()
+	return files
+}
+
+// TrackedFiles is Tracked with the git error, for callers that must not
+// treat a failed listing as a short one.
+func (r *Repo) TrackedFiles() ([]string, error) {
 	g := r.git
 	g.mu.Lock()
 	if g.trackOK {
 		defer g.mu.Unlock()
-		return g.tracked
+		return g.tracked, g.trackErr
 	}
 	g.mu.Unlock()
 
-	var files []string
-	if out, err := r.Git("ls-files", "-z"); err == nil {
-		for _, f := range strings.Split(out, "\x00") {
-			if f != "" {
-				files = append(files, f)
+	var (
+		files []string
+		err   error
+	)
+	if r.HasGit() {
+		var out string
+		if out, err = r.Git("ls-files", "-z"); err == nil {
+			for _, f := range strings.Split(out, "\x00") {
+				if f != "" {
+					files = append(files, f)
+				}
 			}
 		}
 	} else if rootView, serr := r.Scoped(""); serr == nil {
@@ -356,9 +398,9 @@ func (r *Repo) Tracked() []string {
 	sort.Strings(files)
 
 	g.mu.Lock()
-	g.tracked, g.trackOK = files, true
+	g.tracked, g.trackErr, g.trackOK = files, err, true
 	g.mu.Unlock()
-	return files
+	return files, err
 }
 
 // TrackedInScope returns tracked paths under the current scope, scope-relative.

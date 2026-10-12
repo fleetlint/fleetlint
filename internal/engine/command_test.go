@@ -68,9 +68,9 @@ func TestCommandRuleOutputHandling(t *testing.T) {
 			wantStatus: model.StatusPass,
 		},
 		{
-			name:       "exit 1 with no findings passes",
-			script:     "exit 1\n",
-			wantStatus: model.StatusPass,
+			name:       "exit 1 with no findings is an error, not a pass",
+			script:     "echo 'Traceback: boom' >&2\nexit 1\n",
+			wantStatus: model.StatusError, wantErr: []string{"exited 1 without a finding", "Traceback: boom"},
 		},
 	}
 	for _, c := range cases {
