@@ -67,7 +67,7 @@ func Evaluate(ctx context.Context, r *repo.Repo, eff *config.Effective) (*Run, e
 
 // EvaluateWith is Evaluate with options.
 func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts Options) (*Run, error) {
-	ov := eff.File.Facts.ToFacts()
+	ov := eff.ScopeFacts(config.Scope{})
 	ov.DetectedVisibility = opts.Visibility
 	ov.FleetTier = opts.Tier
 	root := facts.Discover(r, ov)
@@ -134,15 +134,9 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 		return nil, facts.Facts{}, sc, err
 	}
 	sc = mergeNested(sc, nested)
-	ov := eff.File.Facts.ToFacts()
+	ov := eff.ScopeFacts(sc)
 	ov.DetectedVisibility = opts.Visibility
 	ov.FleetTier = opts.Tier
-	if len(sc.Facts.Stacks) > 0 {
-		ov.Stacks = sc.Facts.Stacks
-	}
-	if sc.Facts.Tier != 0 {
-		ov.Tier = sc.Facts.Tier
-	}
 	return sr, facts.Discover(sr, ov), sc, nil
 }
 
@@ -163,7 +157,10 @@ func mergeNested(sc config.Scope, n *config.Nested) config.Scope {
 		sc.Facts.Tier = n.Facts.Tier
 	}
 	if len(n.Facts.Stacks) > 0 {
-		sc.Facts.Stacks = n.Facts.Stacks
+		sc.Stacks = n.Facts.Stacks
+	}
+	if n.Facts.TaskRunner != "" {
+		sc.TaskRunner = n.Facts.TaskRunner
 	}
 	if sc.Overrides == nil {
 		sc.Overrides = map[string]catalog.Override{}

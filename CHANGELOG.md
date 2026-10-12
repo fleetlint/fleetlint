@@ -7,14 +7,19 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Changed
 
+- **Stacks and task runner are set per directory, under `scopes:`.** `path: .` is the repository root: `scopes: [{path: ., stacks: [go], taskrunner: make}, {path: web, stacks: [node]}]`. `facts:` holds what applies to the whole repository: tier, visibility, forge, container. A root listed alone adds no scope, and workspace members are still discovered. Before, `facts.stacks` and `facts.taskrunner` applied to every scope too, so a member had to restate its own stack. The 0.2 forms are still read for this release and print a deprecation warning (in `fleet`, per repository): `facts.stacks` and `facts.taskrunner` now pin the root only, and a scope's `facts: {stacks: ...}` is read as its `stacks:`.
+
 - **Output formats.** Every field of the check JSON and of `fleet.json` is snake_case. `summary`, `scopes`, `disabled`, `weakened` and `catalogs` used Go field names (`Pass`, `NotApplicable`, `Layer`) before. The summary's count of rules that could not run is `rule_errors`, apart from `errors`, the error-severity failures. The check JSON is now `version: 2` and `fleet.json` is `version: 3`. Both shapes are pinned by golden tests, so a change needs a new version. The fleet report still compares with history from earlier versions; it picks the format by `version` and passes over files it cannot read instead of failing the run.
 - CEL expressions are type-checked when the configuration loads, for every rule, whether it applies to the repository or not: a typo is a configuration error (exit 2) naming the rule and the field (`when`, `expr`, `foreach`, a satisfier or partial). It was a rule error before, and only where the rule applied. Each expression is checked once per process instead of once per scope and repository.
 - An expression evaluation stops at a cost limit and when the run is cancelled, so a catalog's comprehension over every file cannot run for hours. Regular expressions in `matches`, `grep`, `codegrep` and `scan` are compiled once instead of once per item.
 - `exists()`, `glob()` and stack detection match against one file index per repository: with git, the tracked files plus the untracked ones git does not ignore, so a gitignored local file no longer makes a rule pass on a developer's machine and fail in CI. The tree was walked on every call before, and included ignored files. Vendored and build directories stay out, as before.
+- A rule id must be `family/name` in lowercase letters, digits and dashes, as the schema always said; any `/` was accepted before. A repository's own rules may not set `locked`, `min_severity` or `exceptions` (there is no layer below them to bind); they were accepted without effect. The `.fleetlint.yaml` schema gained `refs` and `since` on rules and `exceptions` on scopes, which the loader already read.
 - A rule's `accept:` satisfiers are their own field (`accept` in the JSON output) instead of an entry in `params`.
 - `fleet.json` names, per repository, the catalog version it pinned (`catalog`), next to the built-in one the report names at the top.
 
 ### Added
+
+- `fleetlint schema catalog` and `fleetlint schema sources` print JSON Schemas for catalog files and sources files, next to the one for `.fleetlint.yaml`. Tests hold all three to the types the loader decodes into, in both directions.
 
 - `scripts/install.sh` installs a release for Linux or macOS, checked against `checksums.txt` and, with `cosign` installed, against the signature: `curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh`.
 - `ci/gitlab/fleetlint.yml`, a GitLab CI job that reports findings in the merge request's Code Quality widget.

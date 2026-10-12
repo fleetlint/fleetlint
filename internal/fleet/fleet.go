@@ -196,7 +196,9 @@ type RepoReport struct {
 	Disabled   []config.Disabled `json:"disabled,omitempty"`
 	Weakened   []config.Disabled `json:"weakened,omitempty"`
 	Exceptions []model.Exception `json:"exceptions,omitempty"`
-	Err        string            `json:"error,omitempty"`
+	// Deprecations name configuration forms the repository still uses.
+	Deprecations []string `json:"deprecations,omitempty"`
+	Err          string   `json:"error,omitempty"`
 }
 
 // Compliance is the share of applicable rules that pass or are excepted.
@@ -317,7 +319,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	}
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
-	rr.Disabled, rr.Weakened = eff.Disabled, eff.Weakened
+	rr.Disabled, rr.Weakened, rr.Deprecations = eff.Disabled, eff.Weakened, eff.Deprecations
 	if eff.Source != nil && eff.Source.Pinned {
 		rr.Catalog = eff.Source.Version
 	}
@@ -330,7 +332,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *config.Effective, opts Options) (*repo.Repo, *engine.Run, error) {
 	vis := facts.Visibility(e.Visibility)
 	if vis == "" && opts.Visibility != nil {
-		vis = opts.Visibility(ctx, r, facts.Discover(r, eff.File.Facts.ToFacts()))
+		vis = opts.Visibility(ctx, r, facts.Discover(r, eff.ScopeFacts(config.Scope{})))
 	}
 	once := func(r *repo.Repo) (*engine.Run, error) {
 		run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: vis, Tier: e.Tier})

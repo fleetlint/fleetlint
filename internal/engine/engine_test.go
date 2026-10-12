@@ -4,9 +4,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/facts"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
@@ -460,5 +463,46 @@ func TestNestedExceptionOnForbiddenRuleIsError(t *testing.T) {
 	}
 	if _, err := engine.Evaluate(context.Background(), r, eff); err == nil || !strings.Contains(err.Error(), "forbids exceptions") {
 		t.Fatalf("a nested exception on an exceptions:false rule must fail the run: %v", err)
+	}
+}
+
+// Stacks and task runner live per directory under scopes: `path: .` is the
+// root, and a member no longer inherits the root's stacks. Listing only the
+// root keeps member discovery.
+func TestStacksPerDirectory(t *testing.T) {
+	t.Parallel()
+	files := func() map[string]string {
+		return map[string]string{
+			"go.mod": "module x\n", "Makefile": "check:\n\tgo test ./...\n",
+			"web/package.json": `{"scripts":{"check":"vitest"}}`,
+		}
+	}
+	scopeFacts := func(out *engine.Run, path string) facts.Facts {
+		for _, s := range out.Scopes {
+			if s.Path == path {
+				return s.Facts
+			}
+		}
+		t.Fatalf("no scope %q in %+v", path, out.Scopes)
+		return facts.Facts{}
+	}
+	out := run(t, files(), "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - {path: ., stacks: [go], taskrunner: make}\n  - {path: web, stacks: [node], taskrunner: npm-scripts}\n")
+	if f := scopeFacts(out, ""); !reflect.DeepEqual(f.Stacks, []string{"go"}) || f.TaskRunner.Kind != "make" {
+		t.Errorf("root: %v %s", f.Stacks, f.TaskRunner.Kind)
+	}
+	if f := scopeFacts(out, "web"); !reflect.DeepEqual(f.Stacks, []string{"node"}) || f.TaskRunner.Kind != "npm-scripts" {
+		t.Errorf("web: %v %s", f.Stacks, f.TaskRunner.Kind)
+	}
+	// The 0.2 form still works for one release, now for the root only.
+	old := run(t, files(), "version: 1\nextends: [fleetlint:minimal]\nfacts: {stacks: [go], taskrunner: make}\n")
+	if !reflect.DeepEqual(scopeFacts(old, "web").Stacks, []string{"node"}) {
+		t.Errorf("a member must not inherit the root's pinned stacks: %v", scopeFacts(old, "web").Stacks)
+	}
+	if len(old.Config.Deprecations) != 1 {
+		t.Errorf("deprecations: %v", old.Config.Deprecations)
+	}
+	onlyRoot := run(t, files(), "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - {path: ., stacks: [go]}\n")
+	if len(onlyRoot.Scopes) != 2 || len(onlyRoot.Config.Deprecations) != 0 {
+		t.Errorf("listing only the root keeps discovery: %+v", onlyRoot.Scopes)
 	}
 }

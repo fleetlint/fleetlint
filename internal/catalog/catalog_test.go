@@ -1,8 +1,11 @@
 package catalog_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/fleetlint/fleetlint/internal/testutil"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -105,4 +108,10 @@ func TestEngineLevel(t *testing.T) {
 			t.Errorf("preset %s states engine level %d, this binary is %d", name, got, catalog.EngineLevel)
 		}
 	}
+}
+
+func TestSchemasMatchTheTypes(t *testing.T) {
+	t.Parallel()
+	testutil.SchemaMatches(t, reflect.TypeFor[catalog.Catalog](), catalog.CatalogSchema, nil)
+	testutil.SchemaMatches(t, reflect.TypeFor[catalog.Sources](), catalog.SourcesSchema, nil)
 }

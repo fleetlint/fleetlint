@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleetlint.org/schema/sources.json",
+  "title": "fleetlint sources file",
+  "description": "Names an organisation's catalogs, the baseline every repository gets and who may sign them. See https://fleetlint.org/organisations/.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "catalogs"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version"
+      ],
+      "description": "The fleetlint catalog version this repository runs with (presets, library and fix templates): a tag or a full commit SHA, and the repository when it is not fleetlint/catalog. One version holds for a run; a sources file may set it for every repository.",
+      "properties": {
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "A tag or a full commit SHA of the catalog repository. A commit cannot move; a tag can."
+        },
+        "repo": {
+          "type": "string",
+          "description": "The catalog repository (https or ssh). Default: https://github.com/fleetlint/catalog.git"
+        }
+      }
+    },
+    "extends": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "The baseline in front of every repository's own extends: names from catalogs, or fleetlint:<preset>."
+    },
+    "signers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "issuer"
+        ],
+        "properties": {
+          "issuer": {
+            "type": "string",
+            "description": "The OIDC issuer that vouched for the signer, e.g. https://token.actions.githubusercontent.com."
+          },
+          "subject": {
+            "type": "string",
+            "description": "The certificate subject, exact."
+          },
+          "subject_regex": {
+            "type": "string",
+            "description": "The certificate subject as a regular expression."
+          }
+        }
+      }
+    },
+    "catalogs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^(org|team/[a-z0-9][a-z0-9._-]*)$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "org and team/<name> mapped to catalog references."
+    }
+  }
+}

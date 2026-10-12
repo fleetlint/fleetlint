@@ -49,7 +49,7 @@
     },
     "scopes": {
       "type": "array",
-      "description": "Sub-directories evaluated as their own repository. Omit to discover workspace members; [] disables scopes.",
+      "description": "Directories evaluated as their own project, each with the stacks and task runner detection finds there unless set here. `path: .` is the repository root: it sets the root's stacks and task runner and adds no scope. Omit scopes (or list only the root) to discover workspace members; [] disables scopes.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -59,13 +59,75 @@
         "properties": {
           "path": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "Relative to the repository root; `.` is the root itself."
+          },
+          "stacks": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "go",
+                "python",
+                "rust",
+                "node",
+                "kotlin",
+                "flutter",
+                "hugo",
+                "java",
+                "dotnet",
+                "cpp",
+                "ruby",
+                "php"
+              ]
+            },
+            "description": "The stacks of this directory, when detection gets them wrong. Nothing else inherits them."
+          },
+          "taskrunner": {
+            "enum": [
+              "make",
+              "just",
+              "task",
+              "npm-scripts",
+              "gradle"
+            ],
+            "description": "The task runner of this directory, when detection picks the wrong one."
           },
           "facts": {
+            "deprecated": true,
+            "description": "Deprecated since 0.3: write stacks and taskrunner on the scope itself. A tier set here is the scope's tier.",
             "$ref": "#/$defs/factOverrides"
           },
           "overrides": {
             "$ref": "#/$defs/overrides"
+          },
+          "exceptions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "rule",
+                "reason"
+              ],
+              "properties": {
+                "rule": {
+                  "type": "string"
+                },
+                "match": {
+                  "type": "string",
+                  "description": "Glob against the finding's path, or re:<regex> against its message. Omit to cover every finding of the rule."
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "until": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "YYYY-MM-DD; after this date the finding returns at full severity."
+                }
+              }
+            }
           }
         }
       }
@@ -128,6 +190,8 @@
           ]
         },
         "stacks": {
+          "deprecated": true,
+          "description": "Deprecated since 0.3: write the root's stacks as `scopes: [{path: ., stacks: [...]}]`. Still read for one release, for the root directory only.",
           "type": "array",
           "items": {
             "enum": [
@@ -164,14 +228,15 @@
           "description": "Where the task runner's targets run. none: on the machine. devcontainer: in the repository's dev container (the default when a devcontainer.json exists). docker / podman: in an image run with that engine. fix writes the runner file and the check workflow for the chosen value."
         },
         "taskrunner": {
+          "deprecated": true,
+          "description": "Deprecated since 0.3: write it as `scopes: [{path: ., taskrunner: ...}]`. Still read for one release, for the root directory only.",
           "enum": [
             "make",
             "just",
             "task",
             "npm-scripts",
             "gradle"
-          ],
-          "description": "The task runner to check and to generate for. Unset: the first one found (Makefile, justfile, Taskfile, Gradle, package.json scripts); make when there is none."
+          ]
         }
       }
     },
@@ -280,6 +345,17 @@
           },
           "scope": {
             "type": "string"
+          },
+          "refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Links to the standard or document the rule comes from."
+          },
+          "since": {
+            "type": "string",
+            "description": "The catalog version that added the rule."
           }
         }
       }

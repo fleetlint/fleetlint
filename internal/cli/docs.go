@@ -9,16 +9,28 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/docs"
 )
 
 func schemaCmd() *cobra.Command {
+	schemas := map[string][]byte{"config": config.Schema, "catalog": catalog.CatalogSchema, "sources": catalog.SourcesSchema}
 	return &cobra.Command{
-		Use:   "schema",
-		Short: "Print the JSON Schema for .fleetlint.yaml",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := cmd.OutOrStdout().Write(config.Schema)
+		Use:       "schema [config|catalog|sources]",
+		Short:     "Print the JSON Schema for .fleetlint.yaml (default), a catalog file or a sources file",
+		Args:      cobra.MaximumNArgs(1),
+		ValidArgs: []string{"config", "catalog", "sources"},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kind := "config"
+			if len(args) == 1 {
+				kind = args[0]
+			}
+			b, ok := schemas[kind]
+			if !ok {
+				return &configError{fmt.Errorf("no schema %q: want config, catalog or sources", kind)}
+			}
+			_, err := cmd.OutOrStdout().Write(b)
 			return err
 		},
 	}

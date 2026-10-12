@@ -42,11 +42,13 @@ type globals struct {
 	verbose bool
 	deep    bool
 	require []string
+	// stderr receives warnings, such as deprecated configuration.
+	stderr io.Writer
 }
 
 // Run executes the CLI and returns the process exit code.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
-	g := &globals{}
+	g := &globals{stderr: stderr}
 	root := &cobra.Command{
 		Use:           "fleetlint",
 		Short:         "Policy for a fleet of repositories",
@@ -99,6 +101,9 @@ func load(ctx context.Context, g *globals) (*repo.Repo, *config.Effective, error
 	}
 	if err := eff.Requires(g.require); err != nil {
 		return nil, nil, &configError{err}
+	}
+	for _, d := range eff.Deprecations {
+		fmt.Fprintf(g.stderr, "fleetlint: %s: %s\n", config.FileName, d) //nolint:errcheck // a warning on stderr
 	}
 	return r, eff, nil
 }

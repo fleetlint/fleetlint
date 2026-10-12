@@ -208,3 +208,14 @@ func TestNestedConfigValidation(t *testing.T) {
 		t.Fatalf("valid nested config: %+v %v", n, err)
 	}
 }
+
+// A repository's own rule cannot carry policy: there is no layer below it.
+func TestRepositoryRulesCarryNoPolicy(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"locked: true", "min_severity: info", "exceptions: false"} {
+		_, err := load(t, "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - {id: own/x, title: t, requirement: r, kind: expr, severity: info, expr: 'true', fix: {human: h}, "+key+"}\n")
+		if err == nil || !strings.Contains(err.Error(), "policy") {
+			t.Errorf("%s: %v", key, err)
+		}
+	}
+}

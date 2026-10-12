@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 )
@@ -72,6 +73,11 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 	}
 	for _, n := range asked.Notes() {
 		fmt.Fprintln(cmd.ErrOrStderr(), n) //nolint:errcheck // a note on stderr
+	}
+	for _, r := range rep.Repos {
+		for _, d := range r.Deprecations {
+			fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s: %s\n", r.Name, config.FileName, d) //nolint:errcheck // a warning on stderr
+		}
 	}
 	if f.fix {
 		if err := fixer.Summary(); err != nil {

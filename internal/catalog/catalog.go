@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -788,12 +789,15 @@ func probeEngine(b []byte) error {
 	return checkEngine(&Catalog{Metadata: probe.Metadata})
 }
 
+// ruleIDRe is the id grammar; ids name files, anchors and report rows.
+var ruleIDRe = regexp.MustCompile(`^[a-z0-9-]+/[a-z0-9-]+$`)
+
 func validateRule(r *model.Rule) error {
 	if r.ID == "" {
 		return errors.New("rule without id")
 	}
-	if !strings.Contains(r.ID, "/") {
-		return fmt.Errorf("rule %s: id must be namespaced as family/name", r.ID)
+	if !ruleIDRe.MatchString(r.ID) {
+		return fmt.Errorf("rule %s: id must be family/name in lowercase letters, digits and dashes", r.ID)
 	}
 	if r.Title == "" || r.Requirement == "" {
 		return fmt.Errorf("rule %s: title and requirement are required", r.ID)

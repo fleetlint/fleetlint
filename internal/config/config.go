@@ -78,9 +78,17 @@ type FactOverrides struct {
 	TaskRunner string `yaml:"taskrunner,omitempty"`
 }
 
-// Scope is a sub-directory evaluated as its own repository.
+// Scope is a directory evaluated as its own project. `path: .` is the
+// repository root: it pins the root's stacks and task runner and adds no
+// scope.
 type Scope struct {
-	Path  string        `yaml:"path"`
+	Path string `yaml:"path"`
+	// Stacks and TaskRunner pin what detection finds in this directory;
+	// nothing else inherits them.
+	Stacks     []string `yaml:"stacks,omitempty"`
+	TaskRunner string   `yaml:"taskrunner,omitempty"`
+	// Facts is the 0.2 way to write Stacks; deprecated, still read. Its
+	// tier, when set, is the scope's tier.
 	Facts FactOverrides `yaml:"facts,omitempty"`
 	// Overrides adjust the effective rules for this scope: severity, params,
 	// accept, enabled; never policy or applicability.
@@ -124,7 +132,14 @@ type Effective struct {
 	Weakened []Disabled
 	// Pin is the catalog version this run uses; nil is the built-in one.
 	Pin *catalog.Pin
-	raw []byte
+	// Root holds the root directory's stacks and task runner: the
+	// `path: .` entry of scopes, or the deprecated facts.stacks and
+	// facts.taskrunner.
+	Root Scope
+	// Deprecations name configuration forms that still work but will go;
+	// the CLI prints them as warnings.
+	Deprecations []string
+	raw          []byte
 }
 
 // FixTemplates returns the templates for `fix`: files shipped with the
@@ -179,6 +194,7 @@ func Load(root string, opts Options) (*Effective, error) {
 	if err := validateFile(&eff.File); err != nil {
 		return nil, fmt.Errorf("%s: %w", FileName, err)
 	}
+	eff.settleScopes()
 	eff.raw = b
 	opts.Loader.BaseDir, opts.Loader.Root = root, root
 	if err := eff.resolve(opts); err != nil {
@@ -231,13 +247,29 @@ func validateFile(f *File) error {
 	if err := validateExceptions(f.Exceptions); err != nil {
 		return err
 	}
-	if f.Scopes == nil {
+	return validateScopes(f.Scopes)
+}
+
+func validateScopes(scopes *[]Scope) error {
+	if scopes == nil {
 		return nil
 	}
-	for _, s := range *f.Scopes {
+	roots := 0
+	for _, s := range *scopes {
 		if s.Path == "" || strings.HasPrefix(s.Path, "..") || filepath.IsAbs(s.Path) {
 			return fmt.Errorf("scopes: path %q must be a relative path inside the repository", s.Path)
 		}
+		if isRootPath(s.Path) {
+			roots++
+		}
+		for _, r := range []string{s.TaskRunner, s.Facts.TaskRunner} {
+			if r != "" && !slices.Contains(repo.RunnerKinds(), r) {
+				return fmt.Errorf("scopes %s: taskrunner must be one of %s (got %q)", s.Path, strings.Join(repo.RunnerKinds(), ", "), r)
+			}
+		}
+	}
+	if roots > 1 {
+		return errors.New("scopes: the root (path: .) is listed more than once")
 	}
 	return nil
 }
@@ -392,6 +424,81 @@ func validateNested(dir string, n *Nested) error {
 	return nil
 }
 
+// settleScopes moves the root's settings out of the scope list and reads
+// the 0.2 forms: facts.stacks and facts.taskrunner at the top (the root's,
+// no longer inherited by every scope) and facts.stacks inside a scope.
+func (e *Effective) settleScopes() {
+	f := &e.File
+	if len(f.Facts.Stacks) > 0 || f.Facts.TaskRunner != "" {
+		e.Root.Stacks, e.Root.TaskRunner = f.Facts.Stacks, f.Facts.TaskRunner
+		e.Deprecations = append(e.Deprecations, "facts.stacks and facts.taskrunner are deprecated: write them under `scopes:` as `- {path: ., stacks: [...], taskrunner: ...}`; they apply to the root directory only")
+		f.Facts.Stacks, f.Facts.TaskRunner = nil, ""
+	}
+	if f.Scopes == nil {
+		return
+	}
+	kept := make([]Scope, 0, len(*f.Scopes))
+	for _, sc := range *f.Scopes {
+		if readOldScopeFacts(&sc) {
+			e.Deprecations = append(e.Deprecations, fmt.Sprintf("scopes %s: facts.stacks and facts.taskrunner are deprecated: write `stacks:` and `taskrunner:` on the scope itself", sc.Path))
+		}
+		if isRootPath(sc.Path) {
+			e.Root.Stacks, e.Root.TaskRunner = firstList(sc.Stacks, e.Root.Stacks), firstNonEmpty(sc.TaskRunner, e.Root.TaskRunner)
+			continue
+		}
+		kept = append(kept, sc)
+	}
+	if len(kept) == 0 && len(*f.Scopes) > 0 {
+		f.Scopes = nil // only the root was listed: members are still discovered
+		return
+	}
+	f.Scopes = &kept
+}
+
+// readOldScopeFacts takes a scope's 0.2 `facts: {stacks, taskrunner}` as
+// its stacks and task runner and reports whether there were any.
+func readOldScopeFacts(sc *Scope) bool {
+	if len(sc.Facts.Stacks) == 0 && sc.Facts.TaskRunner == "" {
+		return false
+	}
+	sc.Stacks = firstList(sc.Stacks, sc.Facts.Stacks)
+	sc.TaskRunner = firstNonEmpty(sc.TaskRunner, sc.Facts.TaskRunner)
+	return true
+}
+
+func isRootPath(p string) bool { return p == "." || p == "./" }
+
+func firstList(lists ...[]string) []string {
+	for _, l := range lists {
+		if len(l) > 0 {
+			return l
+		}
+	}
+	return nil
+}
+
+// RepoFacts are the repository-wide pinned facts: tier, visibility, forge
+// and container. Stacks and task runner are per directory (Root, Scopes).
+func (e *Effective) RepoFacts() facts.Overrides {
+	o := e.File.Facts.ToFacts()
+	o.Stacks, o.TaskRunner = nil, ""
+	return o
+}
+
+// ScopeFacts are the pinned facts of one directory: the repository-wide
+// ones plus its own stacks and task runner.
+func (e *Effective) ScopeFacts(sc Scope) facts.Overrides {
+	o := e.RepoFacts()
+	if sc.Path == "" {
+		sc = e.Root
+	}
+	o.Stacks, o.TaskRunner = sc.Stacks, sc.TaskRunner
+	if sc.Facts.Tier != 0 {
+		o.Tier = sc.Facts.Tier
+	}
+	return o
+}
+
 // ToFacts converts the config section into the facts package type.
 func (f FactOverrides) ToFacts() facts.Overrides {
 	return facts.Overrides{
@@ -421,6 +528,11 @@ func (e *Effective) resolve(opts Options) error {
 	sort.SliceStable(loaded, func(i, j int) bool {
 		return catalog.LayerRank(loaded[i].Layer) < catalog.LayerRank(loaded[j].Layer)
 	})
+	for _, r := range e.File.Rules {
+		if r.Locked || r.MinSeverity != "" || r.AllowExceptions != nil {
+			return fmt.Errorf("%s: rules.%s: locked, min_severity and exceptions are policy a catalog sets; the repository's own rules have no layer below them to bind", FileName, r.ID)
+		}
+	}
 	own, err := catalog.Local(FileName, e.raw, e.File.Rules, e.File.Overrides, e.File.Exceptions)
 	if err != nil {
 		return fmt.Errorf("%s: %w", FileName, err)
