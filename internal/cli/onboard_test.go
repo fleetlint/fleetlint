@@ -68,7 +68,7 @@ func TestInitPROpensAPullRequest(t *testing.T) { // not parallel: toolbox sets t
 	dir, remote := onboardingRepo(t)
 
 	code, out, errOut := runCLI(t, dir, "init", "--pr")
-	if code != cli.ExitOK || !strings.Contains(out, "opened a pull request from "+onboardingBranch) {
+	if code != cli.ExitOK || !strings.Contains(out, "pushed "+onboardingBranch+" and opened a pull request") {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
 	args, err := os.ReadFile(filepath.Join(bin, "gh.log"))
@@ -101,8 +101,8 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 		want  string
 	}{
 		{"tea is used when gh is missing", map[string]int{"tea": 0}, "opened a pull request"},
-		{"a failing gh leaves the branch", map[string]int{"gh": 1}, "could not open the pull request automatically (gh: exit status 1: boom)"},
-		{"no forge cli", nil, "could not open the pull request automatically (neither gh nor tea is installed)"},
+		{"a failing gh leaves the branch", map[string]int{"gh": 1}, "branch fleetlint/onboarding is pushed to origin and checked out here, but the pull request could not be opened (gh: exit status 1: boom)"},
+		{"no forge cli", nil, "is pushed to origin and checked out here, but the pull request could not be opened (neither gh nor tea is installed)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -122,6 +122,23 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 				}
 			}
 		})
+	}
+}
+
+// A push that fails is named as such, so it is clear the branch exists
+// only locally and still has to be pushed.
+func TestInitPRSaysWhenThePushFailed(t *testing.T) { // not parallel: toolbox sets the environment
+	toolbox(t, map[string]int{"gh": 0})
+	dir, remote := onboardingRepo(t)
+	if err := os.RemoveAll(remote); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := runCLI(t, dir, "init", "--pr")
+	if code != cli.ExitOK || !strings.Contains(out, "pushing it failed") || !strings.Contains(out, "git push -u origin "+onboardingBranch) {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if strings.Contains(out, "opened a pull request") {
+		t.Error("no pull request without a pushed branch")
 	}
 }
 

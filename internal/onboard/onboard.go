@@ -62,24 +62,32 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 		return err
 	}
 	body.WriteString("\n---\nOpened by `fleetlint init --pr`. Merge to adopt the configuration; findings are informational until the hook or CI enforces them.\n")
-	if err := createPR(ctx, r.Root, body.String()); err != nil {
-		_, werr := fmt.Fprintf(out, "branch %s with the commit is ready; could not open the pull request automatically (%v).\nPush it and open the PR with the contents of the report as description.\n", Branch, err)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := push(ctx, r.Root); err != nil {
+		_, werr := fmt.Fprintf(out, "the commit is on branch %s, which is checked out, but pushing it failed (%v).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description.\n", Branch, err, Branch)
 		return werr
 	}
-	_, err = fmt.Fprintf(out, "opened a pull request from %s\n", Branch)
+	if err := createPR(ctx, r.Root, body.String()); err != nil {
+		_, werr := fmt.Fprintf(out, "branch %s is pushed to origin and checked out here, but the pull request could not be opened (%v).\nOpen it on the forge from %s, with the report as its description.\n", Branch, err, Branch)
+		return werr
+	}
+	_, err = fmt.Fprintf(out, "pushed %s and opened a pull request from it\n", Branch)
 	return err
 }
 
-// createPR pushes the branch and opens the PR with gh (GitHub) or tea (Gitea),
-// whichever is installed.
-func createPR(ctx context.Context, dir, body string) error {
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	push := proc.Command(ctx, "git", "-C", dir, "push", "-q", "-u", "origin", Branch)
-	push.Env = proc.GitEnv()
-	if out, err := push.CombinedOutput(); err != nil {
-		return fmt.Errorf("push: %w: %s", err, strings.TrimSpace(string(out)))
+func push(ctx context.Context, dir string) error {
+	cmd := proc.Command(ctx, "git", "-C", dir, "push", "-q", "-u", "origin", Branch)
+	cmd.Env = proc.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
+	return nil
+}
+
+// createPR opens the PR with gh (GitHub) or tea (Gitea), whichever is
+// installed.
+func createPR(ctx context.Context, dir, body string) error {
 	title := "Add fleetlint configuration"
 	switch {
 	case lookPath("gh"):

@@ -30,6 +30,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - A pinned catalog version now brings its rule library (`rules/`) along with presets and templates, so presets that select rules from the library work with a pin.
 - Every catalog file of an OCI artifact takes effect. All of them carried the artifact's digest before, and only the first was loaded.
 - `--from` reads every page of a forge's repository list: paging follows GitHub's `Link` header and Gitea's `X-Total-Count`, so a server that caps the page size below 50 no longer cuts the list after the first page. A rate limit is reported as such, with its reset time.
+- `init --pr` says whether the push of `fleetlint/onboarding` worked when it cannot open the pull request: either the branch is pushed and only the pull request is missing (no `gh` or `tea`, or they failed), or the push failed and the message names the command to push it. Before, both cases read the same.
 - A `.csproj`, `.sln` or `.gemspec` below `testdata/`, `examples/` and the like, or more than two directories down, no longer marks the repository as .NET or Ruby.
 - Within a scope, a workspace member with its own `.git` is recognised as well (the check looked relative to the repository root).
 - The built-in rule library is parsed once per process; in fleet mode it was parsed again for every repository and kept in memory each time.
