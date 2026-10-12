@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -206,8 +208,8 @@ func TestFloorHoldsAcrossCatalogs(t *testing.T) {
 func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
 	t.Parallel()
 	digest := strings.Repeat("a", 64)
-	fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
-		return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{
+	fetch := func(fetch.OCIRef) (*fetch.OCIArtifact, error) {
+		return &fetch.OCIArtifact{Digest: digest, Files: map[string][]byte{
 			"catalog.yaml":          []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: acme, version: 1.0.0, includes: [\"fleetlint:minimal\"], catalog: {version: " + catalog.ModuleVersion() + "}}\nrules: []\n"),
 			"templates/SECURITY.md": []byte("acme policy\n"),
 		}, Bundles: [][]byte{[]byte("sig")}}, nil

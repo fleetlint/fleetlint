@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
@@ -547,9 +549,9 @@ func TestVersionNamesTheCatalog(t *testing.T) {
 // says so.
 func TestPinnedCatalogFromTheCache(t *testing.T) {
 	cache := t.TempDir()
-	t.Setenv(catalog.CacheEnv, cache)
-	entry := catalog.CachePath(filepath.Join(cache, "catalogs"), catalog.DefaultRepo, "v9.9.9")
-	if err := catalog.WriteCacheEntry(entry, map[string][]byte{
+	t.Setenv(fetch.CacheEnv, cache)
+	entry := fetch.CachePath(filepath.Join(cache, "catalogs"), catalog.DefaultRepo, "v9.9.9")
+	if err := fetch.WriteCacheEntry(entry, map[string][]byte{
 		"presets/recommended.yaml": []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: pinned, version: 9.9.9}\nrules:\n  - {id: v9/only, title: t, kind: expr, severity: warning, expr: 'file(\".editorconfig\")', message: m, requirement: r, fix: {human: h, actions: [{template: editorconfig, to: .editorconfig}]}}\n"),
 		"templates/editorconfig":   []byte("# from v9\n"),
 	}, strings.Repeat("cd", 20)); err != nil {

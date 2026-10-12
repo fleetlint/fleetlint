@@ -1,4 +1,4 @@
-package catalog_test
+package compose_test
 
 import (
 	"os"
@@ -15,7 +15,7 @@ func TestOwnDevcontainerIsTheTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := os.ReadFile("../../.devcontainer/devcontainer.json")
+	got, err := os.ReadFile("../../../.devcontainer/devcontainer.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	godigest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/sigstore/sigstore-go/pkg/root"
@@ -25,7 +27,7 @@ import (
 func TestParseOCIRef(t *testing.T) {
 	t.Parallel()
 	digest := strings.Repeat("ab", 32)
-	good := map[string]OCIRef{
+	good := map[string]fetch.OCIRef{
 		"oci://ghcr.io/acme/catalog:3.2.0":                      {Repository: "ghcr.io/acme/catalog", Tag: "3.2.0"},
 		"oci://localhost:5000/acme/catalog:v1":                  {Repository: "localhost:5000/acme/catalog", Tag: "v1"},
 		"oci://ghcr.io/acme/catalog@sha256:" + digest:           {Repository: "ghcr.io/acme/catalog", Digest: digest},
@@ -162,22 +164,22 @@ func pushCatalog(t *testing.T) (*fakeRegistry, string, ocispec.Descriptor) {
 	srv := httptest.NewServer(reg)
 	t.Cleanup(srv.Close)
 	layers := []ocispec.Descriptor{
-		reg.blob([]byte(ociCatalog), "application/yaml", map[string]string{titleAnnotation: "catalog.yaml"}),
-		reg.blob([]byte("# acme security policy\n"), "text/markdown", map[string]string{titleAnnotation: "templates/SECURITY.md"}),
+		reg.blob([]byte(ociCatalog), "application/yaml", map[string]string{"org.opencontainers.image.title": "catalog.yaml"}),
+		reg.blob([]byte("# acme security policy\n"), "text/markdown", map[string]string{"org.opencontainers.image.title": "templates/SECURITY.md"}),
 		reg.blob([]byte("ignored"), "application/octet-stream", nil),
 	}
 	desc := reg.push("1.0.0", "application/vnd.fleetlint.catalog.v1", layers, nil)
 	return reg, strings.TrimPrefix(srv.URL, "http://") + "/acme/catalog", desc
 }
 
-func localFetch(ctx context.Context) func(OCIRef) (*OCIArtifact, error) {
-	return func(o OCIRef) (*OCIArtifact, error) {
+func localFetch(ctx context.Context) func(fetch.OCIRef) (*fetch.OCIArtifact, error) {
+	return func(o fetch.OCIRef) (*fetch.OCIArtifact, error) {
 		repo, err := remote.NewRepository(o.Repository)
 		if err != nil {
 			return nil, err
 		}
 		repo.PlainHTTP = true
-		return fetchArtifact(ctx, repo, o)
+		return fetch.Artifact(ctx, repo, o)
 	}
 }
 
@@ -245,8 +247,8 @@ func TestLoadOCISigned(t *testing.T) {
 	}
 	t.Cleanup(func() { loadBundle, requireSCT = swap, sct })
 	subj := desc
-	reg.push("", bundleArtifactType, []ocispec.Descriptor{reg.blob([]byte("junk"), bundleArtifactType, nil)}, &subj)
-	reg.push("", bundleArtifactType, []ocispec.Descriptor{reg.blob([]byte("good"), bundleArtifactType, nil)}, &subj)
+	reg.push("", "application/vnd.dev.sigstore.bundle.v0.3+json", []ocispec.Descriptor{reg.blob([]byte("junk"), "application/vnd.dev.sigstore.bundle.v0.3+json", nil)}, &subj)
+	reg.push("", "application/vnd.dev.sigstore.bundle.v0.3+json", []ocispec.Descriptor{reg.blob([]byte("good"), "application/vnd.dev.sigstore.bundle.v0.3+json", nil)}, &subj)
 
 	trusted := func() (root.TrustedMaterial, error) { return virtual, nil }
 	ref := "oci://" + name + ":1.0.0"
@@ -337,7 +339,7 @@ func TestOverlayAndMemFS(t *testing.T) {
 func TestArtifactWithSeveralCatalogs(t *testing.T) {
 	t.Parallel()
 	second := strings.Replace(ociCatalog, "name: acme", "name: acme-extra", 1)
-	cats, err := catalogsFromArtifact("oci://r/x@sha256:abc", &OCIArtifact{Digest: "abc", Files: map[string][]byte{"a.yaml": []byte(ociCatalog), "b.yaml": []byte(second)}})
+	cats, err := catalogsFromArtifact("oci://r/x@sha256:abc", &fetch.OCIArtifact{Digest: "abc", Files: map[string][]byte{"a.yaml": []byte(ociCatalog), "b.yaml": []byte(second)}})
 	if err != nil || len(cats) != 2 {
 		t.Fatalf("cats=%d err=%v", len(cats), err)
 	}

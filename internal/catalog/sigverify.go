@@ -1,16 +1,16 @@
 package catalog
 
 import (
-	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/root"
 	"github.com/sigstore/sigstore-go/pkg/verify"
+
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
 )
 
 // Signer is an identity allowed to sign a catalog: the OIDC issuer that
@@ -38,27 +38,9 @@ func (s Signer) validate() error {
 // instance's TUF root by default, a virtual one in tests.
 type TrustedRootFunc func() (root.TrustedMaterial, error)
 
-// PublicTrustedRoot fetches the sigstore public-good trusted root through
-// TUF once and caches it for the process. ctx is unused: the TUF client
-// manages its own timeouts and on-disk cache.
-func PublicTrustedRoot(_ context.Context) TrustedRootFunc {
-	var (
-		once sync.Once
-		tr   *root.TrustedRoot
-		err  error
-	)
-	return func() (root.TrustedMaterial, error) {
-		once.Do(func() { tr, err = root.FetchTrustedRoot() })
-		if err != nil {
-			return nil, fmt.Errorf("sigstore trusted root: %w", err)
-		}
-		return tr, nil
-	}
-}
-
 // verifyArtifact accepts the artifact when at least one attached bundle is
 // a valid signature over its manifest digest by one of the loader's signers.
-func (l Loader) verifyArtifact(art *OCIArtifact) error {
+func (l Loader) verifyArtifact(art *fetch.OCIArtifact) error {
 	if len(art.Bundles) == 0 {
 		return errors.New(ociErrSignatureMissing)
 	}

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
 	"github.com/goccy/go-yaml"
@@ -111,7 +113,7 @@ func (l Loader) readLocalSources(ref string) ([]byte, string, error) {
 		return nil, "", err
 	}
 	defer root.Close() //nolint:errcheck // a read-only handle
-	b, err := rootfs.ReadFile(root, rel, maxCatalogLen)
+	b, err := rootfs.ReadFile(root, rel, fetch.MaxCatalogLen)
 	return b, filepath.Join(root.Name(), rel), err
 }
 

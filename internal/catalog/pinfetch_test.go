@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
@@ -32,7 +34,7 @@ func TestPinFetchCachesOneVersion(t *testing.T) {
 	git("tag", "v9.9.9")
 	head := git("rev-parse", "HEAD")
 	cache := t.TempDir()
-	fetch := catalog.PinFetch(context.Background(), cache)
+	fetch := fetch.PinFetch(context.Background(), cache)
 
 	dir, commit, err := fetch(src, "v9.9.9")
 	if err != nil || commit != head {
@@ -78,7 +80,7 @@ func TestPinFetchCachesOneVersion(t *testing.T) {
 
 func TestCachePathsDoNotCollide(t *testing.T) {
 	t.Parallel()
-	if catalog.CachePath("/c", "r", "a/b") == catalog.CachePath("/c", "r", "a_b") {
+	if fetch.CachePath("/c", "r", "a/b") == fetch.CachePath("/c", "r", "a_b") {
 		t.Error("tags a/b and a_b share a cache entry")
 	}
 }

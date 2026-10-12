@@ -1,4 +1,4 @@
-package catalog
+package fetch
 
 import (
 	"context"
@@ -214,8 +214,8 @@ func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, e
 		if name == "" {
 			continue
 		}
-		if len(files) >= ociMaxFiles {
-			return "", fmt.Errorf("more than %d files", ociMaxFiles)
+		if len(files) >= MaxFiles {
+			return "", fmt.Errorf("more than %d files", MaxFiles)
 		}
 		if files[name], err = readBlob(ctx, tmp, treeObject(name)); err != nil {
 			return "", fmt.Errorf("%s: %w", name, err)

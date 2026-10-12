@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/fix/compose"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/rootfs"
@@ -129,7 +130,7 @@ type Effective struct {
 // FixTemplates returns the templates for `fix`: files shipped with the
 // catalogs the repository extends, later layers first, over the preset
 // source's templates.
-func (e *Effective) FixTemplates() catalog.Templates {
+func (e *Effective) FixTemplates() compose.Templates {
 	layers := make([]fs.FS, 0, len(e.Catalogs)+1)
 	for i := len(e.Catalogs) - 1; i >= 0; i-- {
 		if e.Catalogs[i].Templates != nil {

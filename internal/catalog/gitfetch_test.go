@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
@@ -90,7 +92,7 @@ func TestGitFetchReadsTagAndCommit(t *testing.T) {
 	}
 	git("tag", "v1.0.0")
 	commit := git("rev-parse", "HEAD")
-	fetch := catalog.GitFetch(context.Background())
+	fetch := fetch.GitFetch(context.Background())
 
 	for _, rev := range []string{"v1.0.0", commit} {
 		b, err := fetch(src, rev, "policy/catalog.yaml")
@@ -129,7 +131,7 @@ func TestGitCatalogShipsTemplates(t *testing.T) {
 	}
 	git("tag", "v1.0.0")
 	commit := git("rev-parse", "HEAD")
-	fetch := catalog.GitTreeFetch(context.Background())
+	fetch := fetch.GitTreeFetch(context.Background())
 	files, err := fetch(src, commit, "policy")
 	if err != nil {
 		t.Fatal(err)

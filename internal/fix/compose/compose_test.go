@@ -1,4 +1,4 @@
-package catalog_test
+package compose_test
 
 import (
 	"context"

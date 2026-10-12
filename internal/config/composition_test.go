@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -197,8 +199,8 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 	own := strings.Replace(inlineRule("lint/go-config", "acme's go config", "error"), "  - id:", "id:", 1)
 	own = strings.ReplaceAll(own, "\n    ", "\n")
 	ownerRule := strings.ReplaceAll(strings.Replace(inlineRule("acme/owner-file", "owner", "error"), "  - id:", "id:", 1), "\n    ", "\n")
-	fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
-		return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{
+	fetch := func(fetch.OCIRef) (*fetch.OCIArtifact, error) {
+		return &fetch.OCIArtifact{Digest: digest, Files: map[string][]byte{
 			"catalog.yaml":               []byte(catHead("acme", ", catalog: {version: "+catalog.ModuleVersion()+"}") + "rules:\n  - use: acme/*\n  - use: lint/go-config\n  - use: repo/readme-present\n"),
 			"rules/acme/owner-file.yaml": []byte(ownerRule),
 			"rules/lint/go-config.yaml":  []byte(own),

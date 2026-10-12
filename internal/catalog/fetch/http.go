@@ -1,4 +1,9 @@
-package catalog
+// Package fetch brings remote catalog content to the loader: files over
+// https, from git at a tag or commit, OCI artifacts with their signature
+// bundles, and pinned catalog versions kept in a local cache. It moves
+// bytes within time and size limits; deciding whether to trust them
+// (digests, signers) is the catalog loader's job.
+package fetch
 
 import (
 	"context"
@@ -11,8 +16,9 @@ import (
 )
 
 const (
-	fetchTimeout  = 20 * time.Second
-	maxCatalogLen = 2 << 20 // 2 MiB is far above any sane catalog
+	fetchTimeout = 20 * time.Second
+	// MaxCatalogLen bounds one catalog file: 2 MiB is far above any sane one.
+	MaxCatalogLen = 2 << 20
 )
 
 // HTTPFetch returns a Fetch function for Loader: https only, bounded in time
@@ -53,12 +59,12 @@ func readBounded(url string, resp *http.Response) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%s: HTTP %d", url, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCatalogLen+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxCatalogLen+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(body) > maxCatalogLen {
-		return nil, fmt.Errorf("%s: catalog larger than %d bytes", url, maxCatalogLen)
+	if len(body) > MaxCatalogLen {
+		return nil, fmt.Errorf("%s: catalog larger than %d bytes", url, MaxCatalogLen)
 	}
 	return body, nil
 }

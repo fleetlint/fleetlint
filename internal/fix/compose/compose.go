@@ -1,4 +1,8 @@
-package catalog
+// Package compose serves the fix templates of a catalog and assembles the
+// files that depend on the project: hook configuration, check and release
+// workflows, task runner files, dev container and Renovate configuration,
+// from a shared head, per-stack fragments and the nested projects.
+package compose
 
 import (
 	"fmt"
@@ -20,6 +24,25 @@ const (
 	checkTemplate   = "check.yml"
 	releaseTemplate = "release.yml"
 )
+
+// Templates serves templates/ of a catalog source and assembles the
+// composed ones.
+type Templates struct {
+	FS fs.FS
+}
+
+// Template returns the content of a template by name, e.g. "editorconfig"
+// or "go/pre-commit-config.yaml".
+func (t Templates) Template(name string) ([]byte, error) {
+	if body, ok, err := t.Compose(name, fix.Project{}); ok {
+		return body, err
+	}
+	b, err := fs.ReadFile(t.FS, "templates/"+name)
+	if err != nil {
+		return nil, fmt.Errorf("no template %q in this catalog", name)
+	}
+	return b, nil
+}
 
 // composed splits "<stack>/<file>" for the assembled templates.
 func composed(name string) (stack, file string, ok bool) {
@@ -202,7 +225,7 @@ func composeTaskfile(plain string, p fix.Project, inContainer bool) string {
 }
 
 func (t Templates) fragment(name string) (string, error) {
-	b, err := fs.ReadFile(t.fsys, "templates/"+name)
+	b, err := fs.ReadFile(t.FS, "templates/"+name)
 	if err != nil {
 		return "", fmt.Errorf("no template %q in this catalog", name)
 	}
@@ -379,7 +402,7 @@ func (t Templates) composeRelease(stack string, p fix.Project) ([]byte, error) {
 		publisher = "release/goreleaser.yml"
 	}
 	parts := []string{"check/tools.yml", "release/verify.yml", publisher}
-	if _, err := fs.Stat(t.fsys, "templates/release/publish-"+stack+".yml"); err == nil {
+	if _, err := fs.Stat(t.FS, "templates/release/publish-"+stack+".yml"); err == nil {
 		parts = append(parts, "release/publish-"+stack+".yml")
 	}
 	if err := t.writeFragments(&b, p, parts...); err != nil {

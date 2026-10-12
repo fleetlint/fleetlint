@@ -1,4 +1,4 @@
-package catalog
+package fetch
 
 import (
 	"context"
@@ -13,8 +13,8 @@ func TestReadBounded(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ok", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("version: 1\n")) })
 	mux.HandleFunc("/missing", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) })
-	mux.HandleFunc("/limit", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(make([]byte, maxCatalogLen)) })
-	mux.HandleFunc("/huge", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(make([]byte, maxCatalogLen+1)) })
+	mux.HandleFunc("/limit", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(make([]byte, MaxCatalogLen)) })
+	mux.HandleFunc("/huge", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(make([]byte, MaxCatalogLen+1)) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -24,7 +24,7 @@ func TestReadBounded(t *testing.T) {
 		wantErr string
 	}{
 		{path: "/ok", wantLen: len("version: 1\n")},
-		{path: "/limit", wantLen: maxCatalogLen},
+		{path: "/limit", wantLen: MaxCatalogLen},
 		{path: "/missing", wantErr: "HTTP 404"},
 		{path: "/huge", wantErr: "larger than"},
 	}

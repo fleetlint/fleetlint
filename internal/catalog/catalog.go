@@ -26,7 +26,9 @@ import (
 	data "github.com/fleetlint/catalog"
 	"github.com/goccy/go-yaml"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
 	"github.com/fleetlint/fleetlint/internal/fix"
+	"github.com/fleetlint/fleetlint/internal/fix/compose"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
@@ -96,15 +98,15 @@ func (s *Source) Describe() string {
 const ConfigName = ".fleetlint.yaml"
 
 // FixTemplates serves the source's templates to the fix planner.
-func (s *Source) FixTemplates() Templates { return Templates{fsys: s.Templates} }
+func (s *Source) FixTemplates() compose.Templates { return compose.Templates{FS: s.Templates} }
 
 // FixTemplatesOver serves the source's templates with the given file
 // systems in front: the first that has a file wins.
-func (s *Source) FixTemplatesOver(layers ...fs.FS) Templates {
+func (s *Source) FixTemplatesOver(layers ...fs.FS) compose.Templates {
 	if len(layers) == 0 {
 		return s.FixTemplates()
 	}
-	return Templates{fsys: overlayFS(append(layers, s.Templates))}
+	return compose.Templates{FS: overlayFS(append(layers, s.Templates))}
 }
 
 // overlayFS reads from the first layer that has the file.
@@ -132,24 +134,6 @@ func (s *Source) PresetNames() []string {
 	}
 	sort.Strings(names)
 	return names
-}
-
-// Templates resolves template names against one catalog source.
-type Templates struct {
-	fsys fs.FS
-}
-
-// Template returns the content of a template by name, e.g. "editorconfig"
-// or "go/pre-commit-config.yaml".
-func (t Templates) Template(name string) ([]byte, error) {
-	if body, ok, err := t.Compose(name, fix.Project{}); ok {
-		return body, err
-	}
-	b, err := fs.ReadFile(t.fsys, "templates/"+name)
-	if err != nil {
-		return nil, fmt.Errorf("no template %q in this catalog", name)
-	}
-	return b, nil
 }
 
 // EmbeddedTemplates serves the templates of the built-in catalog.
@@ -323,7 +307,7 @@ type Loader struct {
 	// a directory, with the commit it resolved to; nil disables pinning.
 	FetchCatalog func(repoURL, rev string) (dir, commit string, err error)
 	// FetchOCI reads a catalog artifact from a registry; nil disables oci catalogs.
-	FetchOCI func(OCIRef) (*OCIArtifact, error)
+	FetchOCI func(fetch.OCIRef) (*fetch.OCIArtifact, error)
 	// TrustedRoot provides sigstore trust material for signature checks;
 	// nil disables them, which makes signed sources unusable.
 	TrustedRoot TrustedRootFunc
@@ -365,7 +349,7 @@ func (l *Loader) Pin(repoURL, version string) (*Source, error) {
 		return nil, fmt.Errorf("catalog %s from %s: %w", version, repoURL, err)
 	}
 	name := version
-	if !commitRe.MatchString(version) && len(commit) >= 12 {
+	if !fetch.IsCommit(version) && len(commit) >= 12 {
 		name += " (" + commit[:12] + ")"
 	}
 	root := os.DirFS(dir)
@@ -385,7 +369,7 @@ func (l Loader) source() *Source {
 
 // RemoteLoader is the Loader for commands that may use the network.
 func RemoteLoader(ctx context.Context) Loader {
-	return Loader{Fetch: HTTPFetch(ctx), FetchGit: GitFetch(ctx), FetchGitTree: GitTreeFetch(ctx), FetchCatalog: PinFetch(ctx, ""), FetchOCI: OCIFetch(ctx), TrustedRoot: PublicTrustedRoot(ctx)}
+	return Loader{Fetch: fetch.HTTPFetch(ctx), FetchGit: fetch.GitFetch(ctx), FetchGitTree: fetch.GitTreeFetch(ctx), FetchCatalog: fetch.PinFetch(ctx, ""), FetchOCI: fetch.OCIFetch(ctx), TrustedRoot: fetch.PublicTrustedRoot(ctx)}
 }
 
 // Load resolves one reference: `fleetlint:<preset>`, a local path (file or
@@ -503,7 +487,7 @@ func (l Loader) loadLocal(ref string) ([]*Catalog, error) {
 	}
 	out := make([]*Catalog, 0, len(files))
 	for _, f := range files {
-		b, err := rootfs.ReadFile(root, f, maxCatalogLen)
+		b, err := rootfs.ReadFile(root, f, fetch.MaxCatalogLen)
 		if err != nil {
 			return nil, fmt.Errorf("catalog %s: %w", f, err)
 		}

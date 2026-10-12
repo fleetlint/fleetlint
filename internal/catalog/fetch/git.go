@@ -1,9 +1,8 @@
-package catalog
+package fetch
 
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -16,66 +15,24 @@ import (
 )
 
 const (
-	gitPrefix       = "git+"
 	gitFetchTimeout = 2 * time.Minute
+	// TemplatesDir is where a catalog keeps its fix templates.
+	TemplatesDir = "templates/"
+	// MaxFiles bounds the files read from one catalog source.
+	MaxFiles = 512
 )
-
-// ErrGitPinRequired is returned for a git reference whose revision can move.
-var ErrGitPinRequired = errors.New("git catalogs at a tag must be pinned with #sha256-<digest>; a full commit SHA needs no digest")
 
 var (
 	commitRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	tagRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]*$`)
 )
 
-// gitRef is a parsed `git+<url>//<path>@<rev>[#sha256-<digest>]` reference.
-type gitRef struct {
-	URL, Path, Rev, Digest string
-}
+// IsCommit reports whether rev is a full commit SHA.
+func IsCommit(rev string) bool { return commitRe.MatchString(rev) }
 
-func (g gitRef) isCommit() bool { return commitRe.MatchString(g.Rev) }
-
-// parseGitRef splits a git catalog reference. The repository URL must use
-// https or ssh, the revision is a tag or a full commit SHA, and the path is
-// relative to the repository root.
-func parseGitRef(ref string) (gitRef, error) {
-	rest, digest, pinned := strings.Cut(strings.TrimPrefix(ref, gitPrefix), "#")
-	if pinned && !strings.HasPrefix(digest, "sha256-") {
-		return gitRef{}, fmt.Errorf("%s: the fragment must be sha256-<digest>", ref)
-	}
-	scheme, tail, ok := strings.Cut(rest, "://")
-	if !ok || (scheme != "https" && scheme != "ssh") {
-		return gitRef{}, fmt.Errorf("%s: git catalogs are read over https or ssh", ref)
-	}
-	repo, pathRev, ok := strings.Cut(tail, "//")
-	if !ok || repo == "" {
-		return gitRef{}, fmt.Errorf("%s: want git+<url>//<path>@<tag or commit>", ref)
-	}
-	at := strings.LastIndex(pathRev, "@")
-	if at <= 0 || at == len(pathRev)-1 {
-		return gitRef{}, fmt.Errorf("%s: want git+<url>//<path>@<tag or commit>", ref)
-	}
-	g := gitRef{URL: scheme + "://" + repo, Path: pathRev[:at], Rev: pathRev[at+1:], Digest: strings.TrimPrefix(digest, "sha256-")}
-	if err := g.validate(); err != nil {
-		return gitRef{}, fmt.Errorf("%s: %w", ref, err)
-	}
-	return g, nil
-}
-
-func (g gitRef) validate() error {
-	if !tagRe.MatchString(g.Rev) || strings.Contains(g.Rev, "..") {
-		return fmt.Errorf("revision %q is not a tag or a full commit SHA", g.Rev)
-	}
-	for _, seg := range strings.Split(g.Path, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return fmt.Errorf("path %q must be relative to the repository root", g.Path)
-		}
-	}
-	if !g.isCommit() && g.Digest == "" {
-		return ErrGitPinRequired
-	}
-	return nil
-}
+// ValidRev reports whether rev is a tag or a full commit SHA that is safe to
+// pass to git.
+func ValidRev(rev string) bool { return tagRe.MatchString(rev) && !strings.Contains(rev, "..") }
 
 // GitFetch returns a FetchGit function for Loader. It fetches the one
 // revision into a temporary bare repository with the credentials git already
@@ -99,8 +56,8 @@ func GitFetch(ctx context.Context) func(repoURL, rev, path string) ([]byte, erro
 		if err != nil {
 			return nil, fmt.Errorf("%s at %s has no file %s: %w", repoURL, rev, path, err)
 		}
-		if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > maxCatalogLen {
-			return nil, fmt.Errorf("%s: %s is larger than %d bytes", repoURL, path, maxCatalogLen)
+		if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > MaxCatalogLen {
+			return nil, fmt.Errorf("%s: %s is larger than %d bytes", repoURL, path, MaxCatalogLen)
 		}
 		return gitOut(ctx, dir, "cat-file", "blob", object)
 	}
@@ -138,11 +95,11 @@ func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 	}
 	files := map[string][]byte{}
 	for _, name := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
-		if name == "" || (strings.Contains(name, "/") && !strings.HasPrefix(name, templatesDir)) {
+		if name == "" || (strings.Contains(name, "/") && !strings.HasPrefix(name, TemplatesDir)) {
 			continue
 		}
-		if len(files) >= ociMaxFiles {
-			return nil, fmt.Errorf("more than %d files under %q", ociMaxFiles, dir)
+		if len(files) >= MaxFiles {
+			return nil, fmt.Errorf("more than %d files under %q", MaxFiles, dir)
 		}
 		if files[name], err = readBlob(ctx, tmp, treeObject(path.Join(dir, name))); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
@@ -165,8 +122,8 @@ func readBlob(ctx context.Context, dir, object string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > maxCatalogLen {
-		return nil, fmt.Errorf("larger than %d bytes", maxCatalogLen)
+	if n, err := strconv.Atoi(strings.TrimSpace(string(size))); err != nil || n > MaxCatalogLen {
+		return nil, fmt.Errorf("larger than %d bytes", MaxCatalogLen)
 	}
 	return gitOut(ctx, dir, "cat-file", "blob", object)
 }

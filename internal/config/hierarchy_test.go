@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
+
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -89,8 +91,8 @@ func TestOneCatalogVersionPerRun(t *testing.T) {
 		files := remote(c.meta)
 		meta := files["meta"]
 		delete(files, "meta")
-		fetch := func(catalog.OCIRef) (*catalog.OCIArtifact, error) {
-			return &catalog.OCIArtifact{Digest: digest, Files: map[string][]byte{"catalog.yaml": []byte(meta + "rules: []\n")}}, nil
+		fetch := func(fetch.OCIRef) (*fetch.OCIArtifact, error) {
+			return &fetch.OCIArtifact{Digest: digest, Files: map[string][]byte{"catalog.yaml": []byte(meta + "rules: []\n")}}, nil
 		}
 		_, err := config.Load(writeAll(t, files), config.Options{Loader: catalog.Loader{FetchOCI: fetch}})
 		if (err == nil) != c.ok {
