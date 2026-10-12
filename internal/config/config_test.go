@@ -190,7 +190,7 @@ func TestNestedConfigValidation(t *testing.T) {
 		}
 		return dir
 	}
-	if n, err := config.LoadNested(t.TempDir(), now); err != nil || n != nil {
+	if n, err := config.LoadNested(t.TempDir(), ".", now); err != nil || n != nil {
 		t.Fatalf("absent nested file is not an error: %v %v", n, err)
 	}
 	for name, body := range map[string]string{
@@ -199,11 +199,11 @@ func TestNestedConfigValidation(t *testing.T) {
 		"bad until":                "version: 1\nexceptions:\n  - {rule: repo/x, reason: r, until: never}\n",
 		"unknown key":              "version: 1\nextends: [x]\n",
 	} {
-		if _, err := config.LoadNested(write(body), now); err == nil {
+		if _, err := config.LoadNested(write(body), ".", now); err == nil {
 			t.Errorf("%s: expected an error", name)
 		}
 	}
-	n, err := config.LoadNested(write("version: 1\nexceptions:\n  - {rule: repo/x, reason: r, until: 2027-01-01}\noverrides:\n  repo/x: {enabled: false, reason: r}\n"), now)
+	n, err := config.LoadNested(write("version: 1\nexceptions:\n  - {rule: repo/x, reason: r, until: 2027-01-01}\noverrides:\n  repo/x: {enabled: false, reason: r}\n"), ".", now)
 	if err != nil || len(n.Exceptions) != 1 || len(n.Overrides) != 1 {
 		t.Fatalf("valid nested config: %+v %v", n, err)
 	}

@@ -109,11 +109,7 @@ func applyBaseline(run *Run, r *repo.Repo, eff *config.Effective) error {
 		}
 		path = baseline.DefaultFile
 	}
-	abs, err := r.Abs(path)
-	if err != nil {
-		return err
-	}
-	b, exists, err := baseline.Load(abs)
+	b, exists, err := baseline.Load(r, path)
 	if err != nil {
 		return err
 	}
@@ -134,7 +130,7 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 	if err != nil {
 		return nil, facts.Facts{}, sc, err
 	}
-	nested, err := config.LoadNested(sr.ScopeRoot(), now(opts))
+	nested, err := config.LoadNested(r.Root, sc.Path, now(opts))
 	if err != nil {
 		return nil, facts.Facts{}, sc, err
 	}

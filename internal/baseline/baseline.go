@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"sort"
 	"time"
 
@@ -43,11 +43,17 @@ func Fingerprint(rule, scope string, f model.Finding) string {
 	return hex.EncodeToString(sum[:8])
 }
 
+// Files reads and writes the baseline inside the repository.
+type Files interface {
+	ReadFile(rel string) ([]byte, error)
+	WriteFile(rel string, data []byte, create bool) error
+}
+
 // Load reads a baseline; a missing file yields an empty baseline and ok=false.
-func Load(path string) (*Baseline, bool, error) {
+func Load(fsys Files, path string) (*Baseline, bool, error) {
 	b := &Baseline{Path: path, entries: map[string]bool{}}
-	data, err := os.ReadFile(path) //nolint:gosec // the path is the baseline file named in config or the default
-	if errors.Is(err, os.ErrNotExist) {
+	data, err := fsys.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
 		return b, false, nil
 	}
 	if err != nil {
@@ -124,7 +130,7 @@ func Build(results []model.Result) []string {
 
 // Write stores entries. Without reset, entries not already in a non-empty
 // existing baseline are refused, so the baseline can only shrink.
-func Write(path string, entries []string, existing *Baseline, reset bool, now time.Time) (added, removed int, err error) {
+func Write(fsys Files, path string, entries []string, existing *Baseline, reset bool, now time.Time) (added, removed int, err error) {
 	fresh := reset || existing == nil
 	keep := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -148,5 +154,5 @@ func Write(path string, entries []string, existing *Baseline, reset bool, now ti
 	if err != nil {
 		return 0, 0, err
 	}
-	return added, removed, os.WriteFile(path, append(data, '\n'), 0o644) //nolint:gosec // a committed project file
+	return added, removed, fsys.WriteFile(path, append(data, '\n'), false)
 }

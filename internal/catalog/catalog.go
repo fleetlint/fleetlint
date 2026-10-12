@@ -25,6 +25,7 @@ import (
 
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/model"
+	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
 
 // APIVersion is the catalog format this binary reads.
@@ -290,6 +291,8 @@ func Presets() []string { return Builtin().PresetNames() }
 type Loader struct {
 	// BaseDir resolves relative local references (the directory of .fleetlint.yaml).
 	BaseDir string
+	// Root is the directory local references must stay in; empty means BaseDir.
+	Root string
 	// Fetch retrieves a remote catalog body; nil disables remote catalogs.
 	Fetch func(url string) ([]byte, error)
 	// FetchGit reads one file from a git repository at a tag or commit; nil
@@ -447,25 +450,30 @@ func (l Loader) loadPreset(name string) (*Catalog, error) {
 	return c, nil
 }
 
+// loadLocal reads a catalog file, or the *.yaml files of a directory, inside
+// the repository: a path that leaves it, through ".." or a symlink, is
+// refused, so a repository's configuration cannot read other files.
 func (l Loader) loadLocal(ref string) ([]*Catalog, error) {
-	path := ref
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(l.BaseDir, path)
-	}
-	st, err := os.Stat(path)
+	root, rel, err := l.openLocal(ref)
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
-	var files []string
+	defer root.Close() //nolint:errcheck // a read-only handle
+	st, err := root.Stat(rel)
+	if err != nil {
+		return nil, fmt.Errorf("catalog %s: %w", ref, err)
+	}
+	files := []string{rel}
 	if st.IsDir() {
-		files, _ = filepath.Glob(filepath.Join(path, "*.yaml"))
+		files, err = fs.Glob(root.FS(), filepath.ToSlash(filepath.Join(rel, "*.yaml")))
+		if err != nil {
+			return nil, fmt.Errorf("catalog %s: %w", ref, err)
+		}
 		sort.Strings(files)
-	} else {
-		files = []string{path}
 	}
 	out := make([]*Catalog, 0, len(files))
 	for _, f := range files {
-		b, err := os.ReadFile(f) //nolint:gosec // the path comes from the repository's own .fleetlint.yaml
+		b, err := rootfs.ReadFile(root, f, maxCatalogLen)
 		if err != nil {
 			return nil, fmt.Errorf("catalog %s: %w", f, err)
 		}
@@ -480,6 +488,24 @@ func (l Loader) loadLocal(ref string) ([]*Catalog, error) {
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// openLocal opens the directory local references must stay in (Root, or
+// BaseDir when unset) and returns ref relative to it.
+func (l Loader) openLocal(ref string) (*os.Root, string, error) {
+	dir := l.Root
+	if dir == "" {
+		dir = l.BaseDir
+	}
+	rel, err := rootfs.Rel(dir, l.BaseDir, ref)
+	if err != nil {
+		return nil, "", fmt.Errorf("local catalogs and sources must be inside the repository: %w", err)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, "", err
+	}
+	return root, rel, nil
 }
 
 // loadPinned loads an https or git catalog.

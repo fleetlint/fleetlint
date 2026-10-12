@@ -6,7 +6,8 @@ package fix
 
 import (
 	"fmt"
-	"os"
+	"io/fs"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -48,6 +49,9 @@ func Decode(raw []map[string]any) ([]Action, error) {
 		if a.Template == "" && a.Untrack == "" && len(a.Gitignore) == 0 && a.Set == nil && a.Append == nil && a.Merge == nil {
 			return nil, fmt.Errorf("actions[%d]: empty action", i)
 		}
+		if err := a.validTargets(); err != nil {
+			return nil, fmt.Errorf("actions[%d]: %w", i, err)
+		}
 		out = append(out, a)
 	}
 	return out, nil
@@ -87,6 +91,37 @@ func (a *Action) set(key string, v any) error {
 		a.Merge = m
 	default:
 		return fmt.Errorf("unknown key %q (want template, to, untrack, gitignore, set, append, merge)", key)
+	}
+	return nil
+}
+
+// appendable are the files an append may extend: formats whose result is
+// parsed before writing, and Gemfile.
+var appendable = map[string]bool{".toml": true, ".yaml": true, ".yml": true}
+
+// validTargets refuses paths a catalog must not write: outside the
+// repository or inside .git, where a config or hook would run code.
+func (a *Action) validTargets() error {
+	targets := []string{a.To}
+	if a.Set != nil {
+		targets = append(targets, a.Set.File)
+	}
+	if a.Merge != nil {
+		targets = append(targets, a.Merge.File)
+	}
+	if a.Append != nil {
+		targets = append(targets, a.Append.File)
+		if !appendable[filepath.Ext(a.Append.File)] && path.Base(a.Append.File) != "Gemfile" {
+			return fmt.Errorf("append: %s is not a TOML or YAML file or a Gemfile", a.Append.File)
+		}
+	}
+	for _, t := range targets {
+		if t == "" {
+			continue
+		}
+		if !fs.ValidPath(t) || repo.InGitDir(t) {
+			return fmt.Errorf("%q is not a path inside the repository that fleetlint may write", t)
+		}
 	}
 	return nil
 }
@@ -231,18 +266,9 @@ func planTemplate(r *repo.Repo, p Project, a Action, tpl Templates) (*Change, er
 	if err != nil || body == nil {
 		return nil, err
 	}
-	abs, err := r.Abs(dest)
-	if err != nil {
-		return nil, err
-	}
 	return &Change{
 		Path: dest, Kind: "create", Diff: renderCreate(dest, string(body)),
-		apply: func() error {
-			if err := os.MkdirAll(filepath.Dir(abs), 0o750); err != nil {
-				return err
-			}
-			return os.WriteFile(abs, body, 0o644) //nolint:gosec // project files must be readable by other tools
-		},
+		apply: func() error { return r.WriteFile(dest, body, true) },
 	}, nil
 }
 
@@ -268,7 +294,7 @@ func planUntrack(r *repo.Repo, pattern string, findings []model.Finding) []Chang
 		out = append(out, Change{
 			Path: p, Kind: "untrack", Diff: "- tracked: " + p + " (file stays on disk)\n",
 			apply: func() error {
-				_, err := r.Git("rm", "--cached", "--quiet", "--", repoRel)
+				_, err := r.Git("--literal-pathspecs", "rm", "--cached", "--quiet", "--", repoRel)
 				return err
 			},
 		})
@@ -278,40 +304,42 @@ func planUntrack(r *repo.Repo, pattern string, findings []model.Finding) []Chang
 
 func planGitignore(r *repo.Repo, patterns []string) *Change {
 	existing, _ := r.Text(".gitignore")
-	have := map[string]bool{}
-	for _, line := range strings.Split(existing, "\n") {
-		have[strings.TrimSpace(line)] = true
-	}
-	var add []string
-	for _, p := range patterns {
-		if !have[p] {
-			add = append(add, p)
-		}
-	}
+	add := missingLines(existing, patterns)
 	if len(add) == 0 {
-		return nil
-	}
-	abs, err := r.Abs(".gitignore")
-	if err != nil {
 		return nil
 	}
 	block := strings.Join(add, "\n") + "\n"
 	return &Change{
 		Path: ".gitignore", Kind: "append", Diff: renderAppend(".gitignore", block),
 		apply: func() error {
+			current, _ := r.ReadFile(".gitignore")
+			missing := missingLines(string(current), add)
+			if len(missing) == 0 {
+				return nil // an earlier change in this plan added them
+			}
 			prefix := ""
-			if existing != "" && !strings.HasSuffix(existing, "\n") {
+			if len(current) > 0 && !strings.HasSuffix(string(current), "\n") {
 				prefix = "\n"
 			}
-			f, err := os.OpenFile(abs, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // .gitignore is a shared project file
-			if err != nil {
-				return err
-			}
-			defer f.Close() //nolint:errcheck // close error after a successful write is not actionable here
-			_, err = f.WriteString(prefix + block)
-			return err
+			return r.AppendFile(".gitignore", []byte(prefix+strings.Join(missing, "\n")+"\n"))
 		},
 	}
+}
+
+// missingLines returns the patterns that are not a line of text yet.
+func missingLines(text string, patterns []string) []string {
+	have := map[string]bool{}
+	for _, line := range strings.Split(text, "\n") {
+		have[strings.TrimSpace(line)] = true
+	}
+	var out []string
+	for _, p := range patterns {
+		if !have[p] {
+			out = append(out, p)
+			have[p] = true
+		}
+	}
+	return out
 }
 
 func renderCreate(path, body string) string {

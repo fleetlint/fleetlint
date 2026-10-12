@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -66,26 +65,34 @@ func planSet(r *repo.Repo, s SetAction, vars map[string]string) (*Change, error)
 	if !ok || placeholderRe.MatchString(value) {
 		return nil, nil
 	}
-	var updated, added string
-	var err error
-	if filepath.Ext(s.File) == ".json" {
-		updated, added, err = setJSON(old, s.Key, value)
-	} else {
-		updated, added, err = setTOML(old, s.Key, value)
+	edit := func(text string) (string, string, error) {
+		if filepath.Ext(s.File) == ".json" {
+			return setJSON(text, s.Key, value)
+		}
+		return setTOML(text, s.Key, value)
 	}
+	updated, added, err := edit(old)
 	if err != nil || updated == "" {
-		return nil, err
-	}
-	abs, err := r.Abs(s.File)
-	if err != nil {
 		return nil, err
 	}
 	return &Change{
 		Path: s.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", s.File, strings.TrimSpace(added)),
-		apply: func() error {
-			return os.WriteFile(abs, []byte(updated), 0o644) //nolint:gosec // project manifests must be readable by other tools
-		},
+		apply: func() error { return reapply(r, s.File, edit) },
 	}, nil
+}
+
+// reapply edits the file as it is now, so earlier changes of the same plan
+// to the same file are kept; nothing left to add is not an error.
+func reapply(r *repo.Repo, file string, edit func(string) (string, string, error)) error {
+	current, err := r.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	updated, _, err := edit(string(current))
+	if err != nil || updated == "" {
+		return err
+	}
+	return r.WriteFile(file, []byte(updated), false)
 }
 
 var firstIndentRe = regexp.MustCompile(`^\n([ \t]+)"`)

@@ -72,7 +72,7 @@ func TestUseEntries(t *testing.T) {
 		return p
 	}
 	ok := write("ok.yaml", head+"rules:\n  - use: lint/go-*\n  - id: own/rule\n    title: own\n    kind: expr\n    severity: info\n    expr: \"true\"\n    message: m\n    requirement: r\n    rationale: r\n    fix: {human: h, agent: a}\n  - use: repo/readme-present\n")
-	cats, err := catalog.Loader{}.Load(ok)
+	cats, err := catalog.Loader{BaseDir: dir}.Load(ok)
 	if err != nil {
 		t.Fatal(err)
 	}

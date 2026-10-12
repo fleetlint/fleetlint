@@ -138,9 +138,67 @@ func TestBlockActionsDecode(t *testing.T) {
 		{"append": map[string]any{"file": "a.toml", "template": "t", "unless": "x", "to": "b"}},
 		{"merge": map[string]any{"file": "a.json"}},
 		{"merge": "a.json"},
+		{"append": map[string]any{"file": ".git/config", "template": "t", "unless": "x"}},
+		{"append": map[string]any{"file": "run.sh", "template": "t", "unless": "x"}},
+		{"merge": map[string]any{"file": "../a.json", "template": "t"}},
+		{"template": "t", "to": ".git/hooks/post-checkout"},
+		{"template": "t", "to": "sub/.GIT/hooks/x"},
+		{"set": map[string]any{"file": "/etc/a.json", "key": "k", "value": "v"}},
 	} {
 		if _, err := fix.Decode([]map[string]any{bad}); err == nil {
 			t.Errorf("%v: accepted", bad)
 		}
+	}
+}
+
+// Merging re-serialises the file without HTML escaping, and two edits of
+// one file both land.
+func TestMergeKeepsScriptsAndStacksEdits(t *testing.T) {
+	t.Parallel()
+	tpl := fakeTemplates{"a.json": `{"devDependencies": {"a": "1"}}`, "b.json": `{"devDependencies": {"b": "2"}}`}
+	pkg := "{\n  \"scripts\": {\"check\": \"lint && test <x>\"}\n}\n"
+	got, changes, err := planAndApply(t, map[string]string{"package.json": pkg}, []fix.Action{
+		{Merge: &fix.MergeAction{File: "package.json", Template: "a.json"}},
+		{Merge: &fix.MergeAction{File: "package.json", Template: "b.json"}},
+	}, tpl)
+	if err != nil || len(changes) != 2 {
+		t.Fatalf("changes=%d err=%v", len(changes), err)
+	}
+	for _, want := range []string{`"lint && test <x>"`, `"a": "1"`, `"b": "2"`} {
+		if !strings.Contains(got["package.json"], want) {
+			t.Errorf("missing %s in %s", want, got["package.json"])
+		}
+	}
+}
+
+// Writes never follow a symlink out of the repository and never replace a
+// file that appeared after planning.
+func TestWritesStayInTheRepository(t *testing.T) {
+	t.Parallel()
+	outside := filepath.Join(t.TempDir(), "victim.toml")
+	if err := os.WriteFile(outside, []byte("[a]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := testutil.Fixture(t, map[string]string{"README.md": "x"})
+	if err := os.Symlink(outside, filepath.Join(r.Root, "pyproject.toml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(outside), filepath.Join(r.Root, "out")); err != nil {
+		t.Fatal(err)
+	}
+	tpl := fakeTemplates{"python/ruff.toml": "[tool.ruff]\n", "t": "x\n"}
+	changes, _ := fix.PlanFor(r, fix.Project{Stack: "python"}, []fix.Action{
+		{Append: &fix.AppendAction{File: "pyproject.toml", Template: "{stack}/ruff.toml", Unless: `ruff`}},
+		{Template: "t", To: "out/new.txt"},
+	}, tpl, nil)
+	_ = fix.Apply(changes)
+	if b, _ := os.ReadFile(outside); string(b) != "[a]\n" {
+		t.Errorf("the file outside was changed: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(outside), "new.txt")); err == nil {
+		t.Error("a file was created outside the repository")
+	}
+	if err := r.WriteFile("README.md", []byte("y"), true); err == nil {
+		t.Error("create replaced an existing file")
 	}
 }

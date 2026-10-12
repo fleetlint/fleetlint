@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
 
 // ErrNotARepo is returned when the root has no .git directory.
@@ -109,37 +112,77 @@ func (r *Repo) ScopeRoot() string {
 }
 
 // Abs resolves a scope-relative path and refuses to leave the repository.
+// It checks the path text only: open files through the methods below,
+// which also refuse symlinks that lead outside.
 func (r *Repo) Abs(rel string) (string, error) {
+	rootRel, err := r.rootRel(rel)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(r.Root, rootRel), nil
+}
+
+// rootRel turns a scope-relative path into one relative to Root.
+func (r *Repo) rootRel(rel string) (string, error) {
 	rel = filepath.FromSlash(rel)
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path %q must be relative to the repository", rel)
 	}
-	abs := filepath.Join(r.ScopeRoot(), rel)
-	relToRoot, err := filepath.Rel(r.Root, abs)
-	if err != nil || relToRoot == ".." || strings.HasPrefix(relToRoot, ".."+string(filepath.Separator)) {
+	joined := filepath.Join(filepath.FromSlash(r.Scope), rel)
+	if joined == ".." || strings.HasPrefix(joined, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("path %q escapes the repository", rel)
 	}
-	return abs, nil
+	return joined, nil
 }
 
-// Has reports whether a regular file or directory exists at rel.
-func (r *Repo) Has(rel string) bool {
-	abs, err := r.Abs(rel)
+// withRoot runs fn on the repository opened as an os.Root, so ".." and
+// symlinks cannot reach outside it.
+func (r *Repo) withRoot(fn func(*os.Root) error) error {
+	root, err := os.OpenRoot(r.Root)
 	if err != nil {
-		return false
+		return err
 	}
-	_, err = os.Stat(abs)
+	defer root.Close() //nolint:errcheck // a read-only handle
+	return fn(root)
+}
+
+func (r *Repo) stat(rel string) (fs.FileInfo, error) {
+	rootRel, err := r.rootRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	var st fs.FileInfo
+	err = r.withRoot(func(root *os.Root) error {
+		st, err = root.Stat(rootRel)
+		return err
+	})
+	return st, err
+}
+
+// Has reports whether a file or directory exists at rel.
+func (r *Repo) Has(rel string) bool {
+	_, err := r.stat(rel)
 	return err == nil
 }
 
 // IsDir reports whether rel exists and is a directory.
 func (r *Repo) IsDir(rel string) bool {
-	abs, err := r.Abs(rel)
-	if err != nil {
-		return false
-	}
-	st, err := os.Stat(abs)
+	st, err := r.stat(rel)
 	return err == nil && st.IsDir()
+}
+
+// ReadFile reads a regular file of at most MaxTextBytes, uncached.
+func (r *Repo) ReadFile(rel string) ([]byte, error) {
+	rootRel, err := r.rootRel(rel)
+	if err != nil {
+		return nil, err
+	}
+	var b []byte
+	err = r.withRoot(func(root *os.Root) error {
+		b, err = rootfs.ReadFile(root, rootRel, MaxTextBytes)
+		return err
+	})
+	return b, err
 }
 
 // Text returns the contents of a file, cached. Missing files return "" and
@@ -151,20 +194,72 @@ func (r *Repo) Text(rel string) (string, bool) {
 	if t, ok := r.texts[rel]; ok {
 		return t, true
 	}
-	abs, err := r.Abs(rel)
-	if err != nil {
-		return "", false
-	}
-	if st, err := os.Stat(abs); err != nil || st.Size() > MaxTextBytes {
-		return "", false
-	}
-	b, err := os.ReadFile(abs) //nolint:gosec // abs is confined to the repository by Abs
+	b, err := r.ReadFile(rel)
 	if err != nil {
 		return "", false
 	}
 	s := string(b)
 	r.texts[rel] = s
 	return s, true
+}
+
+// ErrGitDir refuses writes into git's own directory, where a config or a
+// hook would run code at the next git command.
+var ErrGitDir = errors.New("fleetlint does not write inside .git")
+
+// WriteFile writes a file below the scope. create makes a new file and
+// fails when one exists; otherwise the file is written or replaced.
+func (r *Repo) WriteFile(rel string, data []byte, create bool) error {
+	flags := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if create {
+		flags = os.O_WRONLY | os.O_CREATE | os.O_EXCL
+	}
+	return r.write(rel, data, flags)
+}
+
+// AppendFile appends to a file below the scope, creating it when absent.
+func (r *Repo) AppendFile(rel string, data []byte) error {
+	return r.write(rel, data, os.O_WRONLY|os.O_APPEND|os.O_CREATE)
+}
+
+func (r *Repo) write(rel string, data []byte, flags int) error {
+	rootRel, err := r.rootRel(rel)
+	if err != nil {
+		return err
+	}
+	if InGitDir(rootRel) {
+		return fmt.Errorf("%s: %w", rel, ErrGitDir)
+	}
+	return r.withRoot(func(root *os.Root) error {
+		if dir := filepath.Dir(rootRel); dir != "." {
+			if err := root.MkdirAll(dir, 0o750); err != nil {
+				return err
+			}
+		}
+		if st, err := root.Lstat(rootRel); err == nil && !st.Mode().IsRegular() {
+			return fmt.Errorf("%s: %w", rel, rootfs.ErrNotRegular)
+		}
+		f, err := root.OpenFile(rootRel, flags, 0o644)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Write(data); err != nil {
+			_ = f.Close()
+			return err
+		}
+		return f.Close()
+	})
+}
+
+// InGitDir reports whether a relative path names something inside a .git
+// directory, in any letter case.
+func InGitDir(rel string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if strings.EqualFold(part, ".git") {
+			return true
+		}
+	}
+	return false
 }
 
 // Glob returns scope-relative paths matching a doublestar-style pattern,
@@ -333,12 +428,8 @@ func (r *Repo) TagSigned(name string) bool {
 // Size returns a file's size in bytes, or 0 when it is absent, a directory,
 // or outside the repository.
 func (r *Repo) Size(rel string) int64 {
-	abs, err := r.Abs(rel)
-	if err != nil {
-		return 0
-	}
-	st, err := os.Stat(abs)
-	if err != nil || st.IsDir() {
+	st, err := r.stat(rel)
+	if err != nil || !st.Mode().IsRegular() {
 		return 0
 	}
 	return st.Size()

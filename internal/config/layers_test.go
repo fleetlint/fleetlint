@@ -113,6 +113,36 @@ func TestSourcesRejected(t *testing.T) {
 	}
 }
 
+// A repository's configuration reads catalogs and sources only inside the
+// repository: not by absolute path, "..", or a symlink.
+func TestLocalReferencesStayInTheRepository(t *testing.T) {
+	t.Parallel()
+	outside := filepath.Join(t.TempDir(), "secret.yaml")
+	if err := os.WriteFile(outside, []byte("SECRET_VALUE=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string]string{
+		"absolute": "version: 1\nextends: [" + outside + "]\n",
+		"dotdot":   "version: 1\nextends: [../" + filepath.Base(filepath.Dir(outside)) + "/secret.yaml]\n",
+		"symlink":  "version: 1\nextends: [link.yaml]\n",
+		"sources":  "version: 1\nsources: " + outside + "\n",
+		"device":   "version: 1\nextends: [" + os.DevNull + "]\n",
+	}
+	for name, cfg := range cases {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, config.FileName), []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, filepath.Join(dir, "link.yaml")); err != nil {
+			t.Fatal(err)
+		}
+		_, err := config.Load(dir, config.Options{Loader: catalog.Loader{}})
+		if err == nil || strings.Contains(err.Error(), "SECRET_VALUE") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 func TestRemoteSourcesCannotNameLocalPaths(t *testing.T) {
 	t.Parallel()
 	body := []byte("version: 1\ncatalogs:\n  org: ../org.yaml\n")

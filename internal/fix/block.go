@@ -1,10 +1,10 @@
 package fix
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -101,25 +101,19 @@ func planAppend(r *repo.Repo, a AppendAction, p Project, tpl Templates) (*Change
 	if _, err := appended(a.File, old, block); err != nil {
 		return nil, fmt.Errorf("%s: appending %s would not parse: %w", a.File, a.Template, err)
 	}
-	abs, err := r.Abs(a.File)
-	if err != nil {
-		return nil, err
-	}
 	return &Change{
 		Path: a.File, Kind: "append", Diff: renderAppend(a.File, block),
 		apply: func() error {
-			current, err := os.ReadFile(abs) //nolint:gosec // the path was resolved inside the repository
-			if err != nil {
-				return err
-			}
-			if unless.Match(current) {
-				return nil // an earlier change in this plan already added it
-			}
-			updated, err := appended(a.File, string(current), block)
-			if err != nil {
-				return fmt.Errorf("appending %s would not parse: %w", a.Template, err)
-			}
-			return os.WriteFile(abs, []byte(updated), 0o644) //nolint:gosec // project configuration must be readable by other tools
+			return reapply(r, a.File, func(current string) (string, string, error) {
+				if unless.MatchString(current) {
+					return "", "", nil // an earlier change in this plan already added it
+				}
+				updated, err := appended(a.File, current, block)
+				if err != nil {
+					return "", "", fmt.Errorf("appending %s would not parse: %w", a.Template, err)
+				}
+				return updated, block, nil
+			})
 		},
 	}, nil
 }
@@ -161,8 +155,8 @@ func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, 
 	if !ok {
 		return nil, nil
 	}
-	var doc omap
-	if err := json.Unmarshal([]byte(old), &doc); err != nil {
+	var probe omap
+	if err := json.Unmarshal([]byte(old), &probe); err != nil {
 		return nil, fmt.Errorf("%s is not strict JSON (comments or trailing commas?); add the keys of template %s by hand", a.File, a.Template)
 	}
 	body, err := render(tpl, strings.ReplaceAll(a.Template, "{stack}", p.Stack), p)
@@ -173,25 +167,39 @@ func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, 
 	if err := json.Unmarshal(body, &want); err != nil {
 		return nil, fmt.Errorf("template %s: %w", a.Template, err)
 	}
-	added := mergeMissing(&doc, &want, "")
-	if len(added) == 0 {
-		return nil, nil
+	edit := func(text string) (string, string, error) {
+		var doc omap
+		if err := json.Unmarshal([]byte(text), &doc); err != nil {
+			return "", "", fmt.Errorf("%s is no longer strict JSON: %w", a.File, err)
+		}
+		added := mergeMissing(&doc, &want, "")
+		if len(added) == 0 {
+			return "", "", nil
+		}
+		out, err := marshalJSON(&doc, indentOf(text))
+		return out, strings.Join(added, "\n+ "), err
 	}
-	out, err := json.MarshalIndent(&doc, "", indentOf(old))
-	if err != nil {
-		return nil, err
-	}
-	updated := string(out) + "\n"
-	abs, err := r.Abs(a.File)
-	if err != nil {
+	updated, added, err := edit(old)
+	if err != nil || updated == "" {
 		return nil, err
 	}
 	return &Change{
-		Path: a.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", a.File, strings.Join(added, "\n+ ")),
-		apply: func() error {
-			return os.WriteFile(abs, []byte(updated), 0o644) //nolint:gosec // project configuration must be readable by other tools
-		},
+		Path: a.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", a.File, added),
+		apply: func() error { return reapply(r, a.File, edit) },
 	}, nil
+}
+
+// marshalJSON indents like the file and leaves <, > and & as they are, so
+// a script such as `a && b` is not rewritten to \u0026\u0026.
+func marshalJSON(v any, indent string) (string, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", indent)
+	if err := enc.Encode(v); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 // mergeMissing adds want's members that dst lacks, in the template's order,

@@ -3,13 +3,14 @@ package catalog
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
 
 // Layers say who owns a catalog or an override. Catalogs resolve in this
@@ -85,11 +86,7 @@ func (l Loader) LoadSources(ref string) (*Sources, error) {
 	if isPinnedRef(ref) {
 		b, err = l.readPinned(ref)
 	} else {
-		local = ref
-		if !filepath.IsAbs(local) {
-			local = filepath.Join(l.BaseDir, local)
-		}
-		b, err = os.ReadFile(local) //nolint:gosec // the path comes from the repository's own .fleetlint.yaml
+		b, local, err = l.readLocalSources(ref)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("sources %s: %w", ref, err)
@@ -102,6 +99,18 @@ func (l Loader) LoadSources(ref string) (*Sources, error) {
 		return nil, fmt.Errorf("sources %s: %w", ref, err)
 	}
 	return &s, nil
+}
+
+// readLocalSources reads a sources file inside the repository and returns
+// its absolute path.
+func (l Loader) readLocalSources(ref string) ([]byte, string, error) {
+	root, rel, err := l.openLocal(ref)
+	if err != nil {
+		return nil, "", err
+	}
+	defer root.Close() //nolint:errcheck // a read-only handle
+	b, err := rootfs.ReadFile(root, rel, maxCatalogLen)
+	return b, filepath.Join(root.Name(), rel), err
 }
 
 // validate checks names and targets; local is the file's path, or "" for a

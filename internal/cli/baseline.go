@@ -32,11 +32,7 @@ never adds new ones, so the debt can only go down; --reset starts over.`,
 			if path == "" {
 				path = baseline.DefaultFile
 			}
-			abs, err := r.Abs(path)
-			if err != nil {
-				return &configError{err}
-			}
-			existing, exists, err := baseline.Load(abs)
+			existing, exists, err := baseline.Load(r, path)
 			if err != nil {
 				return &configError{err}
 			}
@@ -44,7 +40,7 @@ never adds new ones, so the debt can only go down; --reset starts over.`,
 				existing = nil
 			}
 			entries := baseline.Build(run.Results)
-			added, removed, err := baseline.Write(abs, entries, existing, reset, time.Now())
+			added, removed, err := baseline.Write(r, path, entries, existing, reset, time.Now())
 			if err != nil {
 				return err
 			}

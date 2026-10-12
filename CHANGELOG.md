@@ -18,8 +18,16 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- Merging into a JSON file no longer rewrites `&&`, `<` and `>` in it as `\u0026`, `\u003c` and `\u003e`.
+- Several fixes to one file all land: each edit applies to the file as the previous one left it, instead of the content seen when planning.
 - A directory that is no git repository but holds repositories is no longer checked as one repository; fleetlint points to `fleetlint fleet --discover` instead. Running `fleetlint` in a directory whose `go.work` lists separate checkouts failed with `unknown field "extends"`.
 - A workspace member with its own `.git` (a submodule or a separate checkout) is a repository, not a scope of the enclosing one.
+
+### Security
+
+- Local catalogs and sources files named in `.fleetlint.yaml` must be inside the repository. An absolute path, `..` or a symlink to elsewhere is refused, so a repository's configuration can no longer read other files (such as `/proc/self/environ`) into error messages and reports. Catalogs shared between repositories come from https, git or OCI.
+- Reads of repository files go through `os.Root`: a symlink that leads outside the repository reads as absent, and only regular files are read, so a link to `/dev/zero` or a FIFO no longer exhausts memory or blocks.
+- `fix --apply` writes through the same boundary: it never follows a symlink out of the repository, never writes inside `.git` (in any letter case), and creates new files exclusively. A catalog's fix actions are checked when they load: targets must be paths inside the repository outside `.git`, and `append` only extends TOML and YAML files and Gemfiles.
 
 ## [0.2.0] - 2026-10-11
 

@@ -87,6 +87,17 @@ func decodeOrdered(raw json.RawMessage) (any, error) {
 	return v, nil
 }
 
+// marshalRaw is json.Marshal without HTML escaping.
+func marshalRaw(v any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
+}
+
 func (o *omap) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')
@@ -94,13 +105,13 @@ func (o *omap) MarshalJSON() ([]byte, error) {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		kb, err := json.Marshal(k)
+		kb, err := marshalRaw(k)
 		if err != nil {
 			return nil, err
 		}
 		b.Write(kb)
 		b.WriteByte(':')
-		vb, err := json.Marshal(o.vals[k])
+		vb, err := marshalRaw(o.vals[k])
 		if err != nil {
 			return nil, err
 		}

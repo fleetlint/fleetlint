@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
+	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
 
 // FileName is the config file fleetlint looks for at the repository root.
@@ -150,10 +151,10 @@ func Load(root string, opts Options) (*Effective, error) {
 		opts.Now = time.Now()
 	}
 	eff := &Effective{Path: filepath.Join(root, FileName)}
-	b, err := os.ReadFile(eff.Path)
+	b, err := rootfs.ReadIn(root, FileName, maxConfigLen)
 	if errors.Is(err, os.ErrNotExist) {
 		// Accept the undotted name too, so a repo that chose it keeps working.
-		if lb, lerr := os.ReadFile(filepath.Join(root, LegacyFileName)); lerr == nil { //nolint:gosec // fixed name under the repository root
+		if lb, lerr := rootfs.ReadIn(root, LegacyFileName, maxConfigLen); lerr == nil {
 			b, err, eff.Path = lb, nil, filepath.Join(root, LegacyFileName)
 		}
 	}
@@ -172,7 +173,7 @@ func Load(root string, opts Options) (*Effective, error) {
 		return nil, fmt.Errorf("%s: %w", FileName, err)
 	}
 	eff.raw = b
-	opts.Loader.BaseDir = root
+	opts.Loader.BaseDir, opts.Loader.Root = root, root
 	if err := eff.resolve(opts); err != nil {
 		return nil, err
 	}
@@ -342,9 +343,14 @@ type Nested struct {
 	Exceptions []model.Exception           `yaml:"exceptions,omitempty"`
 }
 
-// LoadNested reads <dir>/.fleetlint.yaml for a scope. A missing file yields nil.
-func LoadNested(dir string, now time.Time) (*Nested, error) {
-	b, err := os.ReadFile(filepath.Join(dir, FileName)) //nolint:gosec // fixed name under a scope directory
+// maxConfigLen bounds a configuration file.
+const maxConfigLen = 1 << 20
+
+// LoadNested reads <scope>/.fleetlint.yaml below the repository root. A
+// missing file yields nil.
+func LoadNested(root, scope string, now time.Time) (*Nested, error) {
+	dir := filepath.Join(root, filepath.FromSlash(scope))
+	b, err := rootfs.ReadIn(root, filepath.Join(filepath.FromSlash(scope), FileName), maxConfigLen)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil //nolint:nilnil // absence is the normal case, not an error
 	}
