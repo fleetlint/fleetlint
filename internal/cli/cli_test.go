@@ -37,6 +37,18 @@ func messyRepo(t *testing.T) string {
 	return r.Root
 }
 
+func TestDirectoryOfRepositoriesPointsToFleet(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "a", ".git"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errOut := runCLI(t, dir)
+	if code != cli.ExitConfig || !strings.Contains(errOut, "fleetlint fleet --discover") {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+}
+
 func TestCheckExitCodesAndFormats(t *testing.T) {
 	t.Parallel()
 	dir := messyRepo(t)

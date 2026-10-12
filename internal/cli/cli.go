@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
+	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/report"
@@ -88,6 +89,9 @@ func load(ctx context.Context, g *globals) (*repo.Repo, *config.Effective, error
 	if err != nil {
 		return nil, nil, &configError{err}
 	}
+	if err := notACollection(r); err != nil {
+		return nil, nil, err
+	}
 	eff, err := config.Load(r.Root, config.Options{Loader: catalog.RemoteLoader(ctx)})
 	if err != nil {
 		return nil, nil, &configError{err}
@@ -96,6 +100,20 @@ func load(ctx context.Context, g *globals) (*repo.Repo, *config.Effective, error
 		return nil, nil, &configError{err}
 	}
 	return r, eff, nil
+}
+
+// notACollection refuses a directory without git that holds repositories:
+// checked as one repository it would mix theirs together.
+func notACollection(r *repo.Repo) error {
+	if r.HasGit() {
+		return nil
+	}
+	d, err := fleet.Discover(r.Root, fleet.DiscoverDepth, nil)
+	if err != nil || len(d.Repos) == 0 {
+		return nil //nolint:nilerr // an unreadable tree is checked as before
+	}
+	return &configError{fmt.Errorf("%s is not a git repository but holds %d repositories; check them with `fleetlint fleet --discover %s`, or one of them with `fleetlint -C <repository>`",
+		r.Root, len(d.Repos), r.Root)}
 }
 
 func checkCmd(g *globals, code *int) *cobra.Command {

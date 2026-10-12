@@ -1,6 +1,8 @@
 package facts
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -12,13 +14,14 @@ import (
 // workspaceMembers finds the member directories of a monorepo from whatever
 // workspace manifest the root carries. Globs are expanded against the tree;
 // only directories that contain a stack manifest count, so a `packages/*`
-// glob does not turn a README folder into a scope.
+// glob does not turn a README folder into a scope. A member with its own
+// .git (a submodule or a separate checkout) is a repository, not a scope.
 func workspaceMembers(r *repo.Repo) []string {
 	set := map[string]bool{}
 	add := func(dirs []string) {
 		for _, d := range dirs {
 			d = strings.Trim(strings.TrimPrefix(d, "./"), "/")
-			if d != "" && d != "." && hasManifest(r, d) {
+			if d != "" && d != "." && hasManifest(r, d) && !ownRepo(r, d) {
 				set[d] = true
 			}
 		}
@@ -35,6 +38,11 @@ func workspaceMembers(r *repo.Repo) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func ownRepo(r *repo.Repo, dir string) bool {
+	_, err := os.Stat(filepath.Join(r.Root, filepath.FromSlash(dir), ".git"))
+	return err == nil
 }
 
 func hasManifest(r *repo.Repo, dir string) bool {

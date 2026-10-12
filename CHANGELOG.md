@@ -14,6 +14,11 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 - The composite action in `action/` is deprecated in favour of [fleetlint/action](https://github.com/fleetlint/action), which installs a verified release instead of building with Go and annotates findings.
 
+### Fixed
+
+- A directory that is no git repository but holds repositories is no longer checked as one repository; fleetlint points to `fleetlint fleet --discover` instead. Running `fleetlint` in a directory whose `go.work` lists separate checkouts failed with `unknown field "extends"`.
+- A workspace member with its own `.git` (a submodule or a separate checkout) is a repository, not a scope of the enclosing one.
+
 ## [0.2.0] - 2026-10-11
 
 ### Added

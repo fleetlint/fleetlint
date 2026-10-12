@@ -17,6 +17,9 @@ func TestWorkspaceMembers(t *testing.T) {
 		"go.work": {map[string]string{
 			"go.work": "go 1.24\n\nuse (\n\t./api\n\n\t// retired: ./old\n\t./worker\n)\n", "api/go.mod": "module a\n", "worker/go.mod": "module w\n", "docs/readme.md": "x",
 		}, []string{"api", "worker"}},
+		"go.work with a separate repository": {map[string]string{
+			"go.work": "go 1.24\n\nuse (\n\t./api\n\t./lib\n)\n", "api/go.mod": "module a\n", "lib/go.mod": "module l\n", "lib/.git": "gitdir: ../.git/modules/lib\n",
+		}, []string{"api"}},
 		"pnpm": {map[string]string{
 			"pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - '!packages/skip'\n", "packages/ui/package.json": "{}", "packages/core/package.json": "{}", "packages/notes/README.md": "x",
 		}, []string{"packages/core", "packages/ui"}},
