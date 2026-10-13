@@ -1,7 +1,7 @@
 # GitLab CI job for fleetlint. Include it from a release tag:
 #
 #   include:
-#     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.3.0/ci/gitlab/fleetlint.yml
+#     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.4.0/ci/gitlab/fleetlint.yml
 #
 # The job installs that same release with the install script of that tag and
 # requires the cosign signature of its checksums. Findings show in the merge
@@ -11,7 +11,7 @@ fleetlint:
   stage: test
   image: alpine:3.22
   variables:
-    FLEETLINT_VERSION: v0.3.0     # set by `make release` to the tag this file is part of
+    FLEETLINT_VERSION: v0.4.0     # set by `make release` to the tag this file is part of
     FLEETLINT_FAIL_ON: error
     FLEETLINT_VERIFY: cosign
   before_script:

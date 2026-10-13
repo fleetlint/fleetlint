@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-14
+
 ### Added
 
 - **Capabilities with one implementation per stack.** A rule of `kind: capability` states a requirement (`lint/configured`: a linter is configured); its implementations at `rules/<family>/<name>/<stack>.yaml` check it with the stack's tools and inherit every field they do not set. `any.yaml` is the stack-neutral implementation: it checks stacks without their own, and its satisfiers count for every stack. `use:`, overrides, exceptions and policy on the capability reach all its implementations; `lint/configured/go` adjusts one. A detected stack without an implementation is reported as not applicable with `no implementation for <stack>`, instead of passing unnoticed. Rule ids may have a third segment for that. `fleetlint docs` writes a capability matrix (`rules/capabilities.md`).
