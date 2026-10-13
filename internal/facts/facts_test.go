@@ -4,7 +4,10 @@ import (
 	"reflect"
 	"testing"
 
+	data "github.com/fleetlint/catalog"
+
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
@@ -32,6 +35,9 @@ func TestWorkspaceMembers(t *testing.T) {
 		"gradle": {map[string]string{
 			"settings.gradle.kts": `include(":app", ":core:data")` + "\n", "app/build.gradle.kts": "", "core/data/build.gradle.kts": "",
 		}, []string{"app", "core/data"}},
+		"fixtures are not members": {map[string]string{
+			"pnpm-workspace.yaml": "packages:\n  - 'packages/**'\n", "packages/a/package.json": "{}", "packages/a/__tests__/fixtures/b/package.json": "{}", "packages/c/fixtures/d/package.json": "{}",
+		}, []string{"packages/a"}},
 		"single": {map[string]string{"go.mod": "module x\n"}, nil},
 	}
 	for name, tc := range cases {
@@ -193,5 +199,18 @@ func TestTaskRunnerKinds(t *testing.T) {
 		if tc.lintRecipe != "" && (len(tr.Recipes["lint"]) != 1 || tr.Recipes["lint"][0] != tc.lintRecipe) {
 			t.Errorf("%s: lint recipe %v", name, tr.Recipes["lint"])
 		}
+	}
+}
+
+func TestGoSourcesDoNotMakeNestedProjects(t *testing.T) {
+	t.Parallel()
+	defs, err := stacks.Load(data.Stacks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", "main.go": "package main\n", "pkg/a.go": "package pkg\n", "web/package.json": "{}"})
+	f := facts.Discover(r, facts.Overrides{StackDefs: defs})
+	if !reflect.DeepEqual(f.Members, []string{"web"}) {
+		t.Fatalf("a directory of Go files is a package, not a project: %v", f.Members)
 	}
 }

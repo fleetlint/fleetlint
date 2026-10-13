@@ -29,6 +29,8 @@ func TestDetectWithTheCatalogStacks(t *testing.T) {
 		"kotlin module":         {map[string]string{"settings.gradle.kts": "include(\":app\")\n", "app/build.gradle.kts": "plugins { id(\"org.jetbrains.kotlin.jvm\") }\n"}, []string{"kotlin"}},
 		"flutter android shell": {map[string]string{"pubspec.yaml": "name: a\n", "android/app/build.gradle.kts": "plugins { id(\"kotlin-android\") }\n"}, []string{"flutter"}},
 		"hugo legacy":           {map[string]string{"config.toml": "baseURL = 'https://x'\n", "content/_index.md": "x"}, []string{"hugo"}},
+		"hugo modules":          {map[string]string{"hugo.toml": "x", "go.mod": "module site\n"}, []string{"hugo"}},
+		"hugo with go code":     {map[string]string{"hugo.toml": "x", "go.mod": "module site\n", "main.go": "package main\n"}, []string{"go", "hugo"}},
 		"toml without content":  {map[string]string{"config.toml": "baseURL = 'https://x'\n"}, []string{}},
 		"dotnet project":        {map[string]string{"src/App/App.csproj": "<Project/>"}, []string{"dotnet"}},
 		"dotnet fixture only":   {map[string]string{"testdata/x/App.csproj": "<Project/>"}, []string{}},

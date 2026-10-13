@@ -23,7 +23,7 @@ func workspaceMembers(r *repo.Repo, manifests []string) []string {
 	add := func(dirs []string) {
 		for _, d := range dirs {
 			d = strings.Trim(strings.TrimPrefix(d, "./"), "/")
-			if d != "" && d != "." && hasManifest(r, d, manifests) && !ownRepo(r, d) {
+			if d != "" && d != "." && !inNotProject(d) && hasManifest(r, d, manifests) && !ownRepo(r, d) {
 				set[d] = true
 			}
 		}
@@ -40,6 +40,13 @@ func workspaceMembers(r *repo.Repo, manifests []string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// inNotProject reports a member under a test, fixture or dependency
+// directory: a workspace glob that reaches a fixture's package.json does not
+// make it a project.
+func inNotProject(dir string) bool {
+	return slices.ContainsFunc(strings.Split(dir, "/"), func(seg string) bool { return stacks.NotProjects[seg] })
 }
 
 func ownRepo(r *repo.Repo, dir string) bool {

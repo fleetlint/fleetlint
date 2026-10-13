@@ -53,6 +53,7 @@ func (r *Repo) Doc(format Format, rel string) (any, bool, error) {
 }
 
 func parseDoc(format Format, text string) (any, error) {
+	text = strings.TrimPrefix(text, "\ufeff") // editors on Windows write a byte-order mark; npm and the parsers of other tools accept it
 	var v any
 	switch format {
 	case FormatYAML:

@@ -89,6 +89,7 @@ var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 // workspace member: dependencies, fixtures, examples and build output.
 var NotProjects = map[string]bool{
 	"vendor": true, "third_party": true, "node_modules": true, "testdata": true, "test": true, "tests": true,
+	"__tests__": true, "__fixtures__": true, "__mocks__": true, "fixtures": true, "fixture": true,
 	"examples": true, "example": true, "samples": true, "sample": true, "docs": true, "doc": true,
 	"build": true, "dist": true, "target": true, "out": true,
 }
@@ -284,11 +285,15 @@ func (d Def) present(r *repo.Repo, found map[string]bool) bool {
 
 // Manifests are the names that mark a directory as a project, for
 // workspace member discovery: every file marker and every glob marker,
-// which may hold wildcards (`*.csproj`).
+// which may hold wildcards (`*.csproj`). A marker that needs another file
+// (`with`) is a hint, not a manifest: Go sources next to go.mod.
 func Manifests(defs []Def) []string {
 	var out []string
 	for _, d := range defs {
 		for _, m := range d.Detect {
+			if len(m.With) > 0 {
+				continue
+			}
 			name := m.File + m.Glob
 			if !slices.Contains(out, name) {
 				out = append(out, name)
