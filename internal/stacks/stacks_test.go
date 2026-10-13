@@ -24,6 +24,8 @@ func TestDetectWithTheCatalogStacks(t *testing.T) {
 		"go":                    {map[string]string{"go.mod": "module x\n"}, []string{"go"}},
 		"kotlin gradle":         {map[string]string{"build.gradle.kts": "plugins { kotlin(\"jvm\") }\n"}, []string{"kotlin"}},
 		"java groovy gradle":    {map[string]string{"build.gradle": "plugins { id 'java' }\n"}, []string{"java"}},
+		"android thin shell":    {map[string]string{"settings.gradle.kts": "include(\":androidApp\")\n", "androidApp/build.gradle.kts": "plugins { alias(libs.plugins.androidApplication) }\n"}, []string{"kotlin"}},
+		"java modules":          {map[string]string{"settings.gradle": "include 'app'\n", "app/build.gradle": "plugins { id 'application' }\n"}, []string{"java"}},
 		"kotlin module":         {map[string]string{"settings.gradle.kts": "include(\":app\")\n", "app/build.gradle.kts": "plugins { id(\"org.jetbrains.kotlin.jvm\") }\n"}, []string{"kotlin"}},
 		"flutter android shell": {map[string]string{"pubspec.yaml": "name: a\n", "android/app/build.gradle.kts": "plugins { id(\"kotlin-android\") }\n"}, []string{"flutter"}},
 		"hugo legacy":           {map[string]string{"config.toml": "baseURL = 'https://x'\n", "content/_index.md": "x"}, []string{"hugo"}},

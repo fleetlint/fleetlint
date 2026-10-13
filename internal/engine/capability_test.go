@@ -196,3 +196,91 @@ func TestDisabledCapabilityIsRecordedOnce(t *testing.T) {
 		t.Error("its implementations are off")
 	}
 }
+
+// Gitea and Forgejo do not take the token's scope from the workflow file.
+func TestLeastPrivilegeIsGitHubOnly(t *testing.T) {
+	t.Parallel()
+	out := run(t, map[string]string{"go.mod": "module x\n", ".gitea/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: x\n    steps: [{run: make check}]\n"}, withSlop)
+	if s := status(t, out, "ci/least-privilege"); s.Status != model.StatusNotApplicable {
+		t.Fatalf("a Gitea workflow is not checked: %s", s.Status)
+	}
+}
+
+// A 0.3 configuration keeps working: an old id in overrides, exceptions and
+// use: reaches the rules that replaced it, with a deprecation warning.
+func TestRenamedIDsCarryOver(t *testing.T) {
+	t.Parallel()
+	cfg := `version: 1
+extends: [fleetlint:recommended]
+facts: {tier: 1, visibility: public}
+rules:
+  - use: quality/no-slop-markers
+overrides:
+  lint/go-config: {severity: error}
+  lint/python-config: {enabled: false, reason: "migrating"}
+exceptions:
+  - {rule: lint/go-linters-enabled, reason: "ratchet"}
+`
+	out := run(t, map[string]string{"go.mod": "module x\n", ".golangci.yml": "version: \"2\"\nlinters:\n  default: none\n"}, cfg)
+	if s := status(t, out, "lint/configured/go"); s.Rule.Severity != model.SeverityError {
+		t.Errorf("an override of lint/go-config reaches lint/configured/go: %s", s.Rule.Severity)
+	}
+	if s := status(t, out, "lint/strict/go"); s.Status != model.StatusExcepted {
+		t.Errorf("an exception for lint/go-linters-enabled reaches lint/strict/go: %s", s.Status)
+	}
+	if shown(out, "types/strict/python") || shown(out, "lint/configured/python") {
+		t.Error("disabling lint/python-config disables both rules that replace it")
+	}
+	if !shown(out, "slop/marketing-words") {
+		t.Error("use: of a renamed id selects its replacement")
+	}
+	if !strings.Contains(strings.Join(out.Config.Deprecations, "\n"), "lint/go-config was renamed to lint/configured/go") {
+		t.Errorf("the rename is reported: %v", out.Config.Deprecations)
+	}
+}
+
+// Implementations and capabilities come from libraries only: an inline
+// `<capability>/any` would otherwise satisfy a locked capability.
+func TestInlineImplementationsAreRefused(t *testing.T) {
+	t.Parallel()
+	for name, rule := range map[string]string{
+		"implementation": "  - {id: qa/linted/any, kind: outcome, severity: info, message: m, requirement: r, fix: {human: h}, satisfiers: [{name: bypass, expr: 'true'}]}\n",
+		"capability":     "  - {id: qa/other, kind: capability, severity: info, title: t, requirement: r, fix: {human: h}}\n",
+	} {
+		r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", config.FileName: capCfg + "rules:\n" + rule})
+		_, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{Source: capabilitySource()}})
+		if err == nil || !strings.Contains(err.Error(), "rules/ library") {
+			t.Errorf("%s inline: %v", name, err)
+		}
+	}
+}
+
+func TestCapabilityParamsAndPartialsInherit(t *testing.T) {
+	t.Parallel()
+	files := capabilitySource().Rules.(fstest.MapFS)
+	files["rules/qa/p.yaml"] = &fstest.MapFile{Data: []byte("id: qa/p\ntitle: t\nkind: capability\nseverity: info\nrequirement: r\nfix: {human: h}\nparams: {limit: 5, mode: strict}\n")}
+	files["rules/qa/p/go.yaml"] = &fstest.MapFile{Data: []byte("id: qa/p/go\nkind: expr\nexpr: params.limit == 5 && params.mode == \"loose\"\nparams: {mode: loose}\n")}
+	lib, err := (&catalog.Source{Rules: files, Version: "x"}).Library()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := lib.Select("qa/p"); len(ids) != 2 {
+		t.Fatalf("capability and implementation: %v", ids)
+	}
+	files["rules/qa/p/go.yaml"] = &fstest.MapFile{Data: []byte("id: qa/p/go\nkind: outcome\nsatisfiers: [{name: a, expr: 'true'}]\npartials: [{name: b, expr: 'true', message: m}]\n")}
+	if _, err := (&catalog.Source{Rules: files, Version: "y"}).Library(); err == nil || !strings.Contains(err.Error(), "severity is required") {
+		t.Errorf("a partial of an implementation states its severity: %v", err)
+	}
+}
+
+func TestDisabledCapabilityTakesItsImplementationOverrides(t *testing.T) {
+	t.Parallel()
+	out := runWith(t, map[string]string{"go.mod": "module x\n"}, capCfg+"overrides:\n  qa/linted: {enabled: false, reason: r}\n  qa/linted/go: {severity: error}\n")
+	if shown(out, "qa/linted/go") {
+		t.Error("the implementation stays off")
+	}
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", config.FileName: capCfg + "overrides:\n  qa/typed:\n    accept: [{name: a, expr: 'true'}]\n"})
+	if _, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{Source: capabilitySource()}}); err == nil || !strings.Contains(err.Error(), "accept only applies to outcome rules") {
+		t.Errorf("accept on a capability without outcome implementations is an error: %v", err)
+	}
+}

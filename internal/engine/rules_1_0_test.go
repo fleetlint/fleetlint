@@ -216,7 +216,8 @@ func TestDevEnvironmentVersionVariables(t *testing.T) {
 	}
 	for _, v := range []string{"main", "latest", "release-2.x"} {
 		s := status(t, run(t, mk(v), tier1Public), "repo/dev-environment")
-		if s.Status != model.StatusFail || len(s.Findings) == 0 || !strings.Contains(s.Findings[0].Message, "not a version") {
+		// The recipe reads expanded: @latest says so directly, a branch name through its variable.
+		if s.Status != model.StatusFail || len(s.Findings) == 0 || !strings.Contains(s.Findings[0].Message, "not a version") && !strings.Contains(s.Findings[0].Message, "@latest") {
 			t.Errorf("%q is not a pin: %s %+v", v, s.Status, s.Findings)
 		}
 	}

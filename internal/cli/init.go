@@ -266,9 +266,9 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	}
 	// Decide from what the repository itself says, not from the file being
 	// replaced: with --force the old file's pins would otherwise be lost.
-	looked := forgeVisibility(cmd, r, facts.Discover(r, facts.Overrides{}))
+	looked := forgeVisibility(cmd, r, facts.Discover(r, facts.Overrides{StackDefs: eff.Stacks}))
 	// The header describes the facts as they will be under the file written.
-	run.Facts = facts.Discover(r, facts.Overrides{Visibility: looked, Tier: o.tier})
+	run.Facts = facts.Discover(r, facts.Overrides{Visibility: looked, Tier: o.tier, StackDefs: eff.Stacks})
 	content := renderInit(run, o.preset, o.tier, looked, r.RunnersFound())
 	target := filepath.Join(r.Root, config.FileName)
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec // a config file must be readable by other tools

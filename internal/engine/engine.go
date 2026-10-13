@@ -84,6 +84,7 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 		if err != nil {
 			return nil, err
 		}
+		sc.Exceptions = eff.RenameExceptions(sc.Exceptions, sc.Path+"/"+config.FileName)
 		if err := eff.CheckExceptions(sc.Path+"/"+config.FileName, sc.Exceptions); err != nil {
 			return nil, err
 		}
@@ -208,7 +209,7 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 			continue
 		}
 		if rule.Kind == model.KindCapability {
-			if res, ok := capabilityGap(rule, f, caps); ok {
+			if res, ok := capabilityGap(env, rule, f, caps); ok {
 				res.Scope = sc.Path
 				results = append(results, res)
 			}
@@ -511,6 +512,8 @@ func matches(pattern string, f model.Finding) bool {
 // (`when: "false"`) with a reason a person can read. "" means it runs.
 func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) string {
 	switch {
+	case rule.Stack == stacks.Any && len(f.Stacks) == 0:
+		return "no stack detected here"
 	case rule.Stack == stacks.Any && len(caps.uncovered(rule.Capability, f.Stacks)) == 0:
 		return "every stack here has its own implementation"
 	case rule.Stack != "" && rule.When == "false":
@@ -521,10 +524,15 @@ func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) stri
 
 // capabilityGap is a capability's own result: shown only where a present
 // stack has no implementation, so the gap in the catalog is visible.
-func capabilityGap(rule model.Rule, f facts.Facts, caps capabilities) (model.Result, bool) {
+func capabilityGap(env *celenv.Env, rule model.Rule, f facts.Facts, caps capabilities) (model.Result, bool) {
 	gaps := caps.gaps(rule.ID, f.Stacks)
 	if len(gaps) == 0 || !rule.AppliesToTier(f.Tier) {
 		return model.Result{}, false
+	}
+	if rule.When != "" {
+		if ok, err := env.Check(rule.When, rule.Params); err != nil || !ok {
+			return model.Result{}, false // where the capability does not apply, no gap either
+		}
 	}
 	return model.Result{
 		Rule: rule, Severity: rule.Severity, Status: model.StatusNotApplicable,

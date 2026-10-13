@@ -87,6 +87,32 @@ type Source struct {
 		val  []stacks.Def
 		err  error
 	}
+	aliases struct {
+		once sync.Once
+		val  map[string][]string
+		err  error
+	}
+	// aliasBytes is aliases.yaml of the built-in catalog; a pinned source
+	// reads it from its tree.
+	aliasBytes []byte
+}
+
+// Aliases returns the renamed rule ids and the ids that replace them, from
+// the catalog's aliases.yaml; a catalog without one has none.
+func (s *Source) Aliases() (map[string][]string, error) {
+	s.aliases.once.Do(func() {
+		b := s.aliasBytes
+		if b == nil && s.Rules != nil {
+			if fb, err := fs.ReadFile(s.Rules, "aliases.yaml"); err == nil {
+				b = fb
+			}
+		}
+		s.aliases.val = map[string][]string{}
+		if len(b) > 0 {
+			s.aliases.err = yamlsafe.Unmarshal(b, &s.aliases.val, yaml.Strict())
+		}
+	})
+	return s.aliases.val, s.aliases.err
 }
 
 // StackDefs returns the source's stack definitions, parsed once; a catalog
@@ -104,7 +130,7 @@ func (s *Source) StackDefs() ([]stacks.Def, error) {
 // Builtin returns the catalog the binary was built with: one Source per
 // process, so its library is parsed once.
 var Builtin = sync.OnceValue(func() *Source {
-	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Stacks: data.Stacks, Version: ModuleVersion()}
+	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Stacks: data.Stacks, aliasBytes: data.Aliases, Version: ModuleVersion()}
 })
 
 // Describe names the source for a report.
@@ -733,6 +759,15 @@ func validateRules(c *Catalog) error {
 	seen := map[string]bool{}
 	for i := range c.Rules {
 		r := &c.Rules[i]
+		// An implementation counts for its capability (its satisfiers, its
+		// stack's coverage), so only a library may add one, never an inline
+		// rule that could slip past the capability's policy.
+		if capID, _, ok := model.SplitImplementation(r.ID); ok {
+			return fmt.Errorf("rule %s: an implementation of %s belongs in a catalog's rules/ library (rules/%s.yaml), not in a rules list", r.ID, capID, r.ID)
+		}
+		if r.Kind == model.KindCapability {
+			return fmt.Errorf("rule %s: a capability belongs in a catalog's rules/ library (rules/%s.yaml) next to its implementations", r.ID, r.ID)
+		}
 		r.Source = c.Metadata.Name + "@" + c.Metadata.Version
 		if err := validateRule(r); err != nil {
 			return err

@@ -142,7 +142,76 @@ type Effective struct {
 	Deprecations []string
 	// Stacks are the stack definitions of the catalog source.
 	Stacks []stacks.Def
-	raw    []byte
+	// aliases are the catalog's renamed rule ids and their replacements.
+	aliases map[string][]string
+	raw     []byte
+}
+
+// renamed returns the ids that replace an old rule id no loaded rule covers,
+// and records the deprecation once; nil when the key is not renamed.
+func (e *Effective) renamed(key, where string, byID map[string]*model.Rule) []string {
+	repl, ok := e.aliases[key]
+	if !ok {
+		return nil
+	}
+	for _, r := range byID {
+		if r.Covers(key) {
+			return nil // an id still in use (a catalog's own rule) keeps its meaning
+		}
+	}
+	msg := fmt.Sprintf("%s: %s was renamed to %s; write the new id", where, key, strings.Join(repl, ", "))
+	if !slices.Contains(e.Deprecations, msg) {
+		e.Deprecations = append(e.Deprecations, msg)
+	}
+	return repl
+}
+
+// renameOverrides rewrites override keys that name a renamed rule. An
+// override written for the new id wins over one carried over from the old.
+func (e *Effective) renameOverrides(overrides map[string]catalog.Override, where string, byID map[string]*model.Rule) map[string]catalog.Override {
+	out := make(map[string]catalog.Override, len(overrides))
+	for key, ov := range overrides {
+		if _, done := out[key]; !done {
+			out[key] = ov
+		}
+		repl := e.renamed(key, where, byID)
+		if repl == nil {
+			continue
+		}
+		delete(out, key)
+		for _, id := range repl {
+			if _, explicit := overrides[id]; !explicit {
+				out[id] = ov
+			}
+		}
+	}
+	return out
+}
+
+// RenameExceptions points exceptions written for a renamed rule at the
+// rules that replace it.
+func (e *Effective) RenameExceptions(exs []model.Exception, where string) []model.Exception {
+	byID := make(map[string]*model.Rule, len(e.Rules))
+	for i := range e.Rules {
+		byID[e.Rules[i].ID] = &e.Rules[i]
+	}
+	return e.renameExceptions(exs, where, byID)
+}
+
+func (e *Effective) renameExceptions(exs []model.Exception, where string, byID map[string]*model.Rule) []model.Exception {
+	out := make([]model.Exception, 0, len(exs))
+	for _, ex := range exs {
+		repl := e.renamed(ex.Rule, where, byID)
+		if repl == nil {
+			out = append(out, ex)
+			continue
+		}
+		for _, id := range repl {
+			ex.Rule = id
+			out = append(out, ex)
+		}
+	}
+	return out
 }
 
 // loadStacks reads the source's stack definitions and checks that every
@@ -376,12 +445,13 @@ func (e *Effective) ScopeRules(scopePath string, overrides map[string]catalog.Ov
 		byID[r.ID] = &r
 		order = append(order, r.ID)
 	}
+	overrides = e.renameOverrides(overrides, where, byID)
 	for _, key := range overrideKeys(overrides) {
 		ov := overrides[key]
 		if err := adjustmentOnly(ov, where, key); err != nil {
 			return nil, err
 		}
-		ids, err := matchRuleIDs(key, byID, where)
+		ids, err := e.matchRuleIDs(key, byID, where)
 		if err != nil {
 			return nil, err
 		}
@@ -566,6 +636,9 @@ func (e *Effective) resolve(opts Options) error {
 	if err := e.choosePin(src, &opts.Loader); err != nil {
 		return err
 	}
+	if e.aliases, err = e.Source.Aliases(); err != nil {
+		return fmt.Errorf("catalog %s: aliases.yaml: %w", e.Source.Version, err)
+	}
 	loaded, err := e.loadEntries(opts.Loader, entries)
 	if err != nil {
 		return err
@@ -574,17 +647,9 @@ func (e *Effective) resolve(opts Options) error {
 	sort.SliceStable(loaded, func(i, j int) bool {
 		return catalog.LayerRank(loaded[i].Layer) < catalog.LayerRank(loaded[j].Layer)
 	})
-	for _, r := range e.File.Rules {
-		if r.Locked || r.MinSeverity != "" || r.AllowExceptions != nil {
-			return fmt.Errorf("%s: rules.%s: locked, min_severity and exceptions are policy a catalog sets; the repository's own rules have no layer below them to bind", FileName, r.ID)
-		}
-	}
-	own, err := catalog.Local(FileName, e.raw, e.File.Rules, e.File.Overrides, e.File.Exceptions)
+	own, err := e.ownCatalog(opts.Loader)
 	if err != nil {
-		return fmt.Errorf("%s: %w", FileName, err)
-	}
-	if err := opts.Loader.Expand(own); err != nil {
-		return fmt.Errorf("%s: %w", FileName, err)
+		return err
 	}
 	loaded = append(loaded, own)
 	byID := map[string]*model.Rule{}
@@ -600,6 +665,23 @@ func (e *Effective) resolve(opts Options) error {
 		}
 	}
 	return nil
+}
+
+// ownCatalog is the repository's configuration as the last catalog of the run.
+func (e *Effective) ownCatalog(l catalog.Loader) (*catalog.Catalog, error) {
+	for _, r := range e.File.Rules {
+		if r.Locked || r.MinSeverity != "" || r.AllowExceptions != nil {
+			return nil, fmt.Errorf("%s: rules.%s: locked, min_severity and exceptions are policy a catalog sets; the repository's own rules have no layer below them to bind", FileName, r.ID)
+		}
+	}
+	own, err := catalog.Local(FileName, e.raw, e.File.Rules, e.File.Overrides, e.File.Exceptions)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", FileName, err)
+	}
+	if err := l.Expand(own); err != nil {
+		return nil, fmt.Errorf("%s: %w", FileName, err)
+	}
+	return own, nil
 }
 
 // choosePin settles the one catalog version of the run: the sources file's
@@ -807,7 +889,7 @@ func (e *Effective) addExceptions(c *catalog.Catalog, byID map[string]*model.Rul
 	if err := validateExceptions(c.Exceptions); err != nil {
 		return fmt.Errorf("%s: %w", c.Ref, err)
 	}
-	for _, ex := range c.Exceptions {
+	for _, ex := range e.renameExceptions(c.Exceptions, c.Ref, byID) {
 		known := false
 		for _, r := range byID {
 			if !r.Covers(ex.Rule) {
@@ -837,14 +919,15 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 	}
 	by := c.Metadata.Name + "@" + c.Metadata.Version
 	inline := inlineIDs(c)
-	for _, key := range overrideKeys(c.Overrides) {
-		ov := c.Overrides[key]
+	overrides := e.renameOverrides(c.Overrides, where, byID)
+	for _, key := range overrideKeys(overrides) {
+		ov := overrides[key]
 		if c.Ref == FileName {
 			if err := adjustmentOnly(ov, FileName, key); err != nil {
 				return err
 			}
 		}
-		ids, err := matchRuleIDs(key, byID, where)
+		ids, err := e.matchRuleIDs(key, byID, where)
 		if err != nil {
 			return err
 		}
@@ -859,6 +942,9 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 // catalog's own definitions: those are written as intended, overrides adjust
 // what the catalog took in.
 func (e *Effective) applyToAll(ids []string, key string, inline map[string]bool, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+	if len(ov.Accept) > 0 && !strings.ContainsAny(key, "*?[") && !slices.ContainsFunc(ids, func(id string) bool { return byID[id].Kind == model.KindOutcome }) {
+		return fmt.Errorf("%s: rules.%s: accept only applies to outcome rules, and none of the rules it names is one", where, key)
+	}
 	for _, id := range ids {
 		if inline[id] {
 			continue
@@ -911,7 +997,7 @@ func overrideKeys(overrides map[string]catalog.Override) []string {
 
 // matchRuleIDs resolves an override key to loaded rule ids. An exact key
 // must exist; a pattern may match nothing.
-func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]string, error) {
+func (e *Effective) matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]string, error) {
 	if !strings.ContainsAny(key, "*?[") {
 		// A capability's id reaches its implementations as well.
 		var ids []string
@@ -919,6 +1005,9 @@ func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]stri
 			if r.Covers(key) {
 				ids = append(ids, id)
 			}
+		}
+		if capID, _, ok := model.SplitImplementation(key); ok && len(ids) == 0 && e.isDisabled(capID) {
+			return nil, nil // switched off with its capability: nothing left to adjust
 		}
 		if len(ids) == 0 {
 			return nil, fmt.Errorf("%s: rules.%s: no such rule in the catalogs loaded before this one", where, key)
@@ -946,30 +1035,18 @@ func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]stri
 // and accept reaches only the outcome implementations.
 func (e *Effective) applyOverride(r *model.Rule, key string, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
 	viaCapability := r.ID != key
-	rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
-	if r.Kind == model.KindCapability || (viaCapability && r.Kind != model.KindOutcome) {
-		rc.Accept = nil
+	rc, err := overrideConf(r, ov, where, viaCapability)
+	if err != nil {
+		return err
 	}
-	if r.Kind == model.KindCapability {
-		rc.Params = nil
-	}
-	if ov.Raise != 0 {
-		if ov.Raise < 0 || ov.Severity != "" {
-			return fmt.Errorf("%s: rules.%s: raise must be positive and not combined with severity", where, r.ID)
-		}
-		raised := r.Severity + model.Severity(ov.Raise)
-		if raised > model.SeverityError {
-			raised = model.SeverityError
-		}
-		rc.Severity = raised.String()
-	}
+	before := len(e.Disabled)
 	if err := e.overrideAs(r, rc, where, layer, byID); err != nil {
 		return err
 	}
 	if _, still := byID[r.ID]; !still {
 		// Switched off through its capability: the report names the capability once.
-		if n := len(e.Disabled); viaCapability && n > 1 && e.Disabled[n-1].ID == r.ID && e.isDisabled(key) {
-			e.Disabled = e.Disabled[:n-1]
+		if viaCapability && len(e.Disabled) == before+1 && slices.ContainsFunc(e.Disabled[:before], func(d Disabled) bool { return d.ID == key && d.Where == where }) {
+			e.Disabled = e.Disabled[:before]
 		}
 		return nil
 	}
@@ -977,6 +1054,27 @@ func (e *Effective) applyOverride(r *model.Rule, key string, ov catalog.Override
 		return err
 	}
 	return tightenPolicy(r, ov, where, by)
+}
+
+// overrideConf is the adjustment an override makes to one rule: accept
+// reaches outcome rules only, a capability takes no params of its own, and
+// raise becomes a severity.
+func overrideConf(r *model.Rule, ov catalog.Override, where string, viaCapability bool) (RuleConf, error) {
+	rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
+	if r.Kind == model.KindCapability || (viaCapability && r.Kind != model.KindOutcome) {
+		rc.Accept = nil
+	}
+	if r.Kind == model.KindCapability {
+		rc.Params = nil
+	}
+	if ov.Raise == 0 {
+		return rc, nil
+	}
+	if ov.Raise < 0 || ov.Severity != "" {
+		return rc, fmt.Errorf("%s: rules.%s: raise must be positive and not combined with severity", where, r.ID)
+	}
+	rc.Severity = min(r.Severity+model.Severity(ov.Raise), model.SeverityError).String()
+	return rc, nil
 }
 
 // applyScope replaces a rule's `when` and `tiers` from a catalog override.

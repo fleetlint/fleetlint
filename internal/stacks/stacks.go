@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/goccy/go-yaml"
 
@@ -48,15 +49,35 @@ type Devcontainer struct {
 // Glob a project file at most two directories down, outside directories that
 // hold examples, fixtures or dependencies. Contains and Lacks are regular
 // expressions the file's text must or must not match; With lists paths that
-// must exist as well. A marker with UnlessStack does not count when that
-// stack was detected by its own markers.
+// must exist as well. A marker with UnlessStack does not count when one of
+// those stacks is present; stacks are decided in that order.
 type Marker struct {
-	File        string   `yaml:"file,omitempty" json:"file,omitempty"`
-	Glob        string   `yaml:"glob,omitempty" json:"glob,omitempty"`
-	Contains    string   `yaml:"contains,omitempty" json:"contains,omitempty"`
-	Lacks       string   `yaml:"lacks,omitempty" json:"lacks,omitempty"`
-	With        []string `yaml:"with,omitempty" json:"with,omitempty"`
-	UnlessStack string   `yaml:"unless_stack,omitempty" json:"unless_stack,omitempty"`
+	File        string    `yaml:"file,omitempty" json:"file,omitempty"`
+	Glob        string    `yaml:"glob,omitempty" json:"glob,omitempty"`
+	Contains    string    `yaml:"contains,omitempty" json:"contains,omitempty"`
+	Lacks       string    `yaml:"lacks,omitempty" json:"lacks,omitempty"`
+	With        []string  `yaml:"with,omitempty" json:"with,omitempty"`
+	UnlessStack StackRefs `yaml:"unless_stack,omitempty" json:"unless_stack,omitempty"`
+
+	contains, lacks *regexp.Regexp
+}
+
+// StackRefs is one stack id or a list of them.
+type StackRefs []string
+
+// UnmarshalYAML accepts `unless_stack: flutter` and `unless_stack: [flutter, java]`.
+func (s *StackRefs) UnmarshalYAML(unmarshal func(any) error) error {
+	var one string
+	if err := unmarshal(&one); err == nil {
+		*s = StackRefs{one}
+		return nil
+	}
+	var list []string
+	if err := unmarshal(&list); err != nil {
+		return err
+	}
+	*s = list
+	return nil
 }
 
 // Any is the implementation key for "every stack without its own".
@@ -77,13 +98,20 @@ var legacyYAML []byte
 
 // Legacy is the detection of catalogs written before stacks became data
 // (engine level 2 and older); those catalogs ship no stacks/ directory.
-func Legacy() []Def {
+func Legacy() []Def { return slices.Clone(legacy()) }
+
+var legacy = sync.OnceValue(func() []Def {
 	var defs []Def
 	if err := yamlsafe.Unmarshal(legacyYAML, &defs, yaml.Strict()); err != nil {
 		panic("stacks: legacy.yaml: " + err.Error())
 	}
+	for i := range defs {
+		if err := defs[i].validate(); err != nil {
+			panic("stacks: legacy.yaml: " + err.Error())
+		}
+	}
 	return defs
-}
+})
 
 // Load reads stacks/*.yaml. A file system without stacks/ yields no
 // definitions and no error; the caller falls back to Legacy.
@@ -102,45 +130,80 @@ func Load(fsys fs.FS) ([]Def, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
-		p := path.Join("stacks", e.Name())
-		b, err := fs.ReadFile(fsys, p)
+		d, err := loadDef(fsys, e.Name())
 		if err != nil {
 			return nil, err
-		}
-		var d Def
-		if err := yamlsafe.Unmarshal(b, &d, yaml.Strict()); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		if want := strings.TrimSuffix(e.Name(), ".yaml"); d.ID != want {
-			return nil, fmt.Errorf("%s: stack id %q must be %q (the file name spells the id)", p, d.ID, want)
-		}
-		if err := d.validate(); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
 		}
 		defs = append(defs, d)
 	}
 	sort.Slice(defs, func(i, j int) bool { return defs[i].ID < defs[j].ID })
-	return defs, nil
+	return defs, checkRefs(defs)
 }
 
-func (d Def) validate() error {
+func loadDef(fsys fs.FS, name string) (Def, error) {
+	p := path.Join("stacks", name)
+	var d Def
+	b, err := fs.ReadFile(fsys, p)
+	if err != nil {
+		return d, err
+	}
+	if err := yamlsafe.Unmarshal(b, &d, yaml.Strict()); err != nil {
+		return d, fmt.Errorf("%s: %w", p, err)
+	}
+	if want := strings.TrimSuffix(name, ".yaml"); d.ID != want {
+		return d, fmt.Errorf("%s: stack id %q must be %q (the file name spells the id)", p, d.ID, want)
+	}
+	if err := d.validate(); err != nil {
+		return d, fmt.Errorf("%s: %w", p, err)
+	}
+	return d, nil
+}
+
+// checkRefs refuses an unless_stack that names no defined stack.
+func checkRefs(defs []Def) error {
+	for _, d := range defs {
+		for _, m := range d.Detect {
+			for _, s := range m.UnlessStack {
+				if _, ok := Find(defs, s); !ok {
+					return fmt.Errorf("stacks/%s.yaml: unless_stack names %q, which is not a defined stack", d.ID, s)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (d *Def) validate() error {
 	if !idRe.MatchString(d.ID) || d.ID == Any {
 		return fmt.Errorf("stack id %q: lowercase letters, digits and dashes, and not %q", d.ID, Any)
 	}
 	if d.Title == "" || len(d.Detect) == 0 {
 		return fmt.Errorf("stack %s: title and at least one detect marker are required", d.ID)
 	}
-	for i, m := range d.Detect {
+	for i := range d.Detect {
+		m := &d.Detect[i]
 		if (m.File == "") == (m.Glob == "") {
 			return fmt.Errorf("stack %s: detect[%d] needs exactly one of file and glob", d.ID, i)
 		}
-		for _, rx := range []string{m.Contains, m.Lacks} {
-			if _, err := regexp.Compile(rx); err != nil {
-				return fmt.Errorf("stack %s: detect[%d]: %w", d.ID, i, err)
-			}
+		if m.Glob != "" && !repo.ValidGlob(m.Glob) {
+			return fmt.Errorf("stack %s: detect[%d]: glob %q is not valid", d.ID, i, m.Glob)
+		}
+		var err error
+		if m.contains, err = compileOptional(m.Contains); err != nil {
+			return fmt.Errorf("stack %s: detect[%d]: %w", d.ID, i, err)
+		}
+		if m.lacks, err = compileOptional(m.Lacks); err != nil {
+			return fmt.Errorf("stack %s: detect[%d]: %w", d.ID, i, err)
 		}
 	}
 	return nil
+}
+
+func compileOptional(rx string) (*regexp.Regexp, error) {
+	if rx == "" {
+		return nil, nil
+	}
+	return regexp.Compile(rx)
 }
 
 // IDs returns the stack ids in order.
@@ -163,36 +226,60 @@ func Find(defs []Def, id string) (Def, bool) {
 }
 
 // Detect returns the sorted ids of the stacks present at the repository's
-// (scope) root. Markers with UnlessStack are weighed after the others.
+// (scope) root. A stack is decided after the stacks its markers' unless_stack
+// name, so "java unless kotlin" sees kotlin's result; a cycle is decided
+// as if those stacks were absent.
 func Detect(r *repo.Repo, defs []Def) []string {
-	found := map[string]bool{}
-	for _, d := range defs {
-		if slices.ContainsFunc(d.Detect, func(m Marker) bool { return m.UnlessStack == "" && m.matches(r) }) {
-			found[d.ID] = true
+	found, decided := map[string]bool{}, map[string]bool{}
+	for len(decided) < len(defs) {
+		if decideReady(r, defs, found, decided) {
+			continue
+		}
+		for _, d := range defs { // a cycle: decide the rest without waiting
+			if !decided[d.ID] {
+				found[d.ID], decided[d.ID] = d.present(r, found), true
+			}
 		}
 	}
-	first := maps(found)
-	for _, d := range defs {
-		if !found[d.ID] && slices.ContainsFunc(d.Detect, func(m Marker) bool {
-			return m.UnlessStack != "" && !first[m.UnlessStack] && m.matches(r)
-		}) {
-			found[d.ID] = true
+	out := []string{}
+	for id, ok := range found {
+		if ok {
+			out = append(out, id)
 		}
-	}
-	out := make([]string, 0, len(found))
-	for id := range found {
-		out = append(out, id)
 	}
 	sort.Strings(out)
 	return out
 }
 
-func maps(m map[string]bool) map[string]bool {
-	out := make(map[string]bool, len(m))
-	for k, v := range m {
-		out[k] = v
+// decideReady decides every stack whose unless_stack stacks are decided and
+// reports whether it decided any.
+func decideReady(r *repo.Repo, defs []Def, found, decided map[string]bool) bool {
+	progress := false
+	for _, d := range defs {
+		if !decided[d.ID] && d.ready(decided) {
+			found[d.ID] = d.present(r, found)
+			decided[d.ID], progress = true, true
+		}
 	}
-	return out
+	return progress
+}
+
+// ready reports whether every stack the definition's markers defer to is decided.
+func (d Def) ready(decided map[string]bool) bool {
+	for _, m := range d.Detect {
+		for _, s := range m.UnlessStack {
+			if !decided[s] && s != d.ID {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (d Def) present(r *repo.Repo, found map[string]bool) bool {
+	return slices.ContainsFunc(d.Detect, func(m Marker) bool {
+		return !slices.ContainsFunc(m.UnlessStack, func(s string) bool { return found[s] }) && m.matches(r)
+	})
 }
 
 // Manifests are the names that mark a directory as a project, for
@@ -230,17 +317,17 @@ func (m Marker) matches(r *repo.Repo) bool {
 }
 
 func (m Marker) content(r *repo.Repo, p string) bool {
-	if m.Contains == "" && m.Lacks == "" {
+	if m.contains == nil && m.lacks == nil {
 		return true
 	}
 	text, ok := r.Text(p)
 	if !ok {
 		return false
 	}
-	if m.Contains != "" && !regexp.MustCompile(m.Contains).MatchString(text) {
+	if m.contains != nil && !m.contains.MatchString(text) {
 		return false
 	}
-	return m.Lacks == "" || !regexp.MustCompile(m.Lacks).MatchString(text)
+	return m.lacks == nil || !m.lacks.MatchString(text)
 }
 
 // projectFile accepts a file at most two directories down (src/App/App.csproj)

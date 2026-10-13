@@ -20,11 +20,21 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - The Hugo image for `container: docker|podman` is pinned to a release instead of `latest`.
 - `fleetlint fix` turns the toolchain caches off in the release workflow it writes (a cache a pull request could fill must not feed signed artifacts), and the renovate.json it writes waits three days before proposing a new release (`minimumReleaseAge`).
 - Disabling a capability is listed once under its id, not once per implementation.
+- **Renamed rule ids keep working.** An old id (`lint/go-config` from 0.3) in `overrides:`, `exceptions:` or `use:` reaches the rules that replace it, and the run prints a deprecation warning naming them. The catalog lists the renames in `aliases.yaml`.
+- In a workspace member or nested project, `workflows()` and `tagged_workflows()` return the repository's CI files as `../` paths: CI lives at the root, and per-stack rules in a member see it.
+- Makefile recipes are read with simple variables expanded (`$(GO_LICENSES) check` reads as the command it runs), so `taskrunner.recipes` shows the tools a target really invokes.
+- `unless_stack` in a stack definition takes a list, and stacks are decided in that order; an unknown stack there fails the load.
+- Capabilities and implementations live in a catalog's `rules/` library only. A rules list (a catalog's or the repository's) refuses a capability or an `<capability>/<stack>` id: an inline implementation could otherwise satisfy a locked capability.
+- An implementation inherits the capability's `params` as defaults. A catalog library that redefines a capability rebuilds the shared implementations on its definition, so its severity, policy and gate reach them. A partial in an implementation states its severity.
+- Overriding an implementation of a capability that is switched off is not an error; `accept:` on a capability without outcome implementations is.
 
 ### Fixed
 
 - A `foreach` item the expression builds itself (a map literal, `map()`, `flatten()`) locates its finding with path, line and label like an item an accessor returns; the finding showed the dumped map before.
 - `jobs()` reports `runs_on` when `runs-on` is a list or a `{group, labels}` map. `commits()` has `root`, true for a commit without parents.
+- `fleetlint init` detects stacks with the catalog's definitions.
+- A GitLab `include: local:` without a wildcard names one file, not every file of that name in the tree; a `timeout:` in days or as bare seconds is read.
+- A capability's own `when` also applies to the "no implementation" note.
 - `repo.hooks` recognises lefthook under all its file names (`lefthook.yml`, `.yaml`, `.toml`, `.json`, `.jsonc`, with or without a leading dot).
 
 ## [0.3.0] - 2026-10-13

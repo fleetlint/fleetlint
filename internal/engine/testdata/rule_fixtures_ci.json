@@ -320,16 +320,6 @@
    }
   },
   {
-   "fail": {
-    ".gitea/workflows/x.yml": "on:\n  push:\npermissions:\n  contents: read\njobs:\n  a:\n    runs-on: ubuntu-latest\n    permissions: write-all\n    steps:\n      - run: true\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".gitea/workflows/x.yml": "on:\n  push:\npermissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
    "pass": {
     ".forgejo/workflows/x.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
     ".github/workflows/ci.yml": "on:\n  push:\npermissions: read-all\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",

@@ -147,10 +147,15 @@ func (r *Repo) Makefile(rel string) (*Makefile, bool) {
 
 func parseMakefile(text string) *Makefile {
 	mf := &Makefile{Deps: map[string][]string{}, Recipes: map[string][]string{}}
+	vars := map[string]string{}
 	var current string
 	for _, line := range strings.Split(text, "\n") {
 		if strings.HasPrefix(line, "\t") && current != "" {
 			mf.Recipes[current] = append(mf.Recipes[current], strings.TrimSpace(line))
+			continue
+		}
+		if assignMakeVar(vars, line) {
+			current = ""
 			continue
 		}
 		if m := makeTargetRe.FindStringSubmatch(line); m != nil && !strings.HasPrefix(m[1], ".") {
@@ -162,7 +167,49 @@ func parseMakefile(text string) *Makefile {
 		}
 	}
 	sort.Strings(mf.Targets)
+	for _, lines := range mf.Recipes {
+		for i, l := range lines {
+			lines[i] = expandMakeVars(l, vars)
+		}
+	}
 	return mf
+}
+
+var (
+	makeVarRe    = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*(\?=|::?=|=)\s*(.*)$`)
+	makeVarUseRe = regexp.MustCompile(`\$[({]([A-Za-z_][A-Za-z0-9_]*)[)}]`)
+)
+
+// assignMakeVar records a simple variable assignment; `?=` keeps an earlier value.
+func assignMakeVar(vars map[string]string, line string) bool {
+	m := makeVarRe.FindStringSubmatch(line)
+	if m == nil {
+		return false
+	}
+	if _, set := vars[m[1]]; !set || m[2] != "?=" {
+		value, _, _ := strings.Cut(m[3], "#") // make ends an assignment at a comment
+		vars[m[1]] = strings.TrimSpace(value)
+	}
+	return true
+}
+
+// expandMakeVars replaces $(NAME) and ${NAME} with simple assignments of the
+// same Makefile, a few levels deep, so a rule sees `go run …/go-licenses
+// check` where the recipe says `$(GO_LICENSES) check`. Anything else stays.
+func expandMakeVars(line string, vars map[string]string) string {
+	for range 5 {
+		next := makeVarUseRe.ReplaceAllStringFunc(line, func(m string) string {
+			if v, ok := vars[makeVarUseRe.FindStringSubmatch(m)[1]]; ok {
+				return v
+			}
+			return m
+		})
+		if next == line {
+			break
+		}
+		line = next
+	}
+	return line
 }
 
 // addTargets records the targets of one rule line and returns the one that

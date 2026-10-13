@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -42,7 +43,7 @@ var Accessors = []Accessor{
 	{"makefile(path: string) -> map", "`{targets: list<string>, deps: map<string, list<string>>, recipes: map<string, list<string>>}`; null when absent."},
 	{"scan(path: string, regex: string) -> list<int>", "1-based line numbers where the regex matches."},
 	{"matchesAny(list: list<string>, regex: string) -> bool", "True if any element matches the regex."},
-	{"workflows() -> list<string>", "Paths of CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes."},
+	{"workflows() -> list<string>", "Paths of the repository's CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes. CI lives at the repository root, so in a member scope these are the root's files as `../` paths."},
 	{"ci_kind(path: string) -> string", "The CI system of a file from `workflows()`: `github`, `gitea`, `forgejo` or `gitlab`."},
 	{"tagged_workflows() -> list<string>", "CI files a tag push starts (`on.push.tags`; GitLab rules on `$CI_COMMIT_TAG` or `only: tags`), i.e. release pipelines."},
 	{"steps(path: string) -> list<map>", "Every step of every job in a CI file, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields. A GitLab job is one step whose `run` is its before_script, script and after_script."},
@@ -75,6 +76,9 @@ type Env struct {
 	repo  *repo.Repo
 	facts facts.Facts
 	cache map[string]cel.Program
+	// rootCI holds the repository's CI files as seen from a member scope.
+	rootCI      sync.Once
+	rootCIFiles []string
 }
 
 // costLimit bounds one evaluation (about half a minute at worst), so a
@@ -246,10 +250,11 @@ func native(v any) any {
 		return nativeVal(val)
 	}
 	if l, ok := v.([]any); ok {
+		out := make([]any, len(l))
 		for i, x := range l {
-			l[i] = native(x)
+			out[i] = native(x)
 		}
-		return l
+		return out
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Map {
@@ -405,11 +410,28 @@ func copyMap(in map[string]any) map[string]any {
 // to decide whether a string item in `foreach` names a file.
 func (e *Env) HasFile(path string) bool { return e.repo.Has(path) }
 
-func (e *Env) workflowPaths() []string { return ci.Files(e.repo) }
+// workflowPaths are the repository's CI files. CI configuration lives at the
+// repository root, so in a member scope they are the root's, as ../ paths.
+func (e *Env) workflowPaths() []string {
+	if e.repo.Scope == "" {
+		return ci.Files(e.repo)
+	}
+	e.rootCI.Do(func() {
+		root, err := e.repo.Scoped("")
+		if err != nil {
+			return
+		}
+		up := strings.Repeat("../", strings.Count(e.repo.Scope, "/")+1)
+		for _, f := range ci.Files(root) {
+			e.rootCIFiles = append(e.rootCIFiles, up+f)
+		}
+	})
+	return slices.Clone(e.rootCIFiles)
+}
 
 func (e *Env) taggedWorkflows() []string {
 	var out []string
-	for _, wf := range ci.Files(e.repo) {
+	for _, wf := range e.workflowPaths() {
 		if len(ci.TagPatterns(e.repo, wf)) > 0 {
 			out = append(out, wf)
 		}

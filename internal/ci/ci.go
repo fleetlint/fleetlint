@@ -36,7 +36,7 @@ func Files(r *repo.Repo) []string {
 		out = append(out, f)
 		for _, inc := range Includes(r, f) {
 			if inc["type"] == "local" {
-				out = append(out, r.Glob(strings.TrimPrefix(str(inc["target"]), "/"))...)
+				out = append(out, localInclude(r, strings.TrimPrefix(str(inc["target"]), "/"))...)
 			}
 		}
 	}
@@ -44,9 +44,30 @@ func Files(r *repo.Repo) []string {
 	return slices.Compact(out)
 }
 
+// localInclude resolves a local include from the repository root: a path
+// names that file, a glob matches at that depth only.
+func localInclude(r *repo.Repo, target string) []string {
+	if !strings.ContainsAny(target, "*?[") {
+		if r.Has(target) {
+			return []string{target}
+		}
+		return nil
+	}
+	var out []string
+	for _, m := range r.Glob(target) {
+		if strings.Contains(target, "**") || strings.Count(m, "/") == strings.Count(target, "/") {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
 // Kind names the CI system a file belongs to; a file outside the Actions
 // directories is GitLab's (the pipeline or a file it includes).
 func Kind(path string) string {
+	for strings.HasPrefix(path, "../") {
+		path = path[3:] // a member scope sees the root's files
+	}
 	switch {
 	case strings.HasPrefix(path, ".github/"):
 		return GitHub
@@ -303,14 +324,20 @@ func includeEntries(e any) []map[string]any {
 	return nil
 }
 
-var durationRe = regexp.MustCompile(`(?i)(\d+)\s*(h|hours?|hrs?|m|min|mins|minutes?|s|sec|secs|seconds?)\b`)
+var durationRe = regexp.MustCompile(`(?i)(\d+)\s*(d|days?|h|hours?|hrs?|m|min|mins|minutes?|s|sec|secs|seconds?)\b`)
 
-// gitlabMinutes reads a GitLab duration ("1h 30m", "90 minutes", "3600s").
+// gitlabMinutes reads a GitLab duration ("1h 30m", "90 minutes", "2 days";
+// a bare number is seconds).
 func gitlabMinutes(s string) int64 {
+	if n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+		return max(n/60, 1)
+	}
 	var seconds int64
 	for _, m := range durationRe.FindAllStringSubmatch(s, -1) {
 		n, _ := strconv.ParseInt(m[1], 10, 64)
 		switch strings.ToLower(m[2])[0] {
+		case 'd':
+			seconds += n * 86400
 		case 'h':
 			seconds += n * 3600
 		case 'm':
