@@ -173,11 +173,11 @@ func TestRepositoryGrammar(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
-	eff, err := load(t, "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - use: lint/go-config\n  - {id: acme/own, kind: expr, severity: warning, expr: \"true\", message: m}\noverrides:\n  repo/gitignore-present: {severity: error}\n")
+	eff, err := load(t, "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - use: lint/configured/go\n  - {id: acme/own, kind: expr, severity: warning, expr: \"true\", message: m}\noverrides:\n  repo/gitignore-present: {severity: error}\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := ruleByID(eff, "lint/go-config"); !ok {
+	if _, ok := ruleByID(eff, "lint/configured/go"); !ok {
 		t.Error("the repository may select library rules")
 	}
 	if r, _ := ruleByID(eff, "acme/own"); r.Title != "acme/own" || r.Requirement != "m" || r.Layer != catalog.LayerRepo {

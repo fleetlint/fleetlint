@@ -967,6 +967,10 @@ func (e *Effective) applyOverride(r *model.Rule, key string, ov catalog.Override
 		return err
 	}
 	if _, still := byID[r.ID]; !still {
+		// Switched off through its capability: the report names the capability once.
+		if n := len(e.Disabled); viaCapability && n > 1 && e.Disabled[n-1].ID == r.ID && e.isDisabled(key) {
+			e.Disabled = e.Disabled[:n-1]
+		}
 		return nil
 	}
 	if err := applyScope(r, ov, where, viaCapability); err != nil {

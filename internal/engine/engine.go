@@ -281,27 +281,19 @@ func notApplicable(env *celenv.Env, f facts.Facts, rule model.Rule, caps capabil
 	if !rule.AppliesToStacks(f.Stacks) {
 		return true, fmt.Sprintf("stacks %v not in %v", f.Stacks, rule.Stacks), nil
 	}
-	if rule.Stack == stacks.Any {
-		if len(caps.uncovered(rule.Capability, f.Stacks)) == 0 {
-			return true, "every stack here has its own implementation", nil
-		}
+	if why := implementationScope(f, rule, caps); why != "" {
+		return true, why, nil
 	}
-	if rule.Gate != "" {
-		ok, err := env.Check(rule.Gate, rule.Params)
+	for _, c := range []struct{ label, expr, why string }{{"gate", rule.Gate, "capability when: "}, {"when", rule.When, "when: "}} {
+		if c.expr == "" {
+			continue
+		}
+		ok, err := env.Check(c.expr, rule.Params)
 		if err != nil {
-			return false, "", fmt.Errorf("gate: %w", err)
+			return false, "", fmt.Errorf("%s: %w", c.label, err)
 		}
 		if !ok {
-			return true, "capability when: " + rule.Gate, nil
-		}
-	}
-	if rule.When != "" {
-		ok, err := env.Check(rule.When, rule.Params)
-		if err != nil {
-			return false, "", fmt.Errorf("when: %w", err)
-		}
-		if !ok {
-			return true, "when: " + rule.When, nil
+			return true, c.why + c.expr, nil
 		}
 	}
 	return false, "", nil
@@ -512,6 +504,19 @@ func matches(pattern string, f model.Finding) bool {
 		return false
 	}
 	return repo.MatchGlob(pattern, f.Path)
+}
+
+// implementationScope says why an implementation does not run here: the
+// stack-neutral one when every stack has its own, a stack's exemption
+// (`when: "false"`) with a reason a person can read. "" means it runs.
+func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) string {
+	switch {
+	case rule.Stack == stacks.Any && len(caps.uncovered(rule.Capability, f.Stacks)) == 0:
+		return "every stack here has its own implementation"
+	case rule.Stack != "" && rule.When == "false":
+		return "the capability does not apply to " + rule.Stack + " (see the requirement)"
+	}
+	return ""
 }
 
 // capabilityGap is a capability's own result: shown only where a present

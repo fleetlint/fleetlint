@@ -1,0 +1,942 @@
+{
+ "lint/configured/go": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: '2'\n"
+   },
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "no Go linter"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.json": "{\"version\": \"2\"}"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.json": "{\"run\": {}}"
+   },
+   "message": "v1 format"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.toml": "version = \"2\"\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "linters:\n  enable: [errcheck]\n"
+   },
+   "message": "golangci-lint migrate"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "staticcheck.conf": "checks = [\"all\"]\n",
+    "revive.toml": ""
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "staticcheck.conf": "checks = [\"all\"]\n"
+   }
+  }
+ ],
+ "lint/strict/go": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nlinters:\n  enable: [errcheck, govet, staticcheck, errorlint, gosec, gocognit, funlen]\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nlinters:\n  default: standard\n"
+   },
+   "message": "(errorlint)"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nlinters:\n  default: all\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nlinters:\n  default: all\n  disable: [funlen]\n"
+   },
+   "message": "(funlen)"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: '2'\nlinters:\n  enable: [errorlint, gosec, gocognit, funlen]\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: '2'\nlinters:\n  default: none\n  enable: [errorlint, gosec, gocognit, funlen]\n"
+   },
+   "message": "(errcheck)"
+  }
+ ],
+ "lint/configured/python": [
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.ruff]\nline-length = 100\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n"
+   },
+   "message": "no Python linter"
+  },
+  {
+   "pass": {
+    "requirements.txt": "requests\n",
+    "ruff.toml": "line-length = 100\n"
+   },
+   "fail": {
+    "requirements.txt": "requests\n",
+    "setup.cfg": "[metadata]\nname = x\n"
+   }
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    ".ruff.toml": "[lint]\nselect = [\"ALL\"]\n"
+   }
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "setup.cfg": "[flake8]\nmax-line-length = 100\n"
+   }
+  }
+ ],
+ "lint/strict/python": [
+  {
+   "pass": {
+    "pyproject.toml": "[tool.ruff.lint]\nselect = [\"ALL\"]\n"
+   },
+   "fail": {
+    "pyproject.toml": "[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\", \"B\", \"UP\", \"SIM\", \"BLE\", \"S\", \"C90\"]\n"
+   },
+   "message": "(T20)"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\"]\nextend-select = [\"B\", \"UP\", \"SIM\", \"BLE\", \"S\", \"C90\", \"T20\"]\n"
+   },
+   "fail": {
+    "pyproject.toml": "[tool.ruff.lint]\nselect = [\"ALL\"]\nignore = [\"S\"]\n"
+   },
+   "message": "(S)"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "ruff.toml": "[lint]\nselect = [\"E\", \"F\", \"I\", \"B\", \"UP\", \"SIM\", \"BLE\", \"S\", \"C90\", \"T20\"]\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "ruff.toml": "line-length = 100\n"
+   },
+   "message": "(E)"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "ruff.toml": "select = [\"ALL\"]\n"
+   },
+   "fail": {
+    "pyproject.toml": "[tool.ruff.lint]\nselect = [\"ALL\"]\n",
+    ".ruff.toml": "[lint]\nselect = [\"E\"]\n"
+   }
+  }
+ ],
+ "lint/configured/rust": [
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\npanic = \"deny\"\n"
+   },
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n"
+   },
+   "message": "no [lints] table"
+  },
+  {
+   "pass": {
+    "Cargo.toml": "[workspace]\nmembers = []\n[workspace.lints.clippy]\npanic = \"deny\"\n"
+   }
+  }
+ ],
+ "lint/strict/rust": [
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"warn\"\npanic = \"deny\"\ntodo = \"deny\"\ndbg_macro = { level = \"deny\" }\n"
+   },
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"warn\"\npanic = \"allow\"\ntodo = \"deny\"\ndbg_macro = \"deny\"\n"
+   },
+   "message": "(panic)"
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"warn\"\npanic = \"deny\"\ntodo = \"deny\"\ndbg_macro = { level = \"allow\", priority = 1 }\n"
+   },
+   "message": "(dbg_macro)"
+  },
+  {
+   "pass": {
+    "Cargo.toml": "[workspace]\nmembers = []\n[workspace.lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"deny\"\npanic = \"forbid\"\ntodo = \"deny\"\ndbg_macro = \"deny\"\n"
+   }
+  }
+ ],
+ "lint/configured/node": [
+  {
+   "pass": {
+    "package.json": "{}",
+    "eslint.config.mjs": "export default [];\n"
+   },
+   "fail": {
+    "package.json": "{}"
+   },
+   "message": "no linter configuration"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "biome.jsonc": "{}"
+   },
+   "fail": {
+    "package.json": "{}",
+    ".eslintrc.json": "{}"
+   },
+   "message": "ESLint 10"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    ".oxlintrc.json": "{}"
+   },
+   "fail": {
+    "package.json": "{\"eslintConfig\": {\"extends\": \"eslint:recommended\"}}"
+   },
+   "message": "legacy"
+  }
+ ],
+ "types/strict/node": [
+  {
+   "pass": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"compilerOptions\": {\"strict\": true, \"noUncheckedIndexedAccess\": true, \"exactOptionalPropertyTypes\": true, \"noImplicitOverride\": true, \"noFallthroughCasesInSwitch\": true}}"
+   },
+   "fail": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"compilerOptions\": {\"strict\": true, \"noUncheckedIndexedAccess\": false, \"exactOptionalPropertyTypes\": true, \"noImplicitOverride\": true, \"noFallthroughCasesInSwitch\": true}}"
+   },
+   "message": "(noUncheckedIndexedAccess)"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"extends\": \"@tsconfig/strictest/tsconfig.json\", \"compilerOptions\": {\"outDir\": \"dist\"}}"
+   },
+   "fail": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"extends\": \"@tsconfig/strictest/tsconfig.json\", \"compilerOptions\": {\"exactOptionalPropertyTypes\": false}}"
+   },
+   "message": "(exactOptionalPropertyTypes)"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"extends\": \"./tsconfig.base.json\", \"include\": [\"src\"]}",
+    "tsconfig.base.json": "{\"compilerOptions\": {\"strict\": true, \"noUncheckedIndexedAccess\": true, \"exactOptionalPropertyTypes\": true, \"noImplicitOverride\": true, \"noFallthroughCasesInSwitch\": true}}"
+   },
+   "fail": {
+    "package.json": "{}",
+    "tsconfig.json": "{\"extends\": \"./tsconfig.base\", \"include\": [\"src\"]}",
+    "tsconfig.base.json": "{\"compilerOptions\": {\"strict\": true}}"
+   },
+   "message": "(noUncheckedIndexedAccess)"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "tsconfig.json": "{\n  // strict on\n  \"compilerOptions\": {\"strict\": true, \"noUncheckedIndexedAccess\": true, \"exactOptionalPropertyTypes\": true, \"noImplicitOverride\": true, \"noFallthroughCasesInSwitch\": true,},\n}\n"
+   }
+  }
+ ],
+ "lint/configured/java": [
+  {
+   "pass": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin></plugins></build></project>\n"
+   },
+   "fail": {
+    "pom.xml": "<project></project>\n"
+   },
+   "message": "no static analyzer"
+  },
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    java\n    id(\"com.github.spotbugs\") version \"6.0.0\"\n}\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins {\n    java\n}\n",
+    "config/checkstyle/checkstyle.xml": "<module name=\"Checker\"/>\n"
+   },
+   "message": "no build file applies"
+  },
+  {
+   "pass": {
+    "build.gradle": "plugins {\n    id 'java'\n    id 'checkstyle'\n}\n"
+   }
+  },
+  {
+   "pass": {
+    "build.gradle": "plugins {\n    id 'java'\n    id 'net.ltgt.errorprone' version '4.0.0'\n}\n"
+   }
+  }
+ ],
+ "lint/strict/java": [
+  {
+   "pass": {
+    "pom.xml": "<project><plugin><artifactId>maven-checkstyle-plugin</artifactId><configuration><violationSeverity>warning</violationSeverity></configuration></plugin></project>\n"
+   },
+   "fail": {
+    "pom.xml": "<project><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin></project>\n"
+   },
+   "message": "lets findings pass"
+  },
+  {
+   "pass": {
+    "pom.xml": "<project><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin></project>\n",
+    "config/checkstyle/checkstyle.xml": "<module name=\"Checker\">\n  <property name=\"severity\" value=\"error\"/>\n</module>\n"
+   },
+   "fail": {
+    "pom.xml": "<project><plugin><artifactId>spotbugs-maven-plugin</artifactId><configuration><failOnError>false</failOnError></configuration></plugin></project>\n"
+   }
+  },
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    java\n    id(\"net.ltgt.errorprone\") version \"4.0.0\"\n}\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins {\n    java\n    checkstyle\n}\ncheckstyle {\n    isIgnoreFailures = true\n    maxWarnings = 0\n}\n"
+   }
+  }
+ ],
+ "lint/configured/kotlin": [
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "message": "detekt is not applied"
+  },
+  {
+   "pass": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "settings.gradle.kts": "plugins { id(\"dev.detekt\") version \"2.0.0\" }\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+   },
+   "message": "no build file applies"
+  }
+ ],
+ "lint/strict/kotlin": [
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+   },
+   "message": "(exceptions.SwallowedException)"
+  },
+  {
+   "fail": {
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
+    "config/detekt/detekt.yml": "exceptions:\nempty-blocks:\n  EmptyCatchBlock:\n"
+   },
+   "message": "detekt rule is not active"
+  }
+ ],
+ "lint/configured/dotnet": [
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Build.props": "<Project><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><AnalysisLevel>latest-all</AnalysisLevel></PropertyGroup></Project>\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n"
+   },
+   "message": "no analyzer configuration"
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".editorconfig": "[*.cs]\ndotnet_analyzer_diagnostic.severity = warning\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".editorconfig": "[*.cs]\ndotnet_analyzer_diagnostic.severity = none\n"
+   }
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Packages.props": "<Project><ItemGroup><PackageVersion Include=\"Meziantou.Analyzer\" Version=\"2.0.0\"/></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "lint/strict/dotnet": [
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Build.props": "<Project><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><AnalysisLevel>latest-all</AnalysisLevel></PropertyGroup></Project>\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Build.props": "<Project><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><AnalysisLevel>latest-minimum</AnalysisLevel></PropertyGroup></Project>\n"
+   },
+   "message": "(AnalysisLevel)"
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Build.props": "<Project><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><AnalysisLevel>9.0-recommended</AnalysisLevel></PropertyGroup></Project>\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    "Directory.Build.props": "<Project><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><AnalysisLevel>latest-none</AnalysisLevel></PropertyGroup></Project>\n"
+   }
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>\n",
+    ".editorconfig": "[*]\ndotnet_analyzer_diagnostic.severity = error\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".editorconfig": "[*.cs]\ndotnet_analyzer_diagnostic.severity = warning\n"
+   },
+   "message": "(Nullable)"
+  }
+ ],
+ "lint/configured/cpp": [
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\nset(CMAKE_CXX_CLANG_TIDY clang-tidy)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\n"
+   },
+   "fail": {
+    "CMakeLists.txt": "project(x)\n"
+   },
+   "message": "no static analyzer"
+  },
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\n",
+    "Makefile": "lint:\n\trun-clang-tidy -p build\n"
+   },
+   "fail": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\n"
+   },
+   "message": "workflow runs clang-tidy"
+  },
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: cppcheck --error-exitcode=1 src\n"
+   }
+  },
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".gitlab-ci.yml": "lint:\n  script:\n    - cppcheck --error-exitcode=1 src\n"
+   }
+  }
+ ],
+ "lint/strict/cpp": [
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\nWarningsAsErrors: '*'\n"
+   },
+   "fail": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\nWarningsAsErrors: ''\n"
+   },
+   "message": "WarningsAsErrors"
+  },
+  {
+   "fail": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-tidy": "Checks: '-*,bugprone-*'\n"
+   }
+  }
+ ],
+ "lint/configured/ruby": [
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "AllCops:\n  NewCops: enable\n"
+   },
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\n"
+   },
+   "message": "no RuboCop"
+  },
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem \"standard\", group: :development\n"
+   }
+  }
+ ],
+ "lint/strict/ruby": [
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "AllCops:\n  NewCops: enable\n"
+   },
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "AllCops:\n  NewCops: pending\n"
+   },
+   "message": "NewCops"
+  },
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "inherit_from: .rubocop_base.yml\n",
+    ".rubocop_base.yml": "AllCops:\n  NewCops: enable\n"
+   },
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "inherit_from: [.rubocop_todo.yml]\n",
+    ".rubocop_todo.yml": "Metrics/MethodLength:\n  Max: 80\n"
+   }
+  },
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".rubocop.yml": "require: standard\ninherit_gem:\n  standard: config/base.yml\n"
+   }
+  }
+ ],
+ "lint/configured/php": [
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "phpstan.neon.dist": "parameters:\n  level: max\n"
+   },
+   "fail": {
+    "composer.json": "{\"name\": \"x/x\"}"
+   },
+   "message": "no static analyzer"
+  },
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "psalm.xml": "<psalm errorLevel=\"1\"/>\n"
+   }
+  }
+ ],
+ "types/strict/php": [
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "phpstan.neon.dist": "parameters:\n  level: max\n  paths:\n    - src\n"
+   },
+   "fail": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "phpstan.neon.dist": "parameters:\n  level: 6\n"
+   },
+   "message": "below its strictest level"
+  },
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "phpstan.dist.neon": "parameters:\n    level: 10\n"
+   },
+   "fail": {
+    "composer.json": "{\"name\": \"x/x\"}"
+   },
+   "message": "no static analyzer"
+  },
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "psalm.xml.dist": "<?xml version=\"1.0\"?>\n<psalm errorLevel=\"1\"></psalm>\n"
+   },
+   "fail": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "psalm.xml": "<psalm errorLevel=\"3\"/>\n"
+   }
+  }
+ ],
+ "lint/configured/flutter": [
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "include: package:flutter_lints/flutter.yaml\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n"
+   },
+   "message": "analysis_options.yaml"
+  },
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "linter:\n  rules:\n    - avoid_print\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "analyzer:\n  language:\n    strict-casts: true\n"
+   }
+  }
+ ],
+ "types/strict/flutter": [
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "analyzer:\n  language:\n    strict-casts: true\n    strict-inference: true\n    strict-raw-types: true\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "analyzer:\n  language:\n    strict-casts: true\n"
+   },
+   "message": "(strict-inference)"
+  },
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "include: package:very_good_analysis/analysis_options.yaml\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "include: package:very_good_analysis/analysis_options.yaml\nanalyzer:\n  language:\n    strict-raw-types: false\n"
+   },
+   "message": "(strict-raw-types)"
+  },
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "include: lints/base.yaml\n",
+    "lints/base.yaml": "analyzer:\n  language:\n    strict-casts: true\n    strict-inference: true\n    strict-raw-types: true\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n",
+    "analysis_options.yaml": "include: package:flutter_lints/flutter.yaml\n"
+   },
+   "message": "(strict-casts)"
+  }
+ ],
+ "lint/configured/hugo": [
+  {
+   "pass": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n",
+    "Makefile": "lint:\n\thugo --quiet --panicOnWarning --destination /tmp/site\n"
+   },
+   "fail": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n",
+    "Makefile": "build:\n\thugo --minify\n"
+   },
+   "message": "--panicOnWarning"
+  },
+  {
+   "pass": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n",
+    "lefthook.yml": "pre-commit:\n  commands:\n    hugo:\n      run: hugo --panicOnWarning -d /tmp/x\n"
+   }
+  },
+  {
+   "pass": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n",
+    ".gitlab-ci.yml": "build:\n  script:\n    - hugo --panicOnWarning\n"
+   }
+  }
+ ],
+ "types/strict/python": [
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.mypy]\nstrict = true\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n"
+   },
+   "message": "no strict type checker"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "mypy.ini": "[mypy]\npython_version = 3.12\nstrict = True\n\n[mypy-tests.*]\ndisallow_untyped_defs = False\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "mypy.ini": "[mypy]\nwarn_unused_ignores = True\n"
+   },
+   "message": "not in strict mode"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "pyrightconfig.json": "{\"typeCheckingMode\": \"strict\"}"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.pyright]\ntypeCheckingMode = \"standard\"\n"
+   },
+   "message": "not in strict mode"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.basedpyright]\ntypeCheckingMode = \"all\"\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.mypy]\nstrict = false\n"
+   }
+  }
+ ],
+ "lint/shell": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "scripts/run.sh": "#!/bin/sh\n",
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/shellcheck-py/shellcheck-py\n    rev: v0.10.0.1\n    hooks: [{id: shellcheck}]\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "scripts/run.sh": "#!/bin/sh\n"
+   },
+   "message": "shellcheck runs nowhere"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "scripts/run.sh": "#!/bin/sh\n",
+    "lefthook.yml": "pre-commit:\n  commands:\n    shellcheck:\n      glob: \"*.sh\"\n      run: shellcheck {staged_files}\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "scripts/run.sh": "#!/bin/sh\n",
+    ".gitlab-ci.yml": "lint:\n  script:\n    - shellcheck scripts/*.sh\n"
+   }
+  }
+ ],
+ "format/configured/go": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nformatters:\n  enable: [gofumpt]\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\n"
+   },
+   "message": "no Go formatter"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "Makefile": "fmt:\n\tgofmt -w .\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "Makefile": "fmt:\n\tcargo fmt\n"
+   }
+  }
+ ],
+ "format/configured/python": [
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n    rev: v0.9.0\n    hooks: [{id: ruff-format}]\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n"
+   },
+   "message": "no Python formatter"
+  },
+  {
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.black]\nline-length = 100\n"
+   },
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.ruff]\nline-length = 100\n"
+   }
+  }
+ ],
+ "format/configured/rust": [
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "rustfmt.toml": "max_width = 100\n"
+   },
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n"
+   },
+   "message": "rustfmt"
+  },
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "Makefile": "lint:\n\tcargo fmt --all --check\n"
+   }
+  }
+ ],
+ "format/configured/node": [
+  {
+   "pass": {
+    "package.json": "{}",
+    ".prettierrc.json": "{}"
+   },
+   "fail": {
+    "package.json": "{}"
+   },
+   "message": "no formatter is configured or run"
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "lefthook.yml": "pre-commit:\n  commands:\n    fmt:\n      run: npx prettier --check {staged_files}\n"
+   },
+   "fail": {
+    "package.json": "{}",
+    "lefthook.yml": "pre-commit:\n  commands:\n    lint:\n      run: npx eslint {staged_files}\n"
+   }
+  },
+  {
+   "pass": {
+    "package.json": "{}",
+    "biome.json": "{}"
+   },
+   "fail": {
+    "package.json": "{}",
+    "biome.json": "{\"formatter\": {\"enabled\": false}}"
+   }
+  },
+  {
+   "pass": {
+    "package.json": "{\"prettier\": {\"semi\": false}}"
+   }
+  }
+ ],
+ "format/configured/java": [
+  {
+   "pass": {
+    "pom.xml": "<project><plugin><groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId></plugin></project>\n"
+   },
+   "fail": {
+    "pom.xml": "<project></project>\n"
+   },
+   "message": "no Java formatter"
+  },
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    java\n    id(\"com.diffplug.spotless\") version \"7.0.0\"\n}\n"
+   }
+  }
+ ],
+ "format/configured/kotlin": [
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"org.jlleitschuh.gradle.ktlint\") version \"12.1.0\"\n}\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "message": "no Kotlin formatter"
+  }
+ ],
+ "format/configured/dotnet": [
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: dotnet-format\n        entry: dotnet format --verify-no-changes\n        language: system\n"
+   },
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".editorconfig": "root = true\n[*]\nindent_style = space\n"
+   },
+   "message": "no .NET formatter"
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n",
+    ".editorconfig": "[*.cs]\ncsharp_style_var_elsewhere = true:warning\n"
+   }
+  }
+ ],
+ "format/configured/cpp": [
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".clang-format": "BasedOnStyle: Google\n"
+   },
+   "fail": {
+    "CMakeLists.txt": "project(x)\n"
+   },
+   "message": "no .clang-format"
+  },
+  {
+   "pass": {
+    "CMakeLists.txt": "project(x)\n",
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/pre-commit/mirrors-clang-format\n    rev: v19.1.0\n    hooks: [{id: clang-format}]\n"
+   }
+  }
+ ],
+ "format/configured/ruby": [
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\n",
+    ".standard.yml": "ruby_version: 3.3\n"
+   },
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\n"
+   },
+   "message": "no Ruby formatter"
+  }
+ ],
+ "format/configured/php": [
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    "pint.json": "{\"preset\": \"per\"}"
+   },
+   "fail": {
+    "composer.json": "{\"name\": \"x/x\"}"
+   },
+   "message": "no PHP formatter"
+  },
+  {
+   "pass": {
+    "composer.json": "{\"name\": \"x/x\"}",
+    ".php-cs-fixer.dist.php": "<?php\nreturn new PhpCsFixer\\Config();\n"
+   }
+  }
+ ],
+ "format/configured/flutter": [
+  {
+   "pass": {
+    "pubspec.yaml": "name: x\n",
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: dart format --set-exit-if-changed .\n"
+   },
+   "fail": {
+    "pubspec.yaml": "name: x\n"
+   },
+   "message": "dart format"
+  }
+ ]
+}

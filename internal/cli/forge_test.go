@@ -73,12 +73,12 @@ func TestFleetFromForge(t *testing.T) {
 	for _, r := range rep.Repos {
 		status := ""
 		for _, res := range r.Results {
-			if res.Rule == "public/no-agent-files" {
+			if res.Rule == "public/license" {
 				status = res.Status
 			}
 		}
 		if got := [2]string{r.Facts.Visibility, status}; got != want[r.Name] {
-			t.Errorf("%s: visibility and public/no-agent-files = %v, want %v", r.Name, got, want[r.Name])
+			t.Errorf("%s: visibility and public/license = %v, want %v", r.Name, got, want[r.Name])
 		}
 	}
 	if code, _, stderr := runCLI(t, t.TempDir(), "fleet", "--from", "github:nobody", "--out", t.TempDir()); code != cli.ExitConfig || !strings.Contains(stderr, "not found") {

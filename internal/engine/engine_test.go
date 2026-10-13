@@ -76,7 +76,7 @@ exceptions:
     reason: "expired one"
     until: 2020-01-01
 `
-	out := run(t, map[string]string{"fixtures/a.log": "x", ".DS_Store": "x"}, cfg)
+	out := run(t, map[string]string{"logs/a.log": "x", ".DS_Store": "x"}, cfg)
 	s := status(t, out, "repo/no-tracked-junk")
 	if s.Status != model.StatusFail {
 		t.Fatalf("expired exception must not cover: %+v", s)
@@ -92,7 +92,7 @@ exceptions:
 	if covered != 1 || open != 1 {
 		t.Fatalf("want 1 covered + 1 open, got %d/%d", covered, open)
 	}
-	full := run(t, map[string]string{"fixtures/a.log": "x"}, cfg)
+	full := run(t, map[string]string{"logs/a.log": "x"}, cfg)
 	if s := status(t, full, "repo/no-tracked-junk"); s.Status != model.StatusExcepted {
 		t.Fatalf("fully covered rule should be excepted: %+v", s)
 	}
@@ -157,7 +157,7 @@ scopes:
 	}, cfg)
 	var sawBackendPython, sawWebTargets, sawRootTargets bool
 	for _, r := range out.Results {
-		if r.Scope == "backend" && r.Rule.ID == "lint/python-config" {
+		if r.Scope == "backend" && r.Rule.ID == "lint/configured/python" {
 			sawBackendPython = true
 			if r.Status != model.StatusPass {
 				t.Errorf("backend python lint should pass: %+v", r)
@@ -199,8 +199,8 @@ func TestPublicRepoRules(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	testutil.WriteFiles(t, dir, map[string]string{"CLAUDE.md": "rules", "go.mod": "module x\n"})
-	_ = os.WriteFile(filepath.Join(dir, config.FileName), []byte("version: 1\nextends: [fleetlint:minimal]\nfacts: {visibility: public}\n"), 0o644)
-	r := testutil.GitFixture(t, map[string]string{"CLAUDE.md": "rules", "go.mod": "module x\n", config.FileName: "version: 1\nextends: [fleetlint:minimal]\nfacts: {visibility: public}\n"})
+	_ = os.WriteFile(filepath.Join(dir, config.FileName), []byte("version: 1\nextends: [fleetlint:minimal, fleetlint:slop]\nfacts: {visibility: public}\n"), 0o644)
+	r := testutil.GitFixture(t, map[string]string{"CLAUDE.md": "rules", "go.mod": "module x\n", config.FileName: "version: 1\nextends: [fleetlint:minimal, fleetlint:slop]\nfacts: {visibility: public}\n"})
 	eff, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}})
 	if err != nil {
 		t.Fatal(err)
@@ -233,10 +233,10 @@ func TestWorkspaceAutoScopes(t *testing.T) {
 	var rootLint, apiLint, apiTaskrunner, rootTaskrunner bool
 	for _, r := range out.Results {
 		switch {
-		case r.Scope == "" && r.Rule.ID == "lint/go-config":
+		case r.Scope == "" && r.Rule.ID == "lint/configured/go":
 			rootLint = true
-		case r.Scope == "api" && r.Rule.ID == "lint/go-config":
-			apiLint = true
+		case r.Scope == "api" && r.Rule.ID == "lint/configured/go":
+			apiLint = r.Status == model.StatusPass
 		case r.Scope == "api" && r.Rule.ID == "taskrunner/targets":
 			apiTaskrunner = true
 		case r.Scope == "" && r.Rule.ID == "taskrunner/targets":
@@ -247,7 +247,7 @@ func TestWorkspaceAutoScopes(t *testing.T) {
 		t.Error("per-stack rule must not run at a root that only hosts members")
 	}
 	if !apiLint {
-		t.Error("per-stack rule must run inside a member")
+		t.Error("per-stack rule must run inside a member and see the configuration at the root")
 	}
 	if apiTaskrunner || !rootTaskrunner {
 		t.Error("scope: root rules run only at the root")
@@ -304,13 +304,13 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	}
 
 	fail := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow}, cfg)
-	if s := status(t, fail, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityError || s.Findings[0].Evidence != "unsatisfied" {
-		t.Fatalf("no producer must fail at error: %+v", s)
+	if s := status(t, fail, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "unsatisfied" {
+		t.Fatalf("no producer must fail at warning: %+v", s)
 	}
 
 	partial := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow, ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: syft scan dir:.\n"}, cfg)
-	if s := status(t, partial, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "sbom-outside-release" {
-		t.Fatalf("producer outside release should be a warning partial: %+v", s)
+	if s := status(t, partial, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityInfo || s.Findings[0].Evidence != "sbom-outside-release" {
+		t.Fatalf("producer outside release should be an info partial: %+v", s)
 	}
 
 	accepted := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow + "      - run: ./scripts/sbom.sh\n"},
@@ -322,6 +322,18 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	notRelease := run(t, map[string]string{"go.mod": "module x\n"}, cfg)
 	if s := status(t, notRelease, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("no release pipeline: n/a, got %+v", s)
+	}
+	cliffOnly := run(t, map[string]string{"go.mod": "module x\n", "cliff.toml": "[changelog]\n"}, cfg)
+	if s := status(t, cliffOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
+		t.Fatalf("a changelog generator is not a release pipeline: n/a, got %+v", s)
+	}
+	registryOnly := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish --provenance\n"}, cfg)
+	if s := status(t, registryOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
+		t.Fatalf("a release that only publishes to a registry: n/a, got %+v", s)
+	}
+	withAssets := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish\n      - run: gh release upload v1 dist/app.tgz\n"}, cfg)
+	if s := status(t, withAssets, "release/sbom"); s.Status != model.StatusFail {
+		t.Fatalf("a registry release that also uploads artifacts is checked, got %+v", s)
 	}
 }
 
@@ -393,19 +405,19 @@ func TestNestedConfigInScope(t *testing.T) {
 		"go.work":             "go 1.24\nuse (\n\t./api\n\t./worker\n)\n",
 		"api/go.mod":          "module a\n",
 		"api/.DS_Store":       "x",
-		"api/.fleetlint.yaml": "version: 1\nexceptions:\n  - rule: repo/no-tracked-junk\n    reason: \"api fixture\"\noverrides:\n  lint/go-config: {enabled: false, reason: \"api uses the root config\"}\n",
+		"api/.fleetlint.yaml": "version: 1\nexceptions:\n  - rule: acme/no-ds-store\n    reason: \"api fixture\"\noverrides:\n  lint/configured/go: {enabled: false, reason: \"api has no Go linter yet\"}\n",
 		"worker/go.mod":       "module w\n",
 		"worker/.DS_Store":    "x",
 		".golangci.yml":       "version: \"2\"\n",
-	}, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\n")
+	}, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\nrules:\n  - {id: acme/no-ds-store, kind: expr, severity: error, foreach: 'tracked().filter(p, p.endsWith(\".DS_Store\"))', expr: \"false\", message: m, fix: {human: h}}\n")
 	var apiJunk, workerJunk, apiLintSeen bool
 	for _, r := range out.Results {
 		switch {
-		case r.Scope == "api" && r.Rule.ID == "repo/no-tracked-junk":
+		case r.Scope == "api" && r.Rule.ID == "acme/no-ds-store":
 			apiJunk = r.Status == model.StatusExcepted
-		case r.Scope == "worker" && r.Rule.ID == "repo/no-tracked-junk":
+		case r.Scope == "worker" && r.Rule.ID == "acme/no-ds-store":
 			workerJunk = r.Status == model.StatusFail
-		case r.Scope == "api" && r.Rule.ID == "lint/go-config":
+		case r.Scope == "api" && r.Rule.ID == "lint/configured/go":
 			apiLintSeen = true
 		}
 	}

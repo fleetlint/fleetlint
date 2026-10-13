@@ -48,8 +48,8 @@ func TestPresetsSelectFromTheLibrary(t *testing.T) {
 			if got["repo/no-tracked-junk"] != "fleetlint:minimal" || own.Metadata.Name != "fleetlint-recommended" {
 				t.Errorf("a rule of an include stays the include's: %s", got["repo/no-tracked-junk"])
 			}
-			if len(got) != len(ids)+7 {
-				t.Errorf("recommended with minimal resolves to %d rules, want %d", len(got), len(ids)+7)
+			if len(got) != len(ids)+len(want["minimal"]) {
+				t.Errorf("recommended with minimal resolves to %d rules, want %d", len(got), len(ids)+len(want["minimal"]))
 			}
 		}
 	}
@@ -71,7 +71,7 @@ func TestUseEntries(t *testing.T) {
 		}
 		return p
 	}
-	ok := write("ok.yaml", head+"rules:\n  - use: lint/go-*\n  - id: own/rule\n    title: own\n    kind: expr\n    severity: info\n    expr: \"true\"\n    message: m\n    requirement: r\n    rationale: r\n    fix: {human: h, agent: a}\n  - use: repo/readme-present\n")
+	ok := write("ok.yaml", head+"rules:\n  - use: lint/strict\n  - id: own/rule\n    title: own\n    kind: expr\n    severity: info\n    expr: \"true\"\n    message: m\n    requirement: r\n    rationale: r\n    fix: {human: h, agent: a}\n  - use: repo/readme-present\n")
 	cats, err := catalog.Loader{BaseDir: dir}.Load(ok)
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestUseEntries(t *testing.T) {
 		ids = append(ids, r.ID)
 	}
 	joined := strings.Join(ids, " ")
-	if !strings.HasPrefix(joined, "lint/go-config lint/go-linters-enabled own/rule repo/readme-present") {
+	if !strings.HasPrefix(joined, "lint/strict lint/strict/cpp lint/strict/dotnet lint/strict/go lint/strict/java lint/strict/kotlin lint/strict/python lint/strict/ruby lint/strict/rust own/rule repo/readme-present") {
 		t.Errorf("order and expansion: %s", joined)
 	}
 	if r := cats[0].Rules[0]; r.SelectedBy != "t@1.0.0" || !strings.HasPrefix(r.Source, "library ") {
@@ -90,8 +90,8 @@ func TestUseEntries(t *testing.T) {
 	for name, body := range map[string]string{
 		"unknown id":       head + "rules:\n  - use: lint/nothing\n",
 		"empty glob":       head + "rules:\n  - use: nothing/*\n",
-		"use with keys":    head + "rules:\n  - use: lint/go-config\n    severity: error\n",
-		"use and id":       head + "rules:\n  - use: lint/go-config\n    id: x\n",
+		"use with keys":    head + "rules:\n  - use: lint/shell\n    severity: error\n",
+		"use and id":       head + "rules:\n  - use: lint/shell\n    id: x\n",
 		"library required": strings.Replace(head, "engine: 2", "engine: 2", 1) + "rules:\n  - use: lint/*\n",
 	} {
 		p := write(strings.ReplaceAll(name, " ", "_")+".yaml", body)

@@ -96,15 +96,15 @@ func TestIncludesResolveInOrderLaterWins(t *testing.T) {
 func TestInlineBeatsUseWithinACatalog(t *testing.T) {
 	t.Parallel()
 	dir := writeAll(t, map[string]string{
-		"c.yaml":        catHead("c", "") + "rules:\n  - use: lint/go-*\n" + inlineRule("lint/go-config", "our own go config rule", "error"),
+		"c.yaml":        catHead("c", "") + "rules:\n  - use: lint/s*\n" + inlineRule("lint/shell", "our own shell rule", "error"),
 		config.FileName: "version: 1\nextends: [c.yaml]\n",
 	})
 	eff := loadDir(t, dir)
-	r, _ := ruleByID(eff, "lint/go-config")
-	if r.Title != "our own go config rule" || r.Severity != model.SeverityError {
+	r, _ := ruleByID(eff, "lint/shell")
+	if r.Title != "our own shell rule" || r.Severity != model.SeverityError {
 		t.Errorf("the inline definition replaces the selected one: %+v", r)
 	}
-	if _, ok := ruleByID(eff, "lint/go-linters-enabled"); !ok {
+	if _, ok := ruleByID(eff, "lint/strict/go"); !ok {
 		t.Error("the rest of the glob is still selected")
 	}
 }
@@ -112,17 +112,17 @@ func TestInlineBeatsUseWithinACatalog(t *testing.T) {
 func TestSelectedRuleKeepsItsFirstCatalog(t *testing.T) {
 	t.Parallel()
 	dir := writeAll(t, map[string]string{
-		"org.yaml":      catHead("org", "") + "rules:\n  - use: lint/go-config\n  - use: slop/focused-tests\n",
+		"org.yaml":      catHead("org", "") + "rules:\n  - use: lint/configured/go\n  - use: slop/focused-tests\n",
 		config.FileName: "version: 1\nextends: [fleetlint:recommended, org.yaml]\n",
 	})
 	eff := loadDir(t, dir)
-	r, _ := ruleByID(eff, "lint/go-config")
+	r, _ := ruleByID(eff, "lint/configured/go")
 	if r.SelectedBy != "fleetlint-recommended@"+catalog.Builtin().Version || r.Layer != catalog.LayerPreset {
 		t.Errorf("a rule already loaded is not re-attributed by a later use: selected_by=%s layer=%s", r.SelectedBy, r.Layer)
 	}
 	n := 0
 	for _, x := range eff.Rules {
-		if x.ID == "lint/go-config" {
+		if x.ID == "lint/configured/go" {
 			n++
 		}
 	}
@@ -158,12 +158,12 @@ func TestInlineRedefinitionAcrossLayersIsRecorded(t *testing.T) {
 func TestSelectAndTightenInOneCatalog(t *testing.T) {
 	t.Parallel()
 	dir := writeAll(t, map[string]string{
-		"org.yaml":      catHead("org", "") + "rules:\n  - use: lint/*\noverrides:\n  lint/go-config: {severity: error, locked: true}\n  \"lint/python-*\": {raise: 1}\n",
+		"org.yaml":      catHead("org", "") + "rules:\n  - use: lint/*\noverrides:\n  lint/configured/go: {severity: error, locked: true}\n  \"lint/*/python\": {raise: 1}\n",
 		config.FileName: "version: 1\nextends: [org.yaml]\n",
 	})
 	eff := loadDir(t, dir)
-	g, _ := ruleByID(eff, "lint/go-config")
-	p, _ := ruleByID(eff, "lint/python-config")
+	g, _ := ruleByID(eff, "lint/configured/go")
+	p, _ := ruleByID(eff, "lint/strict/python")
 	if g.Severity != model.SeverityError || !g.Locked || p.Severity != model.SeverityError {
 		t.Errorf("overrides adjust the catalog's own selections: %+v / %+v", g, p)
 	}
@@ -176,17 +176,17 @@ func TestParallelRuleAndDisabledOriginal(t *testing.T) {
 	t.Parallel()
 	dir := writeAll(t, map[string]string{
 		"org.yaml": catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules:\n" + inlineRule("acme/go-config", "our stricter variant", "error") +
-			"overrides:\n  lint/go-config: {enabled: false, reason: \"replaced by acme/go-config\"}\n",
+			"overrides:\n  lint/configured/go: {enabled: false, reason: \"replaced by acme/go-config\"}\n",
 		config.FileName: "version: 1\nextends: [org.yaml]\n",
 	})
 	eff := loadDir(t, dir)
 	if _, ok := ruleByID(eff, "acme/go-config"); !ok {
 		t.Error("the parallel rule exists")
 	}
-	if _, ok := ruleByID(eff, "lint/go-config"); ok {
+	if _, ok := ruleByID(eff, "lint/configured/go"); ok {
 		t.Error("the original is disabled")
 	}
-	if len(eff.Disabled) != 1 || eff.Disabled[0].ID != "lint/go-config" || eff.Disabled[0].Layer != catalog.LayerRepo {
+	if len(eff.Disabled) != 1 || eff.Disabled[0].ID != "lint/configured/go" || eff.Disabled[0].Layer != catalog.LayerRepo {
 		t.Errorf("the disable is recorded with its reason and layer: %+v", eff.Disabled)
 	}
 }
@@ -196,14 +196,14 @@ func TestParallelRuleAndDisabledOriginal(t *testing.T) {
 func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 	t.Parallel()
 	digest := strings.Repeat("c", 64)
-	own := strings.Replace(inlineRule("lint/go-config", "acme's go config", "error"), "  - id:", "id:", 1)
+	own := strings.Replace(inlineRule("lint/shell", "acme's shell rule", "error"), "  - id:", "id:", 1)
 	own = strings.ReplaceAll(own, "\n    ", "\n")
 	ownerRule := strings.ReplaceAll(strings.Replace(inlineRule("acme/owner-file", "owner", "error"), "  - id:", "id:", 1), "\n    ", "\n")
 	fetch := func(fetch.OCIRef) (*fetch.OCIArtifact, error) {
 		return &fetch.OCIArtifact{Digest: digest, Files: map[string][]byte{
-			"catalog.yaml":               []byte(catHead("acme", ", catalog: {version: "+catalog.ModuleVersion()+"}") + "rules:\n  - use: acme/*\n  - use: lint/go-config\n  - use: repo/readme-present\n"),
+			"catalog.yaml":               []byte(catHead("acme", ", catalog: {version: "+catalog.ModuleVersion()+"}") + "rules:\n  - use: acme/*\n  - use: lint/shell\n  - use: repo/readme-present\n"),
 			"rules/acme/owner-file.yaml": []byte(ownerRule),
-			"rules/lint/go-config.yaml":  []byte(own),
+			"rules/lint/shell.yaml":      []byte(own),
 			"templates/SECURITY.md":      []byte("acme\n"),
 		}}, nil
 	}
@@ -215,7 +215,7 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 	if r, ok := ruleByID(eff, "acme/owner-file"); !ok || r.Title != "owner" {
 		t.Errorf("own library rule: %+v %v", r, ok)
 	}
-	if r, _ := ruleByID(eff, "lint/go-config"); r.Title != "acme's go config" {
+	if r, _ := ruleByID(eff, "lint/shell"); r.Title != "acme's shell rule" {
 		t.Errorf("own library wins over the source's for the same id: %q", r.Title)
 	}
 	if r, ok := ruleByID(eff, "repo/readme-present"); !ok || r.SelectedBy != "acme@1.0.0" || !strings.HasPrefix(r.Source, "library ") {
@@ -227,10 +227,10 @@ func TestShippedLibraryIsSearchedFirst(t *testing.T) {
 // rescoping, and the params and accept that shape what the rule demands.
 func TestLockFreezesParamsAndAccept(t *testing.T) {
 	t.Parallel()
-	org := catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  deps/vulnerability-scan: {locked: true, accept: [{name: ours, expr: \"true\"}]}\n  lint/go-linters-enabled: {locked: true, params: {required: [errcheck]}}\n"
+	org := catHead("org", ", includes: [\"fleetlint:recommended\"]") + "rules: []\noverrides:\n  deps/vulnerability-scan: {locked: true, accept: [{name: ours, expr: \"true\"}]}\n  lint/strict/go: {locked: true, params: {required: [errcheck]}}\n"
 	for name, repoRules := range map[string]string{
 		"accept": "overrides:\n  deps/vulnerability-scan:\n    accept: [{name: mine, expr: \"true\"}]\n",
-		"params": "overrides:\n  lint/go-linters-enabled:\n    params: {required: []}\n",
+		"params": "overrides:\n  lint/strict/go:\n    params: {required: []}\n",
 	} {
 		dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\n" + repoRules})
 		if _, err := config.Load(dir, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "params and accept cannot change") {
@@ -238,9 +238,9 @@ func TestLockFreezesParamsAndAccept(t *testing.T) {
 		}
 	}
 	// The locking catalog's own params and accept apply, and raising stays allowed below.
-	dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\noverrides:\n  lint/go-linters-enabled: {severity: error}\n"})
+	dir := writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\noverrides:\n  lint/strict/go: {severity: error}\n"})
 	eff := loadDir(t, dir)
-	r, _ := ruleByID(eff, "lint/go-linters-enabled")
+	r, _ := ruleByID(eff, "lint/strict/go")
 	if req, _ := r.Params["required"].([]any); len(req) != 1 || r.Severity != model.SeverityError || !r.Locked {
 		t.Errorf("locking catalog sets params; the repository may still raise: %+v", r)
 	}

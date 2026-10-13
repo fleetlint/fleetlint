@@ -1,0 +1,1581 @@
+{
+ "deps/forks-documented": [
+  {
+   "fail": {
+    "go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3\n"
+   },
+   "message": "not documented",
+   "pass": {
+    "go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3 // upstream #42: nil deref in parser, drop at v1.3\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n\nreplace (\n\texample.com/a => ./a\n\texample.com/b => github.com/me/b v1.0.0\n)\n"
+   },
+   "pass": {
+    "docs/FORKS.md": "# Forks\n\n- dep: local patch\n",
+    "go.mod": "module x\n\nreplace example.com/dep => ../dep\nreplace example.com/b => github.com/me/b v1.0.0\n"
+   }
+  },
+  {
+   "fail": {
+    "requirements.txt": "-e git+https://github.com/me/lib.git@abc#egg=lib\n"
+   },
+   "pass": {
+    "go.mod": "module x\n\nreplace (\n\texample.com/a => ../a\n\texample.com/b => github.com/me/b v1.0.0 // fork: fixes #12\n)\n"
+   }
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[dependencies]\nfoo = { git = \"https://github.com/me/foo\" }\n"
+   },
+   "pass": {
+    "requirements.txt": "-e git+https://github.com/me/lib.git@abc#egg=lib  # fork of lib 1.2: py3.13 fix\n"
+   }
+  },
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n[dependencies]\nfoo = { git = \"https://github.com/me/foo\", rev = \"abc\" } # fork: upstream PR 7\n"
+   }
+  }
+ ],
+ "deps/install-scripts-disabled": [
+  {
+   "fail": {
+    ".npmrc": "save-exact=true\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    ".npmrc": "ignore-scripts=true\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "package.json": "{\"packageManager\": \"pnpm@9.15.0\"}\n"
+   },
+   "pass": {
+    "package.json": "{\"packageManager\": \"pnpm@10.4.1\"}\n"
+   }
+  },
+  {
+   "fail": {
+    "package-lock.json": "{}",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "bun.lock": "{}",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  }
+ ],
+ "deps/license-check/any": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/dependency-review-action@v4\n",
+    "pubspec.yaml": "name: x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/dependency-review-action@v4\n        with:\n          allow-licenses: MIT\n",
+    "pubspec.yaml": "name: x\n"
+   }
+  },
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "audit:\n\treuse lint\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "audit:\n\tscancode --license --json-pp out.json third_party/\n"
+   }
+  }
+ ],
+ "deps/license-check/dotnet": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tdotnet nuget-license -i x.csproj\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tdotnet nuget-license -i x.csproj -a allowed.json\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "deps/license-check/go": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tgovulncheck ./...\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no license check",
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go-licenses check ./... --allowed_licenses=MIT,Apache-2.0\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "audit:\n\tgo install github.com/google/go-licenses@v1.6.0\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tosv-scanner scan --licenses=MIT,Apache-2.0 -r .\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/license-check/java": [
+  {
+   "fail": {
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>license-maven-plugin</artifactId><configuration><failOnBlacklist>true</failOnBlacklist></configuration></plugin></plugins></build></project>\n"
+   }
+  }
+ ],
+ "deps/license-check/kotlin": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew checkLicense\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  }
+ ],
+ "deps/license-check/node": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tnpx license-checker --summary\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tnpx license-checker-rseidelsohn --onlyAllow 'MIT;ISC'\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  }
+ ],
+ "deps/license-check/php": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tcomposer licenses\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tvendor/bin/license-checker check\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  }
+ ],
+ "deps/license-check/python": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tuvx pip-licenses\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tuvx pip-licenses --allow-only='MIT;BSD License'\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "deps/license-check/ruby": [
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Makefile": "audit:\n\tbundle exec rubocop\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Makefile": "audit:\n\tbundle exec license_finder\n"
+   }
+  }
+ ],
+ "deps/license-check/rust": [
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check advisories\n",
+    "deny.toml": "[licenses]\nallow = [\"MIT\"]\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check\n",
+    "deny.toml": "[licenses]\nallow = [\"MIT\"]\n"
+   }
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check\n"
+   }
+  }
+ ],
+ "deps/locked-install/dotnet": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet restore\n",
+    "packages.lock.json": "{}",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet restore --locked-mode\n",
+    "packages.lock.json": "{}",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "deps/locked-install/flutter": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          flutter pub get\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          flutter pub get --enforce-lockfile\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   }
+  }
+ ],
+ "deps/locked-install/go": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go build -mod=mod ./...\n",
+    "go.mod": "module x\n"
+   },
+   "message": "-mod=mod",
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go build ./...\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/locked-install/java": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build --write-locks\n",
+    "build.gradle": "plugins { id 'java' }\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build\n",
+    "Makefile": "update-locks:\n\t./gradlew dependencies --write-locks\n",
+    "build.gradle": "plugins { id 'java' }\n"
+   }
+  }
+ ],
+ "deps/locked-install/kotlin": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build --update-locks 'org.example:*'\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  }
+ ],
+ "deps/locked-install/node": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          npm install\n      - run: |\n          npm test\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "message": "lockfile",
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          npm ci\n      - run: |\n          npm test\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "setup:\n\tpnpm install\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          pnpm install\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          npm ci\n      - run: |\n          pnpm install --no-frozen-lockfile\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "ci:\n\tnpm ci\nupdate:\n\tnpm install\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          yarn install\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          yarn install\n",
+    ".yarnrc.yml": "nodeLinker: node-modules\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          npm ci\n      - run: |\n          npm i --no-audit\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          npm ci\n      - run: |\n          npm install -g npm@11\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  }
+ ],
+ "deps/locked-install/php": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          composer install\n      - run: |\n          composer update\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          composer install --no-interaction\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  }
+ ],
+ "deps/locked-install/python": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          uv sync\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          uv sync --locked\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          pip install -e .\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\nenv:\n  UV_LOCKED: 1\njobs:\n  a:\n    steps:\n      - run: uv sync\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          uv sync --all-extras\n",
+    "Makefile": "deps:\n\tuv sync --locked\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "Makefile": "deps:\n\tpoetry install --no-root\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "deps/locked-install/ruby": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          bundle install\n",
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: ruby/setup-ruby@v1\n        with:\n          bundler-cache: true\n",
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   }
+  },
+  {
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Makefile": "ci:\n\tbundle config set frozen true\n\tbundle install\n"
+   }
+  }
+ ],
+ "deps/locked-install/rust": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo test\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo test --locked\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  }
+ ],
+ "deps/unused-check/flutter": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tflutter analyze\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tdart run dependency_validator\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   }
+  }
+ ],
+ "deps/unused-check/go": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tgo mod tidy\n",
+    "go.mod": "module x\n"
+   },
+   "message": "unused dependencies",
+   "pass": {
+    "Makefile": "audit:\n\tgo mod tidy -diff\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go mod download\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go mod tidy\n          git diff --exit-code go.mod go.sum\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/unused-check/java": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tmvn verify\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tmvn dependency:analyze -DfailOnWarning=true\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   }
+  }
+ ],
+ "deps/unused-check/kotlin": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew buildHealth\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  }
+ ],
+ "deps/unused-check/node": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tnpm i -D knip\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tnpx knip --dependencies\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  }
+ ],
+ "deps/unused-check/php": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tcomposer require --dev shipmonk/composer-dependency-analyser\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tvendor/bin/composer-dependency-analyser\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  }
+ ],
+ "deps/unused-check/python": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tuv tool install deptry\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tuvx deptry .\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "deps/unused-check/rust": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo install cargo-machete\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo machete\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  }
+ ],
+ "deps/update-automation": [
+  {
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "no Renovate",
+   "pass": {
+    "go.mod": "module x\n",
+    "renovate.json": "{}"
+   }
+  },
+  {
+   "fail": {
+    ".gitea/dependabot.yml": "version: 2\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".forgejo/renovate.json5": "{}",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/dependabot.yaml": "version: 2\nupdates: []\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".renovaterc.json": "{}",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/update-cooldown": [
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "renovate.json": "{\"extends\": [\"config:recommended\"]}\n"
+   },
+   "message": "the day a version",
+   "pass": {
+    "go.mod": "module x\n",
+    "renovate.json": "{\"minimumReleaseAge\": \"3 days\"}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/dependabot.yml": "version: 2\nupdates:\n  - package-ecosystem: gomod\n    directory: /\n    cooldown:\n      default-days: 3\n  - package-ecosystem: github-actions\n    directory: /\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/dependabot.yml": "version: 2\nupdates:\n  - package-ecosystem: gomod\n    directory: /\n    cooldown:\n      default-days: 3\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/update-coverage": [
+  {
+   "fail": {
+    ".github/dependabot.yml": "version: 2\nupdates:\n  - package-ecosystem: gomod\n    directory: /\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "message": "does not cover",
+   "pass": {
+    ".github/dependabot.yml": "version: 2\nupdates:\n  - package-ecosystem: gomod\n    directory: /\n  - package-ecosystem: npm\n    directory: /\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/dependabot.yml": "version: 2\nupdates:\n  - package-ecosystem: gomod\n    directory: /\n",
+    "Dockerfile": "FROM alpine\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go test ./...\n",
+    "Dockerfile": "FROM alpine\n",
+    "go.mod": "module x\n",
+    "renovate.json": "{\"extends\": [\"config:recommended\"]}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go test ./...\n",
+    "go.mod": "module x\n",
+    "renovate.json": "{\"enabledManagers\": [\"gomod\"]}\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go test ./...\n",
+    "go.mod": "module x\n",
+    "renovate.json": "{\"enabledManagers\": [\"gomod\", \"github-actions\"]}\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go test ./...\n",
+    "go.mod": "module x\n",
+    "renovate.json": "{\"github-actions\": {\"enabled\": false}}\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/any": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\ttrivy config .\n",
+    "pubspec.yaml": "name: x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: google/osv-scanner-action@v2\n",
+    "pubspec.yaml": "name: x\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "audit:\n\tcurl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s\n",
+    "pubspec.yaml": "name: x\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\ttrivy fs --scanners vuln .\n",
+    "pubspec.yaml": "name: x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "test:\n  script: [flutter test]\n",
+    "pubspec.yaml": "name: x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "include:\n  - template: Jobs/Dependency-Scanning.gitlab-ci.yml\n",
+    "pubspec.yaml": "name: x\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/cpp": [
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "audit:\n\tconan install .\n",
+    "conanfile.txt": "[requires]\nzlib/1.3\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "audit:\n\tosv-scanner scan -L conan.lock\n",
+    "conanfile.txt": "[requires]\nzlib/1.3\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/dotnet": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tdotnet build\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tdotnet list package --vulnerable --include-transitive\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  },
+  {
+   "fail": {
+    "Directory.Build.props": "<Project><PropertyGroup><TreatWarningsAsErrors>true</TreatWarningsAsErrors><NuGetAudit>false</NuGetAudit></PropertyGroup></Project>\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "Directory.Build.props": "<Project><PropertyGroup><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/go": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tgitleaks git .\n\t@echo \"TODO: dependency vulnerability scan\"\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no vulnerability scanner",
+   "pass": {
+    "Makefile": "audit:\n\tgovulncheck ./...\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4\n          # govulncheck ./...\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4\n          govulncheck ./...\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "justfile": "audit:\n    echo osv-scanner later\n"
+   },
+   "pass": {
+    "go.mod": "module x\n",
+    "justfile": "audit:\n    osv-scanner scan -r .\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "# govulncheck ./...\naudit:\n\tgo vet ./...\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: golang/govulncheck-action@v1\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/java": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tmvn verify\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tmvn org.owasp:dependency-check-maven:check\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   }
+  },
+  {
+   "fail": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>dependency-check-maven</artifactId></plugin></plugins></build></project>\n"
+   },
+   "pass": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>dependency-check-maven</artifactId><executions><execution><goals><goal>check</goal></goals></execution></executions></plugin></plugins></build></project>\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/kotlin": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew build\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew dependencyCheckAnalyze\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/node": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tnpm install\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tnpm audit --audit-level=high\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "audit:\n\t@echo pnpm audit\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "package.json": "{\n  \"scripts\": {\n    \"audit\": \"pnpm audit --prod\"\n  }\n}\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/php": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tcomposer install\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tcomposer audit\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}, \"require-dev\": {\"roave/security-advisories\": \"dev-latest\"}}\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/python": [
+  {
+   "fail": {
+    "Makefile": "audit:\n\tpipx install pip-audit\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "Makefile": "audit:\n\tuvx pip-audit\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          pip install pip-audit\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          pip install pip-audit && pip-audit -r requirements.txt\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/ruby": [
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Makefile": "audit:\n\tgem install bundler-audit\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Makefile": "audit:\n\tbundle exec bundle-audit check --update\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/rust": [
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check licenses\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check\n"
+   }
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo install cargo-audit\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "Makefile": "audit:\n\tcargo deny check bans licenses advisories\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: EmbarkStudios/cargo-deny-action@v2\n        with:\n          command: check licenses\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: EmbarkStudios/cargo-deny-action@v2\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/cpp": [
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "cover:\n\tgcovr --html out.html\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "Makefile": "cover:\n\tgcovr --fail-under-line 80\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/dotnet": [
+  {
+   "fail": {
+    "Makefile": "cover:\n\tdotnet test /p:CollectCoverage=true\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "Makefile": "cover:\n\tdotnet test /p:CollectCoverage=true /p:Threshold=80\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/flutter": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          flutter test --coverage\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          very_good test --coverage --min-coverage 80\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/go": [
+  {
+   "fail": {
+    "Makefile": "cover:\n\tgo test -cover ./...\n",
+    "go.mod": "module x\n"
+   },
+   "message": "minimum coverage",
+   "pass": {
+    "Makefile": "cover:\n\tgo test -coverprofile=c.out ./...\n\tdiff-cover coverage.xml --fail-under=80\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "cover:\n\techo \"TODO: coverage, then: diff-cover coverage.xml --fail-under=80\"\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".testcoverage.yml": "profile: c.out\nthreshold:\n  total: 80\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "codecov.yml": "comment: false\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "codecov.yml": "coverage:\n  status:\n    project:\n      default:\n        target: 80%\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/java": [
+  {
+   "fail": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>jacoco-maven-plugin</artifactId><executions><execution><goals><goal>report</goal></goals></execution></executions></plugin></plugins></build></project>\n"
+   },
+   "pass": {
+    "pom.xml": "<project><build><plugins><plugin><artifactId>jacoco-maven-plugin</artifactId><executions><execution><goals><goal>check</goal></goals><configuration><rules><rule><limits><limit><minimum>0.80</minimum></limit></limits></rule></rules></configuration></execution></executions></plugin></plugins></build></project>\n"
+   }
+  },
+  {
+   "fail": {
+    "build.gradle": "plugins { id 'java' }\n"
+   },
+   "pass": {
+    "build.gradle": "plugins { id 'java' }\njacocoTestCoverageVerification { violationRules { rule { limit { minimum = 0.8 } } } }\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/kotlin": [
+  {
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\nkover { reports { verify { rule { minBound(80) } } } }\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/node": [
+  {
+   "fail": {
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n",
+    "vitest.config.ts": "export default { test: { coverage: { provider: 'v8' } } }\n"
+   },
+   "pass": {
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n",
+    "vitest.config.ts": "export default { test: { coverage: { thresholds: { lines: 80 } } } }\n"
+   }
+  },
+  {
+   "fail": {
+    "package.json": "{\"jest\": {}}\n"
+   },
+   "pass": {
+    "package.json": "{\"jest\": {\"coverageThreshold\": {\"global\": {\"lines\": 80}}}}\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/php": [
+  {
+   "fail": {
+    "Makefile": "cover:\n\tvendor/bin/phpunit --coverage-clover clover.xml\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "Makefile": "cover:\n\tvendor/bin/phpunit --coverage-clover clover.xml\n\tvendor/bin/coverage-check clover.xml 80\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/python": [
+  {
+   "fail": {
+    "Makefile": "cover:\n\tuv run pytest --cov\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n\n[tool.coverage.report]\nfail_under = 85\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          uv run pytest --cov\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          uv run pytest --cov --cov-fail-under=80\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/ruby": [
+  {
+   "fail": {
+    ".simplecov": "SimpleCov.start\n",
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   },
+   "pass": {
+    ".simplecov": "SimpleCov.start do\n  minimum_coverage 90\nend\n",
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   }
+  }
+ ],
+ "quality/coverage-threshold/rust": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo llvm-cov --lcov --output-path lcov.info\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          cargo llvm-cov --fail-under-lines 80\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  }
+ ],
+ "release/reproducible-build/any": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          uv build\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) uv build\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "release/reproducible-build/dotnet": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n",
+    "Directory.Build.props": "<Project><PropertyGroup><ContinuousIntegrationBuild Condition=\"'$(CI)' == 'true'\">true</ContinuousIntegrationBuild></PropertyGroup></Project>\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "release/reproducible-build/go": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "reproducible",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          goreleaser release\n",
+    ".goreleaser.yaml": "builds:\n  - main: .\n    flags: [-trimpath]\n    mod_timestamp: '{{ .CommitTimestamp }}'\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          goreleaser release\n",
+    ".goreleaser.yaml": "builds:\n  - main: .\n    flags: [-trimpath]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)\n          goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/reproducible-build/java": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
+    "pom.xml": "<project><properties><project.build.outputTimestamp>2024-01-01T00:00:00Z</project.build.outputTimestamp></properties></project>\n"
+   }
+  }
+ ],
+ "release/reproducible-build/kotlin": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.1.0-bin.zip\n"
+   }
+  }
+ ],
+ "release/reproducible-build/rust": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    ".cargo/config.toml": "[build]\nrustflags = [\"--remap-path-prefix=/home=~\"]\n",
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release --locked\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/cpp": [
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "vcpkg.json": "{\"dependencies\": [\"fmt\"]}\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "vcpkg.json": "{\"dependencies\": [\"fmt\"], \"builtin-baseline\": \"abc\"}\n"
+   }
+  },
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "conanfile.txt": "[requires]\nzlib/1.3\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "conan.lock": "{}",
+    "conanfile.txt": "[requires]\nzlib/1.3\n"
+   }
+  },
+  {
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/dotnet": [
+  {
+   "fail": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "packages.lock.json": "{}",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  },
+  {
+   "pass": {
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"></Project>\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/flutter": [
+  {
+   "fail": {
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    "pubspec.lock": "x",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/go": [
+  {
+   "fail": {
+    "go.mod": "module x\n\nrequire a.b/c v1.0.0\n"
+   },
+   "message": "go.sum is not tracked",
+   "pass": {
+    "go.mod": "module x\n\nrequire a.b/c v1.0.0\n",
+    "go.sum": "x"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/java": [
+  {
+   "fail": {
+    "build.gradle": "plugins { id 'java' }\n"
+   },
+   "pass": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "gradle/verification-metadata.xml": "<x/>"
+   }
+  }
+ ],
+ "repo/lockfile-committed/kotlin": [
+  {
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   },
+   "pass": {
+    "app/gradle.lockfile": "x",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/node": [
+  {
+   "fail": {
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n",
+    "pnpm-lock.yaml": "x"
+   }
+  },
+  {
+   "fail": {
+    "a/package.json": "{\"dependencies\": {\"b\": \"1\"}}\n",
+    "package.json": "{\"workspaces\": [\"a\"]}\n"
+   },
+   "pass": {
+    "package.json": "{\"name\": \"x\"}\n"
+   }
+  },
+  {
+   "pass": {
+    "package-lock.json": "{}",
+    "package.json": "{\"workspaces\": [\"packages/*\"]}\n",
+    "packages/a/package.json": "{\"name\": \"a\", \"dependencies\": {\"b\": \"1\"}}\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/php": [
+  {
+   "fail": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n",
+    "composer.lock": "{}"
+   }
+  }
+ ],
+ "repo/lockfile-committed/python": [
+  {
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n",
+    "requirements.txt": "requests==2.32.0\n"
+   },
+   "message": "no Python lockfile",
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n",
+    "uv.lock": "version = 1\n"
+   }
+  },
+  {
+   "fail": {
+    "requirements.txt": "requests\n"
+   },
+   "pass": {
+    "requirements.txt": "requests==2.32.0 \\\n    --hash=sha256:abc\n"
+   }
+  },
+  {
+   "fail": {
+    "setup.py": "from setuptools import setup\n"
+   },
+   "pass": {
+    "requirements.txt": "# This file was autogenerated by uv via the following command:\n#    uv pip compile requirements.in\nrequests==2.32.0\n"
+   }
+  },
+  {
+   "fail": {
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\n  \"httpx\",\n]\n"
+   },
+   "pass": {
+    "pyproject.toml": "[project]\nname = \"x\"\n"
+   }
+  },
+  {
+   "fail": {
+    "pyproject.toml": "[tool.poetry.dependencies]\npython = \"^3.12\"\n"
+   },
+   "pass": {
+    "pylock.toml": "lock-version = \"1.0\"\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "repo/lockfile-committed/ruby": [
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "Gemfile.lock": "x"
+   }
+  }
+ ],
+ "repo/lockfile-committed/rust": [
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    "Cargo.lock": "x",
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   }
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[workspace]\nmembers = [\"a\"]\n",
+    "a/Cargo.toml": "[package]\nname = \"a\"\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/cpp": [
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "mise.toml": "[tools]\ncmake = \"3.31.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".devcontainer/devcontainer.json": "{\"image\": \"mcr.microsoft.com/devcontainers/cpp:1\"}\n",
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"
+   },
+   "pass": {
+    ".devcontainer/devcontainer.json": "{\"image\": \"mcr.microsoft.com/devcontainers/cpp@sha256:abc\"}\n",
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/dotnet": [
+  {
+   "fail": {
+    "global.json": "{\"msbuild-sdks\": {}}\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/flutter": [
+  {
+   "fail": {
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    ".fvmrc": "{\"flutter\": \"3.27.0\"}\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   }
+  },
+  {
+   "fail": {
+    "pubspec.yaml": "name: x\nenvironment:\n  sdk: ^3.5.0\n  flutter: \">=3.24.0\"\n"
+   },
+   "pass": {
+    "pubspec.yaml": "name: x\nenvironment:\n  sdk: ^3.5.0\n  flutter: 3.27.1\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/go": [
+  {
+   "fail": {
+    "go.mod": "module x\n\ngo 1.24\n"
+   },
+   "message": "pins no exact Go version",
+   "pass": {
+    "go.mod": "module x\n\ngo 1.24.0\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n\ngo 1.24\n",
+    "mise.toml": "[tools]\nnode = \"22\"\n"
+   },
+   "pass": {
+    "go.mod": "module x\n\ngo 1.24\n",
+    "mise.toml": "[tools]\ngo = \"1.24.3\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".tool-versions": "nodejs 22.1.0\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   },
+   "pass": {
+    ".mise.toml": "[tools]\ngo = \"1.24\"\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/hugo": [
+  {
+   "fail": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n"
+   },
+   "message": "Hugo version",
+   "pass": {
+    "hugo.toml": "baseURL = 'https://example.org/'\n",
+    "netlify.toml": "[build.environment]\nHUGO_VERSION = \"0.140.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: peaceiris/actions-hugo@v3\n        with:\n          hugo-version: latest\n",
+    "hugo.toml": "baseURL = 'https://example.org/'\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: peaceiris/actions-hugo@v3\n        with:\n          hugo-version: '0.140.0'\n",
+    "hugo.toml": "baseURL = 'https://example.org/'\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/java": [
+  {
+   "fail": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10-bin.zip\n"
+   },
+   "message": "JDK",
+   "pass": {
+    ".java-version": "21\n",
+    "build.gradle": "plugins { id 'java' }\n"
+   }
+  },
+  {
+   "fail": {
+    ".mvn/wrapper/maven-wrapper.properties": "distributionUrl=x\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    "build.gradle.kts": "plugins { java }\njava { toolchain { languageVersion = JavaLanguageVersion.of(21) } }\n"
+   }
+  },
+  {
+   "fail": {
+    "pom.xml": "<project><properties><maven.compiler.release>21</maven.compiler.release></properties></project>\n"
+   },
+   "pass": {
+    ".tool-versions": "java temurin-21.0.2+13.0.LTS\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/kotlin": [
+  {
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=x\n"
+   },
+   "pass": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\nkotlin { jvmToolchain(21) }\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/node": [
+  {
+   "fail": {
+    ".nvmrc": "lts/*\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    ".nvmrc": "22\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "package.json": "{\"engines\": {\"node\": \">=22\"}, \"packageManager\": \"pnpm@10.0.0\"}\n"
+   },
+   "pass": {
+    "mise.toml": "[tools]\nnode = \"22.11\"\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/php": [
+  {
+   "fail": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   },
+   "pass": {
+    ".php-version": "8.4\n",
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/python": [
+  {
+   "fail": {
+    ".tool-versions": "nodejs 22.1.0\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "message": "Python version",
+   "pass": {
+    ".python-version": "3.13\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  },
+  {
+   "fail": {
+    "mise.toml": "[tools]\npython = \"latest\"\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".tool-versions": "python 3.13.1\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/ruby": [
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   },
+   "pass": {
+    ".ruby-version": "3.4.1\n",
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n"
+   }
+  },
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "mise.toml": "[tools]\npython = \"3.13\"\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\nruby '3.4.1'\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/rust": [
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "rust-toolchain.toml": "[toolchain]\nchannel = \"1.90.0\"\n"
+   }
+  }
+ ]
+}

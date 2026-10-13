@@ -27,7 +27,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 		"rust":    {"Cargo.toml": "[package]\nname = \"x\"\n", ".goreleaser.yaml": "builds: [{builder: rust}]\nsboms: [{artifacts: archive}]\nsigns: [{cmd: cosign}]\n"},
 		"python":  {"pyproject.toml": "[project]\nname = \"x\"\n"},
 		"node":    {"package.json": "{}"},
-		"kotlin":  {"build.gradle.kts": "plugins {}\n"},
+		"kotlin":  {"build.gradle.kts": "plugins { kotlin(\"jvm\") }\n"},
 		"flutter": {"pubspec.yaml": "name: x\n"},
 		"hugo":    {"hugo.toml": "baseURL = 'https://example.org/'\n"},
 		"java":    {"pom.xml": "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>x</artifactId><version>1</version></project>\n"},
@@ -41,6 +41,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 		"ci/check-workflow", "ci/least-privilege", "ci/job-timeouts", "ci/concurrency-cancel", "ci/actions-pinned",
 		"release/tag-triggered", "release/sbom", "release/signing", "release/provenance", "release/checksums",
 		"changelog/generator-configured", "quality/policy-enforced", "deps/update-automation",
+		"ci/no-script-injection", "ci/checkout-no-persist-credentials", "ci/no-pipe-to-shell", "hooks/revs-pinned", "release/hosted-builder",
 	}
 	for stack, files := range manifests {
 		t.Run(stack, func(t *testing.T) {
@@ -60,7 +61,14 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 				files[dest] = string(b)
 			}
 			out := run(t, files, tier1Public)
-			for _, id := range rules {
+			check := rules
+			if stack == "node" || stack == "python" {
+				check = append(append([]string{}, rules...), "release/trusted-publishing")
+			}
+			if stack != "hugo" {
+				check = append(append([]string{}, check...), "format/configured/"+stack)
+			}
+			for _, id := range check {
 				if s := status(t, out, id); s.Status != model.StatusPass {
 					t.Errorf("%s: %s %q %+v", id, s.Status, s.Err, s.Findings)
 				}
@@ -193,16 +201,18 @@ func TestLintFixesSatisfyTheirRules(t *testing.T) {
 		files map[string]string
 		rules []string
 	}{
-		"python":  {map[string]string{"pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"}, []string{"lint/python-config", "lint/python-rules-enabled"}},
-		"rust":    {map[string]string{"Cargo.toml": "[package]\nname = \"x\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"}, []string{"lint/rust-config", "lint/rust-lints-denied"}},
-		"node":    {map[string]string{"package.json": "{\"name\": \"x\"}\n", "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\"\n  }\n}\n"}, []string{"lint/node-config", "lint/node-strict-flags"}},
-		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {}\n"}, []string{"lint/kotlin-config", "lint/kotlin-detekt-strict"}},
-		"flutter": {map[string]string{"pubspec.yaml": "name: x\n"}, []string{"lint/flutter-config", "lint/flutter-strict-modes"}},
-		"java":    {map[string]string{"pom.xml": "<project></project>\n"}, []string{"lint/java-config"}},
-		"dotnet":  {map[string]string{"global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n"}, []string{"lint/dotnet-config"}},
-		"cpp":     {map[string]string{"CMakeLists.txt": "project(x)\n"}, []string{"lint/cpp-config"}},
-		"ruby":    {map[string]string{"Gemfile": "source 'https://rubygems.org'\n"}, []string{"lint/ruby-config"}},
-		"php":     {map[string]string{"composer.json": "{\"name\": \"x/x\"}\n"}, []string{"lint/php-config"}},
+		"go":     {map[string]string{"go.mod": "module x\n"}, []string{"lint/configured/go", "lint/strict/go", "format/configured/go"}},
+		"python": {map[string]string{"pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"}, []string{"lint/configured/python", "lint/strict/python", "types/strict/python"}},
+		"rust":   {map[string]string{"Cargo.toml": "[package]\nname = \"x\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"}, []string{"lint/configured/rust", "lint/strict/rust"}},
+		"node":   {map[string]string{"package.json": "{\"name\": \"x\"}\n", "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\"\n  }\n}\n"}, []string{"lint/configured/node", "types/strict/node"}},
+		// The analyzer plugins are wired by hand; the fix writes their configuration.
+		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n"}, []string{"lint/configured/kotlin", "lint/strict/kotlin"}},
+		"flutter": {map[string]string{"pubspec.yaml": "name: x\n"}, []string{"lint/configured/flutter", "types/strict/flutter"}},
+		"java":    {map[string]string{"pom.xml": "<project><build><plugins><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin></plugins></build></project>\n"}, []string{"lint/configured/java", "lint/strict/java"}},
+		"dotnet":  {map[string]string{"global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n"}, []string{"lint/configured/dotnet", "lint/strict/dotnet"}},
+		"cpp":     {map[string]string{"CMakeLists.txt": "project(x)\nset(CMAKE_CXX_CLANG_TIDY clang-tidy)\n"}, []string{"lint/configured/cpp", "lint/strict/cpp", "format/configured/cpp"}},
+		"ruby":    {map[string]string{"Gemfile": "source 'https://rubygems.org'\n"}, []string{"lint/configured/ruby", "lint/strict/ruby", "format/configured/ruby"}},
+		"php":     {map[string]string{"composer.json": "{\"name\": \"x/x\"}\n"}, []string{"lint/configured/php", "types/strict/php", "format/configured/php"}},
 	}
 	for stack, tc := range cases {
 		t.Run(stack, func(t *testing.T) {

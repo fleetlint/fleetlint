@@ -46,70 +46,18 @@ type ruleCase struct {
 
 func TestOneDotZeroRules(t *testing.T) {
 	t.Parallel()
-	goreleaser := func(extra string) string { return "builds: [{main: .}]\n" + extra }
 	cases := map[string]ruleCase{
 		"repo/codeowners": {
 			pass: map[string]string{".github/CODEOWNERS": "* @me\n"},
 			fail: map[string]string{},
 		},
-		"lint/go-linters-enabled": {
-			pass:        map[string]string{"go.mod": "module x\n", ".golangci.yml": "version: \"2\"\nlinters:\n  enable: [errcheck, govet, staticcheck, errorlint, gosec, gocognit, funlen]\n"},
-			fail:        map[string]string{"go.mod": "module x\n", ".golangci.yml": "version: \"2\"\nlinters:\n  default: standard\n"},
-			wantMessage: "required linter is not enabled (errorlint)",
-		},
-		"quality/no-slop-markers": {
-			pass:        map[string]string{"README.md": "# x\n\nParses go.mod.\n", "CHANGELOG.md": "A robust release\n"},
-			fail:        map[string]string{"README.md": "# x\n\nA robust, blazing-fast tool.\n"},
-			wantMessage: "marketing filler",
-		},
-		"quality/coverage-threshold": {
-			pass: map[string]string{"Makefile": "cover:\n\tdiff-cover coverage.xml --fail-under=80\n"},
-			fail: map[string]string{"Makefile": "cover:\n\tgo test -cover ./...\n"},
-		},
 		"docs/architecture": {
 			pass: map[string]string{"README.md": "# x\n\n## Architecture\n\nboxes\n"},
 			fail: map[string]string{"README.md": "# x\n"},
 		},
-		"docs/adr-directory": {
-			pass: map[string]string{"docs/adr/0001-record.md": "# 1\n"},
-			fail: map[string]string{},
-		},
 		"deps/update-automation": {
 			pass: map[string]string{"renovate.json": "{}"},
 			fail: map[string]string{},
-		},
-		"ci/job-timeouts": {
-			pass: map[string]string{".github/workflows/ci.yml": wf("  push:\n", "  a:\n    timeout-minutes: 10\n    steps:\n"+step("", "true")+"  b:\n    uses: org/repo/.github/workflows/x.yml@main\n")},
-			fail: map[string]string{".github/workflows/ci.yml": wf("  push:\n", job("a", step("", "true")))},
-		},
-		"ci/concurrency-cancel": {
-			pass: map[string]string{".github/workflows/pr.yml": "on: [pull_request]\nconcurrency: {group: x, cancel-in-progress: true}\n" + "jobs:\n" + job("a", step("", "true"))},
-			fail: map[string]string{".github/workflows/pr.yml": wf("  pull_request:\n", job("a", step("", "true")))},
-		},
-		"ci/no-pull-request-target": {
-			pass:        map[string]string{".github/workflows/label.yml": wf("  pull_request_target:\n", job("a", step("actions/labeler@v5", "")))},
-			fail:        map[string]string{".github/workflows/bad.yml": wf("  pull_request_target:\n", job("a", "      - uses: actions/checkout@v4\n        with: {ref: '${{ github.event.pull_request.head.sha }}'}\n"))},
-			wantMessage: "checks out the pull request head",
-		},
-		"release/signing": {
-			pass: map[string]string{".goreleaser.yaml": goreleaser("signs: [{cmd: cosign}]\n"), releaseWF: wf(tagPush, job("r", step("goreleaser/goreleaser-action@v6", "")))},
-			fail: map[string]string{".goreleaser.yaml": goreleaser(""), releaseWF: wf(tagPush, job("r", step("goreleaser/goreleaser-action@v6", "")))},
-		},
-		"release/provenance": {
-			pass: map[string]string{".goreleaser.yaml": goreleaser(""), releaseWF: wf(tagPush, job("r", step("actions/attest-build-provenance@v2", "")))},
-			fail: map[string]string{".goreleaser.yaml": goreleaser(""), releaseWF: wf(tagPush, job("r", step("", "make dist")))},
-		},
-		"release/tag-triggered": {
-			pass: map[string]string{".goreleaser.yaml": goreleaser(""), releaseWF: wf(tagPush, job("r", step("", "goreleaser release")))},
-			fail: map[string]string{".goreleaser.yaml": goreleaser("")},
-		},
-		"release/checksums": {
-			pass: map[string]string{".goreleaser.yaml": goreleaser(""), releaseWF: wf(tagPush, job("r", step("", "goreleaser release")))},
-			fail: map[string]string{".goreleaser.yaml": goreleaser("checksum: {disable: true}\n"), releaseWF: wf(tagPush, job("r", step("", "goreleaser release")))},
-		},
-		"release/changelog-in-release": {
-			pass: map[string]string{"cliff.toml": "[changelog]\n", releaseWF: wf(tagPush, job("r", step("", "git-cliff --latest")))},
-			fail: map[string]string{"cliff.toml": "[changelog]\n", releaseWF: wf(tagPush, job("r", step("", "gh release create")))},
 		},
 		"public/contributing": {
 			pass: map[string]string{"CONTRIBUTING.md": "run make check\n"},
@@ -119,64 +67,13 @@ func TestOneDotZeroRules(t *testing.T) {
 			pass: map[string]string{"CODE_OF_CONDUCT.md": "be kind\n"},
 			fail: map[string]string{},
 		},
-		"repo/toolchain-pinned": {
-			pass:        map[string]string{"go.mod": "module x\n\ngo 1.24.0\n", "package.json": "{}", ".nvmrc": "22\n"},
-			fail:        map[string]string{"go.mod": "module x\n\ngo 1.24\n", "package.json": "{}", ".nvmrc": "22\n"},
-			wantMessage: "not pinned",
-		},
-		"deps/vulnerability-scan": {
-			pass: map[string]string{"Makefile": "audit:\n\tgovulncheck ./...\n"},
-			fail: map[string]string{"Makefile": "audit:\n\tgitleaks git .\n"},
-		},
-		"deps/license-check": {
-			pass: map[string]string{".github/workflows/ci.yml": wf("  push:\n", job("a", step("", "go-licenses check ./...")))},
-			fail: map[string]string{"Makefile": "audit:\n\tgovulncheck ./...\n"},
-		},
 		"deps/install-scripts-disabled": {
 			pass: map[string]string{"package.json": "{}", ".npmrc": "ignore-scripts=true\n"},
 			fail: map[string]string{"package.json": "{}", ".npmrc": "save-exact=true\n"},
 		},
-		"lint/shell": {
-			pass: map[string]string{"scripts/run.sh": "#!/bin/sh\n", ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/shellcheck-py/shellcheck-py\n    rev: v0.10.0.1\n    hooks: [{id: shellcheck}]\n"},
-			fail: map[string]string{"scripts/run.sh": "#!/bin/sh\n"},
-		},
-		"containers/dockerignore": {
-			pass: map[string]string{"Dockerfile": "FROM scratch\n", ".dockerignore": ".git\n"},
-			fail: map[string]string{"deploy/Dockerfile.api": "FROM scratch\n"},
-		},
-		"containers/non-root-user": {
-			pass:        map[string]string{"Dockerfile": "FROM alpine:3\nUSER root\nRUN true\nUSER app\n", "b/Dockerfile": "FROM gcr.io/distroless/static:nonroot\n", ".dockerignore": ".git\n"},
-			fail:        map[string]string{"Dockerfile": "FROM alpine:3\nUSER 0\n"},
-			wantMessage: "runs as root",
-		},
-		"containers/base-image-pinned": {
-			pass:        map[string]string{"Dockerfile": "ARG BASE=x\nFROM golang:1.24@sha256:abc AS build\nFROM $BASE AS mid\nFROM --platform=linux/amd64 build AS again\nFROM scratch\n"},
-			fail:        map[string]string{"Dockerfile": "FROM golang:1.24@sha256:abc AS build\nFROM alpine:3.20\n"},
-			wantMessage: "without a digest",
-		},
 		"public/manifest-license": {
 			pass: map[string]string{"package.json": "{\"license\": \"MIT\"}", "Cargo.toml": "[package]\nname = \"x\"\nlicense = \"MIT\"\n"},
 			fail: map[string]string{"package.json": "{\"license\": \"MIT\"}", "Cargo.toml": "[package]\nname = \"x\"\n"},
-		},
-		"lint/python-rules-enabled": {
-			pass:        map[string]string{"pyproject.toml": "[tool.ruff.lint]\nselect = [\"ALL\"]\n"},
-			fail:        map[string]string{"pyproject.toml": "[tool.ruff.lint]\nselect = [\"E\", \"F\", \"I\", \"B\", \"UP\", \"SIM\", \"BLE\", \"S\", \"C90\"]\n"},
-			wantMessage: "(T20)",
-		},
-		"lint/node-strict-flags": {
-			pass:        map[string]string{"package.json": "{}", "tsconfig.json": `{"compilerOptions": {"strict": true, "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true, "noImplicitOverride": true, "noFallthroughCasesInSwitch": true}}`},
-			fail:        map[string]string{"package.json": "{}", "tsconfig.json": `{"compilerOptions": {"strict": true, "noUncheckedIndexedAccess": false, "exactOptionalPropertyTypes": true, "noImplicitOverride": true, "noFallthroughCasesInSwitch": true}}`},
-			wantMessage: "(noUncheckedIndexedAccess)",
-		},
-		"lint/rust-lints-denied": {
-			pass:        map[string]string{"Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"warn\"\npanic = \"deny\"\ntodo = \"deny\"\ndbg_macro = { level = \"deny\" }\n"},
-			fail:        map[string]string{"Cargo.toml": "[package]\nname = \"x\"\n[lints.clippy]\nunwrap_used = \"deny\"\nexpect_used = \"warn\"\npanic = \"allow\"\ntodo = \"deny\"\ndbg_macro = \"deny\"\n"},
-			wantMessage: "(panic)",
-		},
-		"lint/flutter-strict-modes": {
-			pass:        map[string]string{"pubspec.yaml": "name: x\n", "analysis_options.yaml": "analyzer:\n  language:\n    strict-casts: true\n    strict-inference: true\n    strict-raw-types: true\n"},
-			fail:        map[string]string{"pubspec.yaml": "name: x\n", "analysis_options.yaml": "analyzer:\n  language:\n    strict-casts: true\n"},
-			wantMessage: "(strict-inference)",
 		},
 		"repo/dev-environment": {
 			pass: map[string]string{"Makefile": "tools:\n\tgo install example.com/lint@v1.2.3\n"},
@@ -198,15 +95,6 @@ func TestOneDotZeroRules(t *testing.T) {
 		"public/issue-templates": {
 			pass: map[string]string{".github/ISSUE_TEMPLATE/bug.md": "steps\n"},
 			fail: map[string]string{},
-		},
-		"lint/hugo-strict-build": {
-			pass: map[string]string{"hugo.toml": "baseURL = 'https://example.org/'\n", "Makefile": "lint:\n\thugo --quiet --panicOnWarning --destination /tmp/site\n"},
-			fail: map[string]string{"hugo.toml": "baseURL = 'https://example.org/'\n", "Makefile": "build:\n\thugo --minify\n"},
-		},
-		"lint/kotlin-detekt-strict": {
-			pass:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"},
-			fail:        map[string]string{"build.gradle.kts": "plugins {}\n", "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n"},
-			wantMessage: "(exceptions.SwallowedException)",
 		},
 		"quality/duplication-gate": {
 			pass: map[string]string{".golangci.yml": "version: \"2\"\nlinters:\n  enable:\n    - dupl\n"},
@@ -255,15 +143,16 @@ func withDefaults(files map[string]string) map[string]string {
 }
 
 // A release that is a container image: build-push-action without options
-// must fail the SBOM and provenance rules cleanly (not error on the missing
-// keys), pass them once the options are set, and needs no checksums file.
+// must fail the SBOM rule cleanly (not error on the missing keys) and passes
+// provenance (on by default since v4) unless `provenance: false`; it needs
+// no checksums file.
 func TestContainerImageReleases(t *testing.T) {
 	t.Parallel()
 	build := func(with string) map[string]string {
 		return map[string]string{releaseWF: wf(tagPush, job("image", "      - uses: docker/build-push-action@v6\n        with: {push: true"+with+"}\n"))}
 	}
 	bare := run(t, withDefaults(build("")), tier1Public)
-	for id, want := range map[string]model.Status{"release/sbom": model.StatusFail, "release/provenance": model.StatusFail, "release/checksums": model.StatusPass} {
+	for id, want := range map[string]model.Status{"release/sbom": model.StatusFail, "release/provenance": model.StatusPass, "release/checksums": model.StatusPass} {
 		if s := status(t, bare, id); s.Status != want {
 			t.Errorf("without options, %s: %s %q, want %s", id, s.Status, s.Err, want)
 		}
@@ -298,13 +187,13 @@ func TestNoLargeFilesRespectsLFS(t *testing.T) {
 func TestSemverTags(t *testing.T) {
 	t.Parallel()
 	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": tier1Public})
-	for _, tag := range []string{"v1.0.0", "api/v2.3.4-rc.1", "1.2.3", "release-2", "v1.0"} {
+	for _, tag := range []string{"v1.0.0", "api/v2.3.4-rc.1", "1.2.3", "release-2", "v1.0", "pkg@1.2.3", "@scope/pkg@2.0.0-beta.1", "pkg-v1.4.0", "sub/dir/v0.2.0"} {
 		tagIt(t, r.Root, tag)
 	}
 	out := evaluate(t, r)
 	s := status(t, out, "release/semver-tags")
 	if s.Status != model.StatusFail || len(s.Findings) != 2 {
-		t.Fatalf("exactly release-2 and v1.0 should fail: %+v", s.Findings)
+		t.Fatalf("exactly release-2 and v1.0 should fail; monorepo prefixes pass: %+v", s.Findings)
 	}
 	for _, f := range s.Findings {
 		if !strings.Contains(f.Message, "release-2") && !strings.Contains(f.Message, "v1.0)") {
@@ -335,20 +224,21 @@ func TestDevEnvironmentVersionVariables(t *testing.T) {
 
 // A Go module with a main package is an application: the API rule does not
 // apply. A library without the check fails; one with a documented fork via
-// docs/FORKS.md passes the forks rule however the replace line looks.
+// docs/FORKS.md passes the forks rule however the replace line looks; a
+// replace to a local path is no fork.
 func TestLibraryHeuristicAndForksDoc(t *testing.T) {
 	t.Parallel()
 	app := run(t, map[string]string{"go.mod": "module x\n", "cmd/x/main.go": "package main\n"}, tier1Public)
 	if s := status(t, app, "release/api-compatibility"); s.Status != model.StatusNotApplicable {
 		t.Errorf("an application is not held to API compatibility: %s %+v", s.Status, s.Findings)
 	}
-	forks := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/dep => ../dep\n", "docs/FORKS.md": "# Forks\n\n- dep: local patch\n"}, tier1Public)
+	forks := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3\n", "docs/FORKS.md": "# Forks\n\n- dep: local patch\n"}, tier1Public)
 	if s := status(t, forks, "deps/forks-documented"); s.Status != model.StatusPass {
 		t.Errorf("docs/FORKS.md documents the fork: %s %+v", s.Status, s.Findings)
 	}
-	none := run(t, map[string]string{"go.mod": "module x\n"}, tier1Public)
+	none := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/sib => ../sib\n"}, tier1Public)
 	if s := status(t, none, "deps/forks-documented"); s.Status != model.StatusNotApplicable {
-		t.Errorf("no forks, nothing to document: %s", s.Status)
+		t.Errorf("a local replace is a sibling, not a fork: %s", s.Status)
 	}
 }
 
@@ -369,6 +259,11 @@ func TestSignedTags(t *testing.T) {
 	untagged := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": tier1Public})
 	if s := status(t, evaluate(t, untagged), "release/signed-tags"); s.Status != model.StatusNotApplicable {
 		t.Errorf("without version tags the rule does not apply: %s", s.Status)
+	}
+	mono := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": tier1Public})
+	tagIt(t, mono.Root, "pkg@1.2.3")
+	if s := status(t, evaluate(t, mono), "release/signed-tags"); s.Status != model.StatusFail {
+		t.Errorf("a monorepo version tag is a release tag: %s", s.Status)
 	}
 }
 
@@ -395,21 +290,30 @@ func signedTag(t *testing.T, dir, name string) {
 
 func TestNoAIAttribution(t *testing.T) {
 	t.Parallel()
-	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {visibility: public}\n"})
+	const cfg = "version: 1\nextends: [fleetlint:minimal, fleetlint:slop]\nfacts: {visibility: public}\n"
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": cfg})
 	if s := status(t, evaluate(t, r), "public/no-ai-attribution"); s.Status != model.StatusPass {
 		t.Fatalf("clean history must pass: %+v", s)
 	}
+	// Names are not read: people called Devin or Claude with their own address pass.
+	gitCmd(t, r.Root, "commit", "--allow-empty", "-q", "--author", "Devin Smith <devin@smith.example>", "-m", "feat: d")
+	commit(t, r.Root, "fix: e\n\nCo-Authored-By: Claude Shannon <claude@shannon.example>")
+	commit(t, r.Root, "docs: written by copilot reviewers, not generated")
+	if s := status(t, evaluate(t, r), "public/no-ai-attribution"); s.Status != model.StatusPass {
+		t.Fatalf("human names and prose must pass: %+v", s.Findings)
+	}
 	commit(t, r.Root, "feat: a\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
 	commit(t, r.Root, "fix: b\n\n\U0001F916 Generated with [Claude Code](https://claude.com/claude-code)")
-	commit(t, r.Root, "docs: c")
+	gitCmd(t, r.Root, "commit", "--allow-empty", "-q", "--author", "Copilot <198982749+Copilot@users.noreply.github.com>", "-m", "feat: c")
+	commit(t, r.Root, "docs: f")
 	s := status(t, evaluate(t, r), "public/no-ai-attribution")
-	if s.Status != model.StatusFail || len(s.Findings) != 2 {
-		t.Fatalf("two attributed commits expected: %+v", s.Findings)
+	if s.Status != model.StatusFail || len(s.Findings) != 3 {
+		t.Fatalf("three attributed commits expected: %+v", s.Findings)
 	}
-	if !strings.Contains(s.Findings[0].Message, "fix: b") || !strings.Contains(s.Findings[1].Message, "feat: a") {
+	if !strings.Contains(s.Findings[0].Message, "feat: c") || !strings.Contains(s.Findings[1].Message, "fix: b") || !strings.Contains(s.Findings[2].Message, "feat: a") {
 		t.Errorf("findings should name the commit subjects: %+v", s.Findings)
 	}
-	private := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"})
+	private := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:slop]\nfacts: {visibility: private}\n"})
 	commit(t, private.Root, "feat: a\n\nCo-Authored-By: Claude <noreply@anthropic.com>")
 	if s := status(t, evaluate(t, private), "public/no-ai-attribution"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("private repositories are not checked: %+v", s)

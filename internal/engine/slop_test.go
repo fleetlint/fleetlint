@@ -62,3 +62,21 @@ func TestSlopHistoryRules(t *testing.T) {
 		}
 	}
 }
+
+// An initial import, git's own revert subjects and a vague description after a
+// type are judged as such.
+func TestSlopHistoryExemptions(t *testing.T) {
+	t.Parallel()
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": withSlop, "big.txt": strings.Repeat("line\n", 1600)})
+	gitCmd(t, r.Root, "commit", "--allow-empty", "-q", "-m", "Revert \"feat: a\"")
+	results := evaluate(t, r)
+	for _, id := range []string{"slop/non-conventional-commits", "slop/huge-commits", "slop/vague-commit-messages"} {
+		if s := status(t, results, id); s.Status != model.StatusPass {
+			t.Errorf("%s: a large root commit and a git revert pass: %s %+v", id, s.Status, s.Findings)
+		}
+	}
+	gitCmd(t, r.Root, "commit", "--allow-empty", "-q", "-m", "fix: update")
+	if s := status(t, evaluate(t, r), "slop/vague-commit-messages"); s.Status != model.StatusFail || len(s.Findings) != 1 {
+		t.Errorf("a type does not make an empty description specific: %s %+v", s.Status, s.Findings)
+	}
+}

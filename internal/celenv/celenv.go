@@ -51,7 +51,7 @@ var Accessors = []Accessor{
 	{"includes(path: string) -> list<map>", "What a GitLab CI file includes, as `{type, target, ref}` (type `local`, `project`, `remote`, `template` or `component`; ref is the project ref or component version); empty for other files."},
 	{"tags() -> list<string>", "Git tags, newest version first."},
 	{"tag_signed(name: string) -> bool", "True if the tag is an annotated tag carrying a PGP, SSH or X.509 signature; false for lightweight or unsigned tags. The signature is not verified."},
-	{"commits(n: int) -> list<map>", "Newest n commits as `{hash, author, email, subject, body, trailers, lines}`; `lines` is insertions plus deletions; empty without git."},
+	{"commits(n: int) -> list<map>", "Newest n commits as `{hash, author, email, subject, body, trailers, lines, root}`; `lines` is insertions plus deletions, `root` is true for a commit without parents; empty without git."},
 	{"grep(glob: string, regex: string) -> list<map>", "`{path, line, text, match}` for every line matching the regex (case-insensitive) in files matching the glob; `match` is the first capture group, or the whole match, unshortened; skips fenced code blocks; pairs with `foreach` to flag every match."},
 	{"codegrep(kind: string, regex: string) -> list<map>", "`{path, line, text, match}` for every matching line of tracked source code; kind is `code`, `test` or `nontest`. Case-sensitive unless the pattern starts with `(?i)`; vendored, generated and build paths are skipped."},
 	{"filesize(path: string) -> int", "Size in bytes of a tracked or untracked file; 0 when absent."},
@@ -232,8 +232,48 @@ func (e *Env) EvalList(prg cel.Program, params map[string]any) ([]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("evaluate: result is not a list: %w", err)
 	}
-	list, _ := v.([]any)
+	list, _ := native(v).([]any)
 	return list, nil
+}
+
+var mapType = reflect.TypeOf(map[string]any{})
+
+// native turns what CEL built (a map literal, the result of map() or
+// flatten()) into plain Go maps and lists, so a foreach item locates its
+// finding whether an accessor or the expression made it.
+func native(v any) any {
+	if val, ok := v.(ref.Val); ok {
+		return nativeVal(val)
+	}
+	if l, ok := v.([]any); ok {
+		for i, x := range l {
+			l[i] = native(x)
+		}
+		return l
+	}
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Map {
+		return v
+	}
+	m := make(map[string]any, rv.Len())
+	for it := rv.MapRange(); it.Next(); {
+		m[fmt.Sprint(native(it.Key().Interface()))] = native(it.Value().Interface())
+	}
+	return m
+}
+
+func nativeVal(v ref.Val) any {
+	switch v.Type() {
+	case types.MapType:
+		if m, err := v.ConvertToNative(mapType); err == nil {
+			return native(m)
+		}
+	case types.ListType:
+		if l, err := v.ConvertToNative(reflect.TypeOf([]any{})); err == nil {
+			return native(l)
+		}
+	}
+	return v.Value()
 }
 
 // EvalBoolWith evaluates a predicate with `item` bound.

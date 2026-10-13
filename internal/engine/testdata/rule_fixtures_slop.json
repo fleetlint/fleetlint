@@ -1,0 +1,568 @@
+{
+ "slop/conflict-markers": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "README.md": "Title\n=======\n\nText.\n",
+    "main.go": "package main\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "deploy/values.yaml": "<<<<<<< HEAD\nreplicas: 1\n=======\nreplicas: 2\n>>>>>>> feature\n"
+   },
+   "message": "conflict marker"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "Makefile": "all:\n<<<<<<< ours\n\tgo build\n>>>>>>> theirs\n"
+   }
+  }
+ ],
+ "slop/debug-output": [
+  {
+   "pass": {
+    "package.json": "{\"name\": \"root\", \"private\": true, \"workspaces\": [\"packages/*\"]}",
+    "packages/a/package.json": "{\"name\": \"a\"}",
+    "packages/a/src/index.ts": "export const log = (l: Logger) => l.info('x')\n"
+   },
+   "fail": {
+    "package.json": "{\"name\": \"root\", \"private\": true, \"workspaces\": [\"packages/*\"]}",
+    "packages/a/package.json": "{\"name\": \"a\"}",
+    "packages/a/src/index.ts": "export const f = () => console.log('x')\n"
+   },
+   "message": "raw print"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "app/user.rb": "def show\n  render json: user\nend\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "app/user.rb": "def show\n  binding.pry\nend\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "src/a.php": "<?php\n$logger->debug($x);\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "src/a.php": "<?php\nvar_dump($x);\n"
+   }
+  }
+ ],
+ "slop/report-documents": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "SUMMARY.md": "# Summary\n\n- [Intro](intro.md)\n",
+    "docs/IMPLEMENTATION.md": "# Implementation\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "IMPLEMENTATION_SUMMARY.md": "# Done\n"
+   },
+   "message": "report document"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "docs/REPORTING.md": "# How we report\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "NEXT_STEPS.md": "# Next\n"
+   }
+  }
+ ],
+ "slop/scratch-scripts": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "test_app.py": "def test_a():\n    assert 1 + 1 == 2\n",
+    "test-install.sh": "#!/bin/sh\n./install.sh\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "fix_imports.py": "import os\n"
+   },
+   "message": "scratch script"
+  }
+ ],
+ "slop/insecure-patterns": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "train.py": "model.eval()\nredis.eval(script, 0)\n",
+    "e2e.js": "await page.eval('x')\n",
+    "lib/net.dart": "client.badCertificateCallback = (cert, host, port) => cert.sha1 == pinned;\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "calc.py": "result = eval(user_input)\n"
+   },
+   "message": "insecure"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "lib/net.dart": "client.badCertificateCallback = (cert, host, port) => true;\n"
+   }
+  }
+ ],
+ "slop/skipped-tests": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "tests/parse.rs": "let rest = it.iter().skip(1);\n",
+    "a_test.go": "package a\nfunc TestA(t *testing.T) {\n\tif testing.Short() {\n\t\tt.Skip(\"short\")\n\t}\n}\n",
+    "tests/test_a.py": "@pytest.mark.skipif(sys.platform == 'win32', reason='posix')\ndef test_a(): pass\n",
+    "web/a.test.js": "it.skip('flaky upload', () => {}) // #123\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "web/a.test.js": "it.skip('flaky upload', () => {})\n"
+   },
+   "message": "skipped test"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "tests/test_b.py": "@pytest.mark.skip(reason='https://github.com/o/r/issues/7')\ndef test_b(): pass\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "tests/test_b.py": "@pytest.mark.skip\ndef test_b(): pass\n"
+   }
+  }
+ ],
+ "slop/placeholder-values": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "cli.go": "package main\nvar p = prompt(\"Enter your password\")\nvar h = \"URL of the server, e.g. https://example.com\"\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "config.go": "package main\nvar url = \"https://api.example.com\"\n"
+   },
+   "message": "placeholder value"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "config.py": "API_KEY = 'your-api-key'\n"
+   }
+  }
+ ],
+ "slop/placeholder-comments": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "client.go": "package main\n// You might want to call Close when done.\nvar u = \"http://x.test/for simplicity\"\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "client.go": "package main\n// For simplicity, return a constant.\n"
+   },
+   "message": "placeholder"
+  }
+ ],
+ "slop/variant-names": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "a.go": "package a\nfunc isNew() bool { return true }\ntype PolicyV2 struct{}\n",
+    "b.ts": "let maxTemp = 1\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "a.go": "package a\nfunc parse() {}\nfunc parseV2() {}\n"
+   },
+   "message": "variant"
+  }
+ ],
+ "slop/arbitrary-delays": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "ui.js": "setTimeout(() => render(), 100)\n",
+    "worker.py": "await asyncio.sleep(1)\n",
+    "Main.kt": "suspend fun f() { delay(100) }\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "worker.py": "time.sleep(5)\n"
+   },
+   "message": "sleep"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "deploy.sh": "#!/bin/sh\nstart_db\nsleep 5\nmigrate\n"
+   }
+  }
+ ],
+ "slop/escape-hatches": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "src/main.rs": "fn main() { let x = y.unwrap(); }\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "web/a.ts": "// @ts-expect-error\nconst x: number = 'a'\n"
+   },
+   "message": "suppression"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "app.py": "import os  # pylint: disable=unused-import\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "src/a.cpp": "int x = y; // NOLINT\n"
+   }
+  }
+ ],
+ "slop/forced-unwraps": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "src/main.rs": "fn main() { let c = load().expect(\"config is validated\"); }\n",
+    "tests/it.rs": "let x = y.unwrap();\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "src/main.rs": "fn main() { let x = y.unwrap(); }\n"
+   },
+   "message": "forced unwrap"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "src/Main.kt": "val n = name!!\n"
+   }
+  }
+ ],
+ "slop/emoji-headings": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "docs/a.md": "# Release notes\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "docs/a.md": "# Release 🇩🇪\n"
+   },
+   "message": "emoji"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "docs/b.md": "## Stars ⭐\n"
+   }
+  }
+ ],
+ "slop/emoji-in-code": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "a.go": "package a\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "a.go": "package a\nvar flag = \"🇩🇪\"\n"
+   },
+   "message": "emoji"
+  }
+ ],
+ "slop/vague-errors": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "a.ts": "throw new Error('could not open config.yaml')\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "a.ts": "throw new Error('Something went wrong')\n"
+   },
+   "message": "says nothing"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "a.js": "throw new Error(`Oops!`)\n"
+   }
+  }
+ ],
+ "slop/dumping-ground-files": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "deploy/common.yaml": "a: 1\n",
+    "common.mk": "X=1\n",
+    "docs/helpers.md": "# Helpers\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "utils.py": "def f(): pass\n"
+   },
+   "message": "dumping ground"
+  }
+ ],
+ "slop/variant-files": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "api/openapi_v2.yaml": "openapi: 3.0.0\n",
+    "router.go": "package main\n",
+    "router_v2.go": "package main\n",
+    "client_v2.py": "x = 1\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "client.py": "x = 1\n",
+    "client_v2.py": "x = 2\n"
+   },
+   "message": "copy or variant"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "src/handler-old.ts": "export {}\n"
+   }
+  }
+ ],
+ "slop/todo-without-issue": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "a.go": "package a\n// TODO https://github.com/o/r/issues/12 drop after the migration\n",
+    "b.py": "MASK = \"XXX-XXX\"  # format XXX-XXX\n",
+    "c.ts": "// TODO(#4): remove\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "a.go": "package a\n// TODO: later\n"
+   },
+   "message": "TODO"
+  }
+ ],
+ "slop/swallowed-errors": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "app/a.rb": "begin\n  risky\nrescue => e\n  log(e)\nend\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "app/a.rb": "x = risky rescue nil\n"
+   },
+   "message": "ignored"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "src/A.cs": "try { Run(); } catch (Exception) { }\n"
+   }
+  }
+ ],
+ "slop/focused-tests": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "Gemfile": "source 'x'\n",
+    "spec/a_spec.rb": "describe A do\n  it 'works' do\n  end\nend\n",
+    "lib/fit.rb": "def fit(x)\nend\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "Gemfile": "source 'x'\n",
+    "spec/a_spec.rb": "describe A do\n  fit 'works' do\n  end\nend\n"
+   },
+   "message": "focused"
+  }
+ ],
+ "slop/marketing-words": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "README.md": "# x\n\nA robust, comprehensive and powerful parser.\n",
+    "CHANGELOG.md": "Seamless upgrades\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "README.md": "# x\n\nSeamlessly integrates with everything.\n"
+   },
+   "message": "marketing filler"
+  }
+ ],
+ "repo/no-tracked-junk": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "testdata/sample.log": "line\n",
+    "internal/x/fixtures/a.log": "x\n",
+    ".vscode/settings.json": "{}\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "debug.log": "x\n"
+   },
+   "message": "does not belong"
+  }
+ ],
+ "repo/no-tracked-env": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".env.example": "K=\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "web/.env.development": "VITE_X=1\n"
+   },
+   "message": ".env"
+  }
+ ],
+ "repo/readme-present": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "README.rst": "Tool\n====\n\nline 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nInstallation\n------------\n\npip install x\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "README.md": "# Tool\n\nline 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nRun the setup script first.\n"
+   },
+   "message": "README"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "readme.md": "# Tool\n\nline 0\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\n## Usage\n\nx run\n"
+   }
+  }
+ ],
+ "public/no-agent-files": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "docs/cursor-notes.md": "# Notes\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    ".cursorrules": "be terse\n"
+   },
+   "message": "agent instruction"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "GEMINI.md": "x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    ".github/copilot-instructions.md": "x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    ".aider.conf.yml": "x: 1\n"
+   }
+  }
+ ],
+ "public/license": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "LICENSES/MIT.txt": "MIT\n"
+   },
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "LICENSE"
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "COPYING": "GPL\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "LICENCE": "MIT\n"
+   }
+  }
+ ],
+ "public/manifest-license": [
+  {
+   "pass": {
+    "package.json": "{\"name\": \"web\", \"private\": true}"
+   },
+   "fail": {
+    "package.json": "{\"name\": \"web\", \"license\": \"SEE LICENSE IN LICENSE\"}"
+   },
+   "message": "license"
+  },
+  {
+   "pass": {
+    "package.json": "{\"name\": \"lib\", \"license\": \"(MIT OR Apache-2.0)\"}"
+   }
+  }
+ ],
+ "public/security-policy": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "docs/SECURITY.md": "Mail security@x.test\n"
+   },
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "SECURITY.md"
+  }
+ ],
+ "public/code-of-conduct": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    ".gitea/CODE_OF_CONDUCT.md": "Be kind\n"
+   }
+  }
+ ],
+ "quality/duplication-gate": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\n",
+    "Makefile": "lint:\n\tpylint src\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\n\n[tool.pylint.\"messages control\"]\ndisable = [\n  \"missing-docstring\",\n  \"duplicate-code\",\n]\n",
+    "Makefile": "lint:\n\tpylint src\n"
+   },
+   "message": "duplication"
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    ".golangci.yml": "version: \"2\"\nlinters:\n  default: all\n  disable:\n    - dupl\n"
+   }
+  }
+ ]
+}

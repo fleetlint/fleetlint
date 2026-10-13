@@ -67,7 +67,8 @@ func (e *Env) ciAccessors() []cel.EnvOption {
 }
 
 // commits returns the newest n commits as `{hash, author, email, subject,
-// body, trailers, lines}`; lines is insertions plus deletions.
+// body, trailers, lines, root}`; lines is insertions plus deletions, root
+// marks a commit without parents.
 // Without git or without commits the list is empty (rules that need
 // history guard with `repo.has_git`); a failing git log is an error, so a
 // rule about commits never passes on history it could not read.
@@ -76,7 +77,7 @@ func (e *Env) commits(n int) ([]any, error) {
 	if !e.repo.HasGit() {
 		return []any{}, nil
 	}
-	out, err := e.repo.Git("log", "-n", strconv.Itoa(n), "--format=%H"+sep+"%an"+sep+"%ae"+sep+"%s"+sep+"%b"+sep+"%(trailers)"+"\x1e", "--shortstat")
+	out, err := e.repo.Git("log", "-n", strconv.Itoa(n), "--format=%H"+sep+"%P"+sep+"%an"+sep+"%ae"+sep+"%s"+sep+"%b"+sep+"%(trailers)"+"\x1e", "--shortstat")
 	switch {
 	case err != nil && strings.Contains(err.Error(), "does not have any commits"):
 		return []any{}, nil
@@ -97,13 +98,13 @@ func (e *Env) commits(n int) ([]any, error) {
 		if rec == "" {
 			continue
 		}
-		f := strings.SplitN(rec, sep, 6)
-		for len(f) < 6 {
+		f := strings.SplitN(rec, sep, 7)
+		for len(f) < 7 {
 			f = append(f, "")
 		}
 		list = append(list, map[string]any{
-			"hash": f[0], "author": f[1], "email": f[2], "subject": f[3],
-			"body": strings.TrimSpace(f[4]), "trailers": strings.TrimSpace(f[5]), "lines": int64(0),
+			"hash": f[0], "root": f[1] == "", "author": f[2], "email": f[3], "subject": f[4],
+			"body": strings.TrimSpace(f[5]), "trailers": strings.TrimSpace(f[6]), "lines": int64(0),
 		})
 	}
 	return list, nil

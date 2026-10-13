@@ -6,6 +6,7 @@ package facts
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/fleetlint/fleetlint/internal/ci"
@@ -306,7 +307,9 @@ func detectHooks(r *repo.Repo) []string {
 	if r.Has(".pre-commit-config.yaml") {
 		out = append(out, "pre-commit-config")
 	}
-	if r.Has("lefthook.yml") || r.Has(".lefthook.yml") {
+	if slices.ContainsFunc([]string{"lefthook", ".lefthook"}, func(base string) bool {
+		return slices.ContainsFunc([]string{".yml", ".yaml", ".toml", ".json", ".jsonc"}, func(ext string) bool { return r.Has(base + ext) })
+	}) {
 		out = append(out, "lefthook")
 	}
 	if r.IsDir(".husky") {

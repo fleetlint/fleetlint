@@ -148,7 +148,7 @@ func TestStrictAndOssPresets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]string{"public/license": "true", "public/no-ai-attribution": "repo.has_git", "public/security-policy": "repo.tier == 1"} {
+	for id, want := range map[string]string{"public/license": "true", "public/security-policy": "true"} {
 		if r, _ := ruleByID(oss, id); r.When != want {
 			t.Errorf("%s: when = %q, want %q", id, r.When, want)
 		}

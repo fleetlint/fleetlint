@@ -155,10 +155,11 @@ func TestFleetFixPassesOverWhatItCannotPlan(t *testing.T) {
 	t.Parallel()
 	commented := testutil.GitFixture(t, map[string]string{
 		"package.json": `{"name": "x", "scripts": {"build": "tsc"}}`, "tsconfig.json": "{\n  // loose for now\n  \"compilerOptions\": {}\n}\n",
+		".fleetlint.yaml": "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 2}\n",
 	}).Root
 	work := t.TempDir()
 	code, stdout, stderr := runCLI(t, work, "fleet", "--fix", "--out", filepath.Join(work, "report"), commented)
-	if code != cli.ExitOK || !strings.Contains(stdout, "skipped lint/node-config") || !strings.Contains(stdout, "0 could not be checked") {
+	if code != cli.ExitOK || !strings.Contains(stdout, "skipped types/strict/node") || !strings.Contains(stdout, "0 could not be checked") {
 		t.Fatalf("a rule fix cannot plan is skipped, the repository still checked: exit %d\n%s\n%s", code, stdout, stderr)
 	}
 }

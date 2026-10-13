@@ -31,18 +31,18 @@ func TestTrackedJunk(t *testing.T) {
 
 func TestLockfileCommitted(t *testing.T) {
 	t.Parallel()
-	missing := run(t, map[string]string{"go.mod": "module x\nrequire a.b/c v1.0.0\n", "package.json": "{}"}, tier1Public)
-	s := status(t, missing, "repo/lockfile-committed")
-	if s.Status != model.StatusFail || len(s.Findings) != 2 || !strings.Contains(s.Findings[0].Message+s.Findings[1].Message, "(go)") || !strings.Contains(s.Findings[0].Message+s.Findings[1].Message, "(node)") {
-		t.Fatalf("want one finding for go and one for node: %+v", s.Findings)
+	const goMod, pkg = "module x\nrequire a.b/c v1.0.0\n", "{\"dependencies\": {\"a\": \"1\"}}"
+	missing := run(t, map[string]string{"go.mod": goMod, "package.json": pkg}, tier1Public)
+	for id, want := range map[string]string{"repo/lockfile-committed/go": "go.sum", "repo/lockfile-committed/node": "Node lockfile"} {
+		if s := status(t, missing, id); s.Status != model.StatusFail || len(s.Findings) != 1 || !strings.Contains(s.Findings[0].Message, want) {
+			t.Fatalf("%s: want one finding naming %q: %+v", id, want, s.Findings)
+		}
 	}
-	present := run(t, map[string]string{"go.mod": "module x\nrequire a.b/c v1.0.0\n", "go.sum": "x", "package.json": "{}", "pnpm-lock.yaml": "x"}, tier1Public)
-	if s := status(t, present, "repo/lockfile-committed"); s.Status != model.StatusPass {
-		t.Fatalf("both lockfiles present: %+v", s)
-	}
-	noDeps := run(t, map[string]string{"go.mod": "module x\n"}, tier1Public)
-	if s := status(t, noDeps, "repo/lockfile-committed"); s.Status != model.StatusPass {
-		t.Fatalf("a Go module without requirements needs no go.sum: %+v", s)
+	present := run(t, map[string]string{"go.mod": goMod, "go.sum": "x", "package.json": pkg, "pnpm-lock.yaml": "x"}, tier1Public)
+	for _, id := range []string{"repo/lockfile-committed/go", "repo/lockfile-committed/node"} {
+		if s := status(t, present, id); s.Status != model.StatusPass {
+			t.Fatalf("%s: lockfile present: %+v", id, s)
+		}
 	}
 }
 
@@ -55,14 +55,17 @@ func TestActionsPinned(t *testing.T) {
 		".gitea/workflows/x.yml":   "on: push\njobs:\n  b:\n    steps:\n      - uses: 'foo/bar@main'\n",
 	}, tier1Public)
 	s := status(t, out, "ci/actions-pinned")
-	if s.Status != model.StatusFail || len(s.Findings) != 2 {
-		t.Fatalf("want the two unpinned references only: %+v", s.Findings)
+	if s.Status != model.StatusFail || len(s.Findings) != 3 {
+		t.Fatalf("want the three unpinned references only (a docker:// tag is unpinned): %+v", s.Findings)
 	}
 	if s.Findings[0].Path != ".github/workflows/ci.yml" || s.Findings[0].Line != 5 || !strings.Contains(s.Findings[0].Message, "actions/checkout@v4") {
 		t.Fatalf("the finding names file, line and reference: %+v", s.Findings[0])
 	}
-	if s.Findings[1].Path != ".gitea/workflows/x.yml" {
-		t.Fatalf("gitea workflows are checked too: %+v", s.Findings[1])
+	if !strings.Contains(s.Findings[1].Message, "docker://alpine:3") {
+		t.Fatalf("a docker:// image needs a digest: %+v", s.Findings[1])
+	}
+	if s.Findings[2].Path != ".gitea/workflows/x.yml" {
+		t.Fatalf("gitea workflows are checked too: %+v", s.Findings[2])
 	}
 }
 
@@ -81,12 +84,31 @@ func TestTrackedEnvNamesEachFile(t *testing.T) {
 	}
 }
 
+// Repository-wide hygiene rules run once at the root, so a member's file is reported once.
+func TestHygieneRulesReportOnceInWorkspaces(t *testing.T) {
+	t.Parallel()
+	out := run(t, map[string]string{
+		"go.work": "go 1.24\nuse ./api\n", "api/go.mod": "module a\n", "api/.DS_Store": "x", "api/.env": "K=v",
+	}, tier1Public)
+	for _, id := range []string{"repo/no-tracked-junk", "repo/no-tracked-env"} {
+		n := 0
+		for _, r := range out.Results {
+			if r.Rule.ID == id {
+				n += len(r.Findings)
+			}
+		}
+		if n != 1 {
+			t.Errorf("%s: want one finding across scopes, got %d", id, n)
+		}
+	}
+}
+
 func TestStrictFlagsReadTsconfigWithComments(t *testing.T) {
 	t.Parallel()
 	out := run(t, map[string]string{
 		"package.json": "{}", "tsconfig.json": "{\n  // strict on\n  \"compilerOptions\": {\"strict\": true,},\n}\n",
 	}, tier1Public)
-	if s := status(t, out, "lint/node-strict-flags"); s.Status != model.StatusFail || s.Err != "" || len(s.Findings) != 4 {
+	if s := status(t, out, "types/strict/node"); s.Status != model.StatusFail || s.Err != "" || len(s.Findings) != 4 {
 		t.Fatalf("a commented tsconfig is read, not a rule error: %+v", s)
 	}
 }

@@ -133,7 +133,7 @@ func Jobs(r *repo.Repo, path string) []any {
 		}
 		out = append(out, map[string]any{
 			"name": name, "timeout_minutes": intOf(job["timeout-minutes"]), "permissions": perms,
-			"runs_on": str(job["runs-on"]), "uses": str(job["uses"]), "image": image(job["container"]),
+			"runs_on": runsOn(job["runs-on"]), "uses": str(job["uses"]), "image": image(job["container"]),
 			"interruptible": false,
 		})
 	}
@@ -323,6 +323,15 @@ func gitlabMinutes(s string) int64 {
 		return 1
 	}
 	return seconds / 60
+}
+
+// runsOn flattens `runs-on` (a label, a list of labels, or {group, labels})
+// to comma-separated labels, the group first.
+func runsOn(v any) string {
+	if m, ok := v.(map[string]any); ok {
+		return strings.Join(append(strList(m["group"]), strList(m["labels"])...), ",")
+	}
+	return strings.Join(strList(v), ",")
 }
 
 func image(v any) string {

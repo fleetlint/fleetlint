@@ -18,6 +18,7 @@ type renovateConfig struct {
 	PostUpdateOptions   []string        `json:"postUpdateOptions,omitempty"`
 	LockFileMaintenance map[string]any  `json:"lockFileMaintenance,omitempty"`
 	PreCommit           map[string]bool `json:"pre-commit"`
+	MinimumReleaseAge   string          `json:"minimumReleaseAge"`
 }
 
 // composeRenovate writes renovate.json for the project's stacks.
@@ -29,6 +30,8 @@ func (t Templates) composeRenovate(stack string, p fix.Project) ([]byte, error) 
 		Extends: []string{"config:recommended", "helpers:pinGitHubActionDigests", ":semanticCommits", "customManagers:makefileVersions", "customManagers:githubActionsVersions"},
 		// The hook revisions fix writes are kept current too.
 		PreCommit: map[string]bool{"enabled": true},
+		// A release that is pulled within days never reaches the repository.
+		MinimumReleaseAge: "3 days",
 	}
 	stacks := map[string]bool{stack: true}
 	for _, n := range p.Nested {

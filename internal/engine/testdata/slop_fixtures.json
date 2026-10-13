@@ -110,7 +110,7 @@
       "a.go": "func New() {}\n"
     },
     "fail": {
-      "a.go": "func parseV2() {}\n"
+      "a.go": "func parse() {}\nfunc parseV2() {}\n"
     }
   },
   "slop/variant-files": {
@@ -118,6 +118,7 @@
       "client.py": "x = 1\n"
     },
     "fail": {
+      "client.py": "x = 1\n",
       "client_v2.py": "x = 1\n"
     }
   },
@@ -166,7 +167,7 @@
       "a_test.go": "func TestA(t *testing.T) {}\n"
     },
     "fail": {
-      "a_test.go": "t.Skip(\"later\")\n"
+      "src/test/java/ATest.java": "@Disabled\nvoid a() {}\n"
     }
   },
   "slop/trivial-asserts": {

@@ -5,6 +5,28 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Capabilities with one implementation per stack.** A rule of `kind: capability` states a requirement (`lint/configured`: a linter is configured); its implementations at `rules/<family>/<name>/<stack>.yaml` check it with the stack's tools and inherit every field they do not set. `any.yaml` is the stack-neutral implementation: it checks stacks without their own, and its satisfiers count for every stack. `use:`, overrides, exceptions and policy on the capability reach all its implementations; `lint/configured/go` adjusts one. A detected stack without an implementation is reported as not applicable with `no implementation for <stack>`, instead of passing unnoticed. Rule ids may have a third segment for that. `fleetlint docs` writes a capability matrix (`rules/capabilities.md`).
+- **Stacks are catalog data.** The catalog's `stacks/<id>.yaml` defines how a stack is detected (file and glob markers, content checks, `unless_stack`) and what `fleetlint fix` needs for it (dev container feature or image, the image targets run in, Renovate lockfile maintenance). A new stack is a catalog change. Stacks named in `.fleetlint.yaml` or on rules must be defined by the catalog. Catalogs without `stacks/` keep the detection of 0.3.
+- **GitLab CI and Forgejo Actions.** `workflows()` returns `.gitlab-ci.yml` (and `.gitlab-ci.yaml`) with the local files it includes, and `.forgejo/workflows/*`. `jobs()`, `steps()`, `triggers()` and `tagged_workflows()` read GitLab pipelines into the shape they give Actions workflows: a job's scripts are one step, `timeout:` becomes `timeout_minutes`, merge request pipelines read as `pull_request`, rules on `$CI_COMMIT_TAG` make a release pipeline. New: `ci_kind(path)` (`github`, `gitea`, `forgejo`, `gitlab`) and `includes(path)` for GitLab `include:` entries. `repo.ci` reports `forgejo-actions`.
+
+### Changed
+
+- **Engine level 3.** Catalogs written for level 3 need this fleetlint; catalogs for levels 1 and 2 still run.
+- The presets take their version from the catalog release they ship in (the tag, or the commit), so `selected_by` and reports read `fleetlint-recommended@v0.1.0`; a preset that states a version keeps it. Other catalogs still state theirs.
+- `codegrep` reads source under `packages/` (JavaScript monorepos were skipped entirely) and Ruby, PHP, C#, F#, C, C++, Vue, Svelte and Scala files. Test files also include `e2e/`, `cypress/`, `*.cy.*`, `*_spec.rb`, `tests.py`, `conftest.py` and `*Tests.cs`.
+- A Gradle build without the Kotlin plugin is a `java` stack, no longer `kotlin`; the Java dev container installs Gradle.
+- The Hugo image for `container: docker|podman` is pinned to a release instead of `latest`.
+- `fleetlint fix` turns the toolchain caches off in the release workflow it writes (a cache a pull request could fill must not feed signed artifacts), and the renovate.json it writes waits three days before proposing a new release (`minimumReleaseAge`).
+- Disabling a capability is listed once under its id, not once per implementation.
+
+### Fixed
+
+- A `foreach` item the expression builds itself (a map literal, `map()`, `flatten()`) locates its finding with path, line and label like an item an accessor returns; the finding showed the dumped map before.
+- `jobs()` reports `runs_on` when `runs-on` is a list or a `{group, labels}` map. `commits()` has `root`, true for a commit without parents.
+- `repo.hooks` recognises lefthook under all its file names (`lefthook.yml`, `.yaml`, `.toml`, `.json`, `.jsonc`, with or without a leading dot).
+
 ## [0.3.0] - 2026-10-13
 
 ### Changed

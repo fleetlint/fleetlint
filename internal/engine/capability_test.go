@@ -162,3 +162,37 @@ func TestBrokenImplementationsFailTheLoad(t *testing.T) {
 		}
 	}
 }
+
+// A foreach item the expression builds (a map literal, map()) locates its
+// finding like one an accessor returns.
+func TestForeachItemsBuiltInCEL(t *testing.T) {
+	t.Parallel()
+	cfg := `version: 1
+rules:
+  - id: acme/built
+    kind: expr
+    severity: warning
+    foreach: '["a.txt", "b.txt"].map(p, {"path": p, "line": 2, "name": "job-" + p, "ok": p == "a.txt"})'
+    expr: item.ok
+    message: not ok
+`
+	out := run(t, map[string]string{"a.txt": "x\n", "b.txt": "y\n"}, cfg)
+	s := status(t, out, "acme/built")
+	if s.Status != model.StatusFail || len(s.Findings) != 1 {
+		t.Fatalf("one failing item: %+v", s)
+	}
+	if f := s.Findings[0]; f.Path != "b.txt" || f.Line != 2 || f.Message != "not ok (job-b.txt)" {
+		t.Fatalf("the built map gives path, line and label: %+v", f)
+	}
+}
+
+func TestDisabledCapabilityIsRecordedOnce(t *testing.T) {
+	t.Parallel()
+	out := runWith(t, map[string]string{"go.mod": "module x\n"}, capCfg+"overrides:\n  qa/linted: {enabled: false, reason: \"not yet\"}\n")
+	if d := out.Config.Disabled; len(d) != 1 || d[0].ID != "qa/linted" {
+		t.Fatalf("one entry for the capability, none per implementation: %+v", d)
+	}
+	if shown(out, "qa/linted/go") {
+		t.Error("its implementations are off")
+	}
+}

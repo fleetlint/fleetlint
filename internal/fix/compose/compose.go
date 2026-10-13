@@ -384,11 +384,12 @@ func (t Templates) composeRelease(stack string, p fix.Project) ([]byte, error) {
 	case facts.ContainerDevcontainer:
 		head = strings.Replace(head, "    env:\n", "    env:\n      CONTAINER: \"0\"   # no dev container on the release runner: targets run on its toolchains\n", 1)
 	}
-	var b strings.Builder
+	var b, tools strings.Builder
 	b.WriteString(head)
-	if err := t.writeToolchains(&b, stack, p.Nested); err != nil {
+	if err := t.writeToolchains(&tools, stack, p.Nested); err != nil {
 		return nil, err
 	}
+	b.WriteString(withoutCache(tools.String()))
 	if p.Runner == repo.RunnerJust || p.Runner == repo.RunnerTask {
 		if err := t.writeFragments(&b, p, "check/runner-"+p.Runner+".yml"); err != nil {
 			return nil, err
@@ -406,6 +407,18 @@ func (t Templates) composeRelease(stack string, p fix.Project) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(b.String()), nil
+}
+
+var (
+	cacheStepRe = regexp.MustCompile(`(?m)^\s*- uses: Swatinem/rust-cache@.*\n`)
+	cacheKeyRe  = regexp.MustCompile(`(?m)^(\s*)(cache|enable-cache|bundler-cache): \S+(.*)$`)
+)
+
+// withoutCache turns the toolchain caches off for a release: a cache a pull
+// request could have written must not feed the artifacts that get signed.
+func withoutCache(steps string) string {
+	steps = cacheStepRe.ReplaceAllString(steps, "")
+	return cacheKeyRe.ReplaceAllString(steps, "${1}${2}: false   # no cache in a release build")
 }
 
 // writeToolchains adds the setup steps of the root stack and of every

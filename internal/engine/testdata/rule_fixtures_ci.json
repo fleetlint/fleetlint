@@ -1,0 +1,1122 @@
+{
+ "changelog/generator-configured": [
+  {
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "no changelog generator",
+   "pass": {
+    "cliff.toml": "[changelog]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".goreleaser.yml": "builds: [{main: .}]\nchangelog:\n  disable: true\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".goreleaser.yml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\n[tool.git-cliff.changelog]\nheader = \"x\"\n"
+   }
+  },
+  {
+   "pass": {
+    ".changeset/config.json": "{}",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "release-please-config.json": "{}"
+   }
+  },
+  {
+   "pass": {
+    "cog.toml": "\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".releaserc.json": "{}",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "changelog/present": [
+  {
+   "fail": {
+    "CHANGELOG.md": "# Changelog\n\nTODO\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no version sections",
+   "pass": {
+    "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "CHANGELOG.md": "# pkg\n\n## 1.2.0\n\n### Minor Changes\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/actions-pinned": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n",
+    "go.mod": "module x\n"
+   },
+   "message": "actions/checkout@v4",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v4\n      - uses: ./local/action\n      - uses: docker://alpine:3@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker://alpine:3\n",
+    "go.mod": "module x\n"
+   },
+   "message": "docker://alpine:3"
+  },
+  {
+   "fail": {
+    ".forgejo/workflows/x.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: https://data.forgejo.org/actions/checkout@v4\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "include:\n  - project: group/ci\n    ref: main\n    file: /t.yml\n",
+    "go.mod": "module x\n"
+   },
+   "message": "project group/ci@main",
+   "pass": {
+    ".gitlab-ci.yml": "include:\n  - project: group/ci\n    ref: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n    file: /t.yml\n  - component: gitlab.com/components/sast/sast@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n  - local: /ci/x.yml\n  - template: Jobs/SAST.gitlab-ci.yml\n  - remote: https://example.com/x.yml\n    integrity: sha256-abc\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "include:\n  - component: gitlab.com/components/sast/sast@1.2.0\n",
+    "go.mod": "module x\n"
+   },
+   "message": "component"
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "include: https://example.com/ci.yml\n",
+    "go.mod": "module x\n"
+   },
+   "message": "remote"
+  }
+ ],
+ "ci/check-workflow": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make check-fast\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no workflow runs",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make check\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  workflow_dispatch:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make check\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./gradlew check\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo make check-fast && fleetlint check\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: just --justfile justfile check\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: devcontainers/ci@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          push: never\n          runCmd: make check-fast\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: devcontainers/ci@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          push: never\n          runCmd: make check\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "check:\n  script:\n    - npm run check-fast\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "check:\n  script:\n    - npm run check\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./scripts/check.sh\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/checkout-no-persist-credentials": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          fetch-depth: 0\n",
+    "go.mod": "module x\n"
+   },
+   "message": "persist-credentials is not false",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          persist-credentials: false\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/concurrency-cancel": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "message": "does not cancel",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\nconcurrency:\n  group: x-${{ github.ref }}\n  cancel-in-progress: true\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\nconcurrency: pr-${{ github.ref }}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    concurrency:\n      group: a\n      cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\nconcurrency:\n  group: x\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\nconcurrency:\n  group: x\n  cancel-in-progress: false\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'\n    - if: $CI_COMMIT_BRANCH\ntest:\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'\n    - if: $CI_COMMIT_BRANCH\ndefault:\n  interruptible: true\ntest:\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'\n    - if: $CI_COMMIT_BRANCH\n  auto_cancel:\n    on_new_commit: none\ndefault:\n  interruptible: true\ntest:\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'\n    - if: $CI_COMMIT_BRANCH\ntest:\n  interruptible: true\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/job-timeouts": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: true\n  slow:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "message": "job has no timeout",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: true\n  b:\n    uses: org/repo/.github/workflows/x.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "lint:\n  timeout: 15m\n  script: [make lint]\ntest:\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "job has no timeout",
+   "pass": {
+    ".gitlab-ci.yml": "lint:\n  timeout: 15m\n  script: [make lint]\ntest:\n  timeout: 1h 30m\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "default:\n  image: alpine\nlint:\n  script: [make lint]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "default:\n  timeout: 20m\nlint:\n  script: [make lint]\ndownstream:\n  trigger: group/project\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".gitlab-ci.yml": ".base:\n  timeout: 10m\nlint:\n  extends: .base\n  script: [make lint]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/least-privilege": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "message": "does not declare permissions",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\npermissions:\n  contents: read\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\npermissions: write-all\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    permissions:\n      contents: read\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitea/workflows/x.yml": "on:\n  push:\npermissions:\n  contents: read\njobs:\n  a:\n    runs-on: ubuntu-latest\n    permissions: write-all\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitea/workflows/x.yml": "on:\n  push:\npermissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".forgejo/workflows/x.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    ".github/workflows/ci.yml": "on:\n  push:\npermissions: read-all\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    ".gitlab-ci.yml": "test:\n  script: [make test]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/no-pipe-to-shell": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: curl -fsSL https://get.example.com | sh\n",
+    "go.mod": "module x\n"
+   },
+   "message": "piped straight into a shell",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: curl -sSfL https://x/c.txt | grep tool | sha256sum -c -\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "setup:\n  script:\n    - wget -qO- https://x/install | sudo -E bash\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Dockerfile": "FROM alpine:3\nRUN apk add curl && \\\n    curl -fsSL https://x/install.sh | bash -s -- -y\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "Dockerfile": "FROM alpine:3\n# curl https://x | sh is how upstream documents it\nRUN apk add curl\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "api.Dockerfile": "FROM alpine:3\nRUN sh -c \"$(curl -fsSL https://x/install)\"\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: bash <(curl -s https://x/install)\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/no-pull-request-target": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n",
+    "go.mod": "module x\n"
+   },
+   "message": "checks out the pull request head",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/labeler@v5\n      - uses: actions/checkout@v4\n        with:\n          ref: refs/heads/main\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: refs/pull/${{ github.event.number }}/merge\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: gh pr checkout ${{ github.event.number }}\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: git fetch origin pull/${{ github.event.number }}/head:pr && git checkout pr\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          repository: ${{ github.event.pull_request.head.repo.full_name }}\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  pull_request_target:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ github.event.pull_request.head.sha }} > sha.txt\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/no-script-injection": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  issues:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo \"${{ github.event.issue.title }}\"\n",
+    "go.mod": "module x\n"
+   },
+   "message": "event data",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  issues:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - env:\n          TITLE: ${{ github.event.issue.title }}\n        run: echo \"$TITLE\"\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          git switch ${{ github.head_ref }}\n          make\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  pull_request:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ github.event.pull_request.number }}\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  issue_comment:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/github-script@v7\n        with:\n          script: |\n            console.log(\"${{ github.event.comment.body }}\")\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  issue_comment:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/labeler@v5\n        with:\n          body: ${{ github.event.comment.body }}\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitea/workflows/x.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo '${{ gitea.event.head_commit.message }}'\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/sast": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make check\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no SAST scan",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: github/codeql-action/init@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n      - uses: github/codeql-action/analyze@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "include:\n  - template: Jobs/Code-Quality.gitlab-ci.yml\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "include:\n  - template: Jobs/SAST.gitlab-ci.yml\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".gitlab-ci.yml": "include:\n  - component: $CI_SERVER_FQDN/components/sast/sast@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: semgrep ci\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "ci/workflow-lint": [
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    "go.mod": "module x\n"
+   },
+   "message": "actionlint or zizmor",
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: true\n",
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/zizmorcore/zizmor-pre-commit\n    rev: v1.5.0\n    hooks: [{id: zizmor}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: actionlint\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: zizmorcore/zizmor-action@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "containers/base-image-pinned": [
+  {
+   "fail": {
+    "Dockerfile": "FROM golang:1.24@sha256:abc AS build\nFROM alpine:3.20\n",
+    "go.mod": "module x\n"
+   },
+   "message": "without a digest",
+   "pass": {
+    "Dockerfile": "ARG BASE=x\nFROM golang:1.24@sha256:abc AS build\nFROM $BASE AS mid\nFROM --platform=linux/amd64 build AS again\nFROM scratch\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "web.Dockerfile": "FROM node:22\n"
+   }
+  }
+ ],
+ "containers/dockerignore": [
+  {
+   "fail": {
+    "deploy/Dockerfile.api": "FROM scratch\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".dockerignore": ".git\n",
+    "Dockerfile": "FROM scratch\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "api.Dockerfile": "FROM scratch\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "api.Dockerfile": "FROM scratch\n",
+    "api.Dockerfile.dockerignore": ".git\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "containers/non-root-user": [
+  {
+   "fail": {
+    "Dockerfile": "FROM golang:1 AS build\nUSER builder\nRUN go build\nFROM alpine:3\nCOPY --from=build /x /x\n",
+    "go.mod": "module x\n"
+   },
+   "message": "runs as root",
+   "pass": {
+    ".dockerignore": ".git\n",
+    "Dockerfile": "FROM golang:1 AS build\nRUN go build\nFROM alpine:3\nUSER root\nRUN true\nUSER app\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Dockerfile": "FROM alpine:3\nUSER app\nUSER 0:0\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "Dockerfile": "FROM --platform=$BUILDPLATFORM gcr.io/distroless/static:nonroot\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Dockerfile": "FROM cgr.dev/chainguard/go:latest-dev\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "Dockerfile": "FROM cgr.dev/chainguard/static:latest\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "deploy/api.Dockerfile": "FROM alpine:3\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".devcontainer/Dockerfile": "FROM mcr.microsoft.com/devcontainers/go:1\n",
+    "Dockerfile": "FROM scratch\nUSER 65532\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "docs/adr-directory": [
+  {
+   "fail": {
+    "docs/notes.md": "# notes\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no architecture decision records",
+   "pass": {
+    "doc/adr/0001-record.md": "# 1\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    "docs/architecture/decisions/0001-x.md": "# 1\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "hooks/config-present": [
+  {
+   "fail": {
+    "go.mod": "module x\n"
+   },
+   "message": "no hook configuration",
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.yaml": "pre-commit:\n  commands: {}\n"
+   }
+  },
+  {
+   "pass": {
+    ".lefthook.toml": "[pre-commit]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "hooks/conventional-commits": [
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: no-commit-to-branch\n        args: [--branch, main]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no commit-msg hook",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/compilerla/conventional-pre-commit\n    rev: v4.4.0\n    hooks:\n      - id: conventional-pre-commit\n        stages: [commit-msg]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: commit-check\n        entry: ./scripts/commit-check.sh\n        language: system\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/commitizen-tools/commitizen\n    rev: v4.8.0\n    hooks:\n      - id: commitizen\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: msg\n        entry: cog verify --file\n        language: system\n        stages: [commit-msg]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "pre-commit:\n  commands:\n    lint:\n      run: make lint\n"
+   },
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "commit-msg:\n  commands:\n    lint:\n      run: npx commitlint --edit {1}\n"
+   }
+  }
+ ],
+ "hooks/pre-push-check": [
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: make check-fast\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no pre-push hook",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: make check\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: fleetlint check --fail-on error\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: npm run check\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: make check\n        language: system\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: ./gradlew check\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: ./scripts/check.sh\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "pre-push:\n  commands:\n    check:\n      run: just check-fast\n"
+   },
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "pre-push:\n  commands:\n    check:\n      run: just check\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.yaml": "pre-push:\n  jobs:\n    - run: task check\n"
+   }
+  }
+ ],
+ "hooks/revs-pinned": [
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/x/y\n    rev: main\n    hooks:\n      - id: y\n",
+    "go.mod": "module x\n"
+   },
+   "message": "not pinned to a tag or commit",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/gitleaks/gitleaks\n    rev: v8.30.1\n    hooks:\n      - id: gitleaks\n  - repo: https://github.com/x/y\n    rev: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n    hooks:\n      - id: y\n  - repo: https://github.com/shellcheck-py/shellcheck-py\n    rev: v0.11.0.1-1\n    hooks:\n      - id: shellcheck\n  - repo: local\n    hooks:\n      - id: l\n        entry: true\n        language: system\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/x/y\n    rev: release-2.x\n    hooks:\n      - id: y\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/x/y\n    rev: HEAD\n    hooks:\n      - id: y\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "hooks/secret-scan": [
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: check-yaml\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no secret-scanning hook",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/gitleaks/gitleaks\n    rev: v8.30.1\n    hooks:\n      - id: gitleaks\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: detect-private-key\n",
+    "go.mod": "module x\n"
+   },
+   "message": "only detect-private-key",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: https://github.com/trufflesecurity/trufflehog\n    rev: v3.90.0\n    hooks:\n      - id: trufflehog\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: secrets\n        entry: ggshield secret scan pre-commit\n        language: system\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "pre-commit:\n  commands:\n    lint:\n      run: make lint\npre-push:\n  commands:\n    secrets:\n      run: gitleaks git\n"
+   },
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.yml": "pre-commit:\n  commands:\n    secrets:\n      run: gitleaks git --pre-commit --staged\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "lefthook.toml": "[pre-commit.commands.secrets]\nrun = \"gitleaks git --pre-commit --staged\"\n"
+   }
+  },
+  {
+   "pass": {
+    ".lefthook.yml": "pre-commit:\n  jobs:\n    - name: secrets\n      run: trufflehog git file://. --since-commit HEAD --fail\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "hooks/shared-hygiene": [
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: trailing-whitespace\n      - id: end-of-file-fixer\n      - id: check-merge-conflict\n",
+    "go.mod": "module x\n"
+   },
+   "message": "hygiene hooks missing",
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: trailing-whitespace\n      - id: end-of-file-fixer\n      - id: check-merge-conflict\n      - id: check-added-large-files\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: builtin\n    hooks:\n      - id: trailing-whitespace\n      - id: end-of-file-fixer\n      - id: check-merge-conflict\n  - repo: https://github.com/pre-commit/pre-commit-hooks\n    rev: v5.0.0\n    hooks:\n      - id: check-added-large-files\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/changelog-in-release": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: gh release create\n",
+    "cliff.toml": "[changelog]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: git-cliff --latest\n",
+    "cliff.toml": "[changelog]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [release-cli create]\n",
+    "cliff.toml": "[changelog]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [git cliff --latest -o notes.md]\n",
+    "cliff.toml": "[changelog]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/checksums": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\nchecksum: {disable: true}\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no checksums",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [make dist]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\nchecksum: {disable: true}\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script:\n    - make dist\n    - cd dist && sha256sum * > checksums.txt\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".gitlab-ci.yml": "publish-image:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_TAG]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\nchecksum: {disable: true}\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/hosted-builder": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: [self-hosted, linux]\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "self-hosted runner",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: self-hosted\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on:\n      group: big\n      labels: [self-hosted]\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/provenance": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make dist\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no build provenance",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/attest-build-provenance@v2\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          provenance: false\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v3\n        with:\n          push: true\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  variables:\n    RUNNER_GENERATE_ARTIFACTS_METADATA: \"true\"\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --access public\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  }
+ ],
+ "release/signing": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\nsigns: [{cmd: cosign}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  image: cgr.dev/chainguard/cosign\n  id_tokens:\n    SIGSTORE_ID_TOKEN:\n      aud: sigstore\n  script:\n    - cosign sign-blob --yes --bundle c.sigstore.json checksums.txt\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/tag-triggered": [
+  {
+   "fail": {
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/trusted-publishing": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          password: ${{ secrets.PYPI_API_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   },
+   "message": "long-lived registry token",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  crates:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: cargo publish --token ${{ secrets.CRATES_TOKEN }}\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  gpr:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n      packages: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    steps:\n      - run: uv publish\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [twine upload dist/*]\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  id_tokens:\n    PYPI_ID_TOKEN:\n      aud: pypi\n  script: [uv publish --trusted-publishing always]\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  }
+ ],
+ "taskrunner/check-composition": [
+  {
+   "fail": {
+    "Makefile": "lint:\n\tgo vet ./...\ntest:\n\tgo test ./...\ncheck: lint\n",
+    "go.mod": "module x\n"
+   },
+   "message": "must reach lint and test",
+   "pass": {
+    "Makefile": "lint:\n\tgo vet ./...\ntest:\n\tgo test ./...\ncover: test\n\tdiff-cover x\ncheck: lint cover\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "Makefile": "lint:\n\tgo vet ./...\ntest:\n\tgo test ./...\nbench:\n\tgo test -bench .\ncover: test bench\ncheck: lint cover\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    "Makefile": "lint:\n\tgo vet ./...\ntest:\n\tgo test ./...\ncheck:\n\t$(MAKE) lint test\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    "go.mod": "module x\n",
+    "justfile": "lint:\n    go vet ./...\ntest:\n    go test ./...\nrelease:\n    goreleaser\ncheck: lint test release\n"
+   },
+   "pass": {
+    "go.mod": "module x\n",
+    "justfile": "lint:\n    go vet ./...\ntest:\n    go test ./...\ngate: lint test\ncheck: gate\n"
+   }
+  }
+ ]
+}
