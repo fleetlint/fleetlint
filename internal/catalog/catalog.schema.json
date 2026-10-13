@@ -192,7 +192,8 @@
           },
           "id": {
             "type": "string",
-            "pattern": "^[a-z0-9-]+/[a-z0-9-]+$"
+            "pattern": "^[a-z0-9-]+/[a-z0-9-]+(/[a-z0-9-]+)?$",
+            "description": "family/name; family/name/<stack> implements the capability family/name for one stack (or `any`)."
           },
           "title": {
             "type": "string"
@@ -201,7 +202,8 @@
             "enum": [
               "expr",
               "outcome",
-              "command"
+              "command",
+              "capability"
             ]
           },
           "severity": {

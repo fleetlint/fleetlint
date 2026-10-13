@@ -1,0 +1,80 @@
+# Stack detection for catalogs older than engine level 3, which ship no
+# stacks/ directory. Frozen: new stacks go into the catalog.
+- id: cpp
+  title: C/C++
+  detect: [{file: CMakeLists.txt}, {file: meson.build}, {file: conanfile.txt}, {file: conanfile.py}, {file: vcpkg.json}]
+  devcontainer: {image: "mcr.microsoft.com/devcontainers/cpp:1"}
+  run_image: "mcr.microsoft.com/devcontainers/cpp:1"
+- id: dotnet
+  title: .NET
+  detect: [{file: global.json}, {file: Directory.Build.props}, {glob: "*.sln"}, {glob: "*.slnx"}, {glob: "*.csproj"}, {glob: "*.fsproj"}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/dotnet:1"}
+  run_image: "mcr.microsoft.com/devcontainers/dotnet:9.0"
+  lockfile_maintenance: true
+- id: flutter
+  title: Flutter / Dart
+  detect: [{file: pubspec.yaml}]
+  devcontainer: {image: "ghcr.io/cirruslabs/flutter:stable"}
+  run_image: "ghcr.io/cirruslabs/flutter:stable"
+  lockfile_maintenance: true
+- id: go
+  title: Go
+  detect: [{file: go.mod}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/go:1"}
+  run_image: "mcr.microsoft.com/devcontainers/go:1"
+- id: hugo
+  title: Hugo
+  detect:
+    - {file: hugo.toml}
+    - {file: hugo.yaml}
+    - {file: hugo.json}
+    - {file: config/_default/hugo.toml}
+    - {file: config/_default/hugo.yaml}
+    - {file: config/_default/config.toml}
+    - {file: config.toml, contains: baseURL, with: [content]}
+  devcontainer: {feature: "ghcr.io/devcontainers/features/hugo:1"}
+  run_image: "ghcr.io/gohugoio/hugo:latest"
+- id: java
+  title: Java
+  detect: [{file: pom.xml}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/java:1"}
+  run_image: "mcr.microsoft.com/devcontainers/java:21"
+- id: kotlin
+  title: Kotlin / JVM
+  detect:
+    - {file: build.gradle.kts}
+    - {file: settings.gradle.kts, unless_stack: flutter}
+    - {file: build.gradle, unless_stack: flutter}
+  devcontainer: {feature: "ghcr.io/devcontainers/features/java:1", options: {installGradle: true}}
+  run_image: "mcr.microsoft.com/devcontainers/java:21"
+  lockfile_maintenance: true
+- id: node
+  title: Node.js / TypeScript
+  detect: [{file: package.json}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/node:1"}
+  run_image: "mcr.microsoft.com/devcontainers/javascript-node:22"
+  lockfile_maintenance: true
+- id: php
+  title: PHP
+  detect: [{file: composer.json}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/php:1"}
+  run_image: "mcr.microsoft.com/devcontainers/php:8"
+  lockfile_maintenance: true
+- id: python
+  title: Python
+  detect: [{file: pyproject.toml}, {file: setup.py}, {file: requirements.txt}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/python:1"}
+  run_image: "mcr.microsoft.com/devcontainers/python:3"
+  lockfile_maintenance: true
+- id: ruby
+  title: Ruby
+  detect: [{file: Gemfile}, {glob: "*.gemspec"}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/ruby:1"}
+  run_image: "mcr.microsoft.com/devcontainers/ruby:3"
+  lockfile_maintenance: true
+- id: rust
+  title: Rust
+  detect: [{file: Cargo.toml}]
+  devcontainer: {feature: "ghcr.io/devcontainers/features/rust:1"}
+  run_image: "mcr.microsoft.com/devcontainers/rust:1"
+  lockfile_maintenance: true

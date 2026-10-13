@@ -72,6 +72,10 @@ const (
 	// satisfiers as evidence; repositories may add satisfiers, never remove
 	// the requirement.
 	KindOutcome Kind = "outcome"
+	// KindCapability states a requirement without checking it; its
+	// implementations, one per stack (rules/<family>/<name>/<stack>.yaml),
+	// check it with the stack's tools.
+	KindCapability Kind = "capability"
 )
 
 // Satisfier is one way an outcome can be achieved. The first satisfier whose
@@ -164,6 +168,33 @@ type Rule struct {
 	// PolicyBy is the catalog that locked the rule or set its floor when that
 	// is not the catalog that defined it.
 	PolicyBy string `yaml:"-" json:"policy_by,omitempty"`
+	// Capability and Stack are set on an implementation (an id of three
+	// segments, family/name/stack): the capability it implements and the
+	// stack it does so for, or "any" for every stack without its own.
+	Capability string `yaml:"-" json:"capability,omitempty"`
+	Stack      string `yaml:"-" json:"stack,omitempty"`
+	// Gate is the capability's `when`; it is evaluated before the
+	// implementation's own.
+	Gate string `yaml:"-" json:"gate,omitempty"`
+	// Implementations lists, on a capability, the stacks it has an
+	// implementation for.
+	Implementations []string `yaml:"-" json:"implementations,omitempty"`
+}
+
+// SplitImplementation splits an implementation id (family/name/stack) into
+// the capability id and the stack; ok is false for any other id.
+func SplitImplementation(id string) (capability, stack string, ok bool) {
+	i := strings.LastIndex(id, "/")
+	if i < 0 || strings.Count(id, "/") != 2 {
+		return "", "", false
+	}
+	return id[:i], id[i+1:], true
+}
+
+// Covers reports whether an override, exception or selection naming key
+// reaches this rule: its own id, or the capability it implements.
+func (r Rule) Covers(key string) bool {
+	return r.ID == key || (r.Capability != "" && r.Capability == key)
 }
 
 // Clone copies the rule with its own params, lists and actions, so a
@@ -176,6 +207,7 @@ func (r Rule) Clone() Rule {
 	r.Accept = slices.Clone(r.Accept)
 	r.Partials = slices.Clone(r.Partials)
 	r.Refs = slices.Clone(r.Refs)
+	r.Implementations = slices.Clone(r.Implementations)
 	r.Params, _ = deepCopy(r.Params).(map[string]any)
 	actions := make([]map[string]any, len(r.Fix.Actions))
 	for i, a := range r.Fix.Actions {

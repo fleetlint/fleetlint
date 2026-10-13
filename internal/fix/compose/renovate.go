@@ -20,12 +20,8 @@ type renovateConfig struct {
 	PreCommit           map[string]bool `json:"pre-commit"`
 }
 
-// lockfileStacks are the stacks whose package manager keeps a lockfile that
-// Renovate can refresh on a schedule. Go's go.sum is not one.
-var lockfileStacks = map[string]bool{"node": true, "python": true, "rust": true, "flutter": true, "kotlin": true, "ruby": true, "php": true, "dotnet": true}
-
 // composeRenovate writes renovate.json for the project's stacks.
-func composeRenovate(stack string, p fix.Project) ([]byte, error) {
+func (t Templates) composeRenovate(stack string, p fix.Project) ([]byte, error) {
 	cfg := renovateConfig{
 		Schema: "https://docs.renovatebot.com/renovate-schema.json",
 		// The two customManagers presets update versions in Makefiles and in
@@ -42,7 +38,8 @@ func composeRenovate(stack string, p fix.Project) ([]byte, error) {
 		cfg.PostUpdateOptions = []string{"gomodTidy"}
 	}
 	for s := range stacks {
-		if lockfileStacks[s] {
+		// A package manager whose lockfile Renovate can refresh; Go's go.sum is not one.
+		if d, ok := t.stack(s); ok && d.LockfileMaintenance {
 			cfg.LockFileMaintenance = map[string]any{"enabled": true, "schedule": []string{"before 6am on monday"}}
 			break
 		}

@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/rootfs"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // FileName is the config file fleetlint looks for at the repository root.
@@ -139,7 +140,50 @@ type Effective struct {
 	// Deprecations name configuration forms that still work but will go;
 	// the CLI prints them as warnings.
 	Deprecations []string
-	raw          []byte
+	// Stacks are the stack definitions of the catalog source.
+	Stacks []stacks.Def
+	raw    []byte
+}
+
+// loadStacks reads the source's stack definitions and checks that every
+// stack the configuration pins is one of them.
+func (e *Effective) loadStacks() error {
+	src := e.Source
+	if src == nil {
+		src = catalog.Builtin()
+	}
+	defs, err := src.StackDefs()
+	if err != nil {
+		return fmt.Errorf("catalog %s: %w", src.Version, err)
+	}
+	e.Stacks = defs
+	pinned := []Scope{e.Root}
+	if e.File.Scopes != nil {
+		pinned = append(pinned, *e.File.Scopes...)
+	}
+	if err := checkStacks(pinned, defs, func(id string) bool { return id != stacks.Any }); err != nil {
+		return fmt.Errorf("%s: %w (catalog %s has: %s)", FileName, err, src.Version, strings.Join(stacks.IDs(defs), ", "))
+	}
+	for _, r := range e.Rules {
+		if err := checkStacks([]Scope{{Stacks: r.Stacks}}, defs, func(string) bool { return true }); err != nil {
+			return fmt.Errorf("rule %s (%s): %w (catalog %s has: %s)", r.ID, r.Source, err, src.Version, strings.Join(stacks.IDs(defs), ", "))
+		}
+	}
+	return nil
+}
+
+// checkStacks refuses a stack the catalog does not define; anyOK says
+// whether "any" may stand for every stack.
+func checkStacks(scopes []Scope, defs []stacks.Def, anyOK func(string) bool) error {
+	for _, sc := range scopes {
+		for _, id := range sc.Stacks {
+			if _, ok := stacks.Find(defs, id); ok || (id == stacks.Any && anyOK(id)) {
+				continue
+			}
+			return fmt.Errorf("stack %q is not defined", id)
+		}
+	}
+	return nil
 }
 
 // FixTemplates returns the templates for `fix`: files shipped with the
@@ -201,6 +245,9 @@ func Load(root string, opts Options) (*Effective, error) {
 		return nil, err
 	}
 	if err := eff.validateScopeRules(); err != nil {
+		return nil, err
+	}
+	if err := eff.loadStacks(); err != nil {
 		return nil, err
 	}
 	if err := celenv.ValidateRules(eff.Rules); err != nil {
@@ -338,10 +385,8 @@ func (e *Effective) ScopeRules(scopePath string, overrides map[string]catalog.Ov
 		if err != nil {
 			return nil, err
 		}
-		for _, id := range ids {
-			if err := e.applyOverride(byID[id], ov, where, catalog.LayerRepo, where, byID); err != nil {
-				return nil, err
-			}
+		if err := e.applyToAll(ids, key, nil, ov, where, catalog.LayerRepo, where, byID); err != nil {
+			return nil, err
 		}
 	}
 	out := make([]model.Rule, 0, len(order))
@@ -482,6 +527,7 @@ func firstList(lists ...[]string) []string {
 func (e *Effective) RepoFacts() facts.Overrides {
 	o := e.File.Facts.ToFacts()
 	o.Stacks, o.TaskRunner = nil, ""
+	o.StackDefs = e.Stacks
 	return o
 }
 
@@ -762,12 +808,18 @@ func (e *Effective) addExceptions(c *catalog.Catalog, byID map[string]*model.Rul
 		return fmt.Errorf("%s: %w", c.Ref, err)
 	}
 	for _, ex := range c.Exceptions {
-		r, known := byID[ex.Rule]
+		known := false
+		for _, r := range byID {
+			if !r.Covers(ex.Rule) {
+				continue
+			}
+			known = true
+			if !r.ExceptionsAllowed() {
+				return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", c.Ref, r.ID, r.PolicySource())
+			}
+		}
 		if !known && !e.isDisabled(ex.Rule) {
 			return fmt.Errorf("%s: exceptions: rule %q is not loaded", c.Ref, ex.Rule)
-		}
-		if known && !r.ExceptionsAllowed() {
-			return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", c.Ref, r.ID, r.PolicySource())
 		}
 		ex.Layer, ex.Where, ex.Expired = c.Layer, c.Ref, expired(ex.Until, now)
 		e.Exceptions = append(e.Exceptions, ex)
@@ -796,7 +848,7 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 		if err != nil {
 			return err
 		}
-		if err := e.applyToAll(ids, inline, ov, where, c.Layer, by, byID); err != nil {
+		if err := e.applyToAll(ids, key, inline, ov, where, c.Layer, by, byID); err != nil {
 			return err
 		}
 	}
@@ -806,16 +858,28 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 // applyToAll applies one override to the matched rules, skipping the
 // catalog's own definitions: those are written as intended, overrides adjust
 // what the catalog took in.
-func (e *Effective) applyToAll(ids []string, inline map[string]bool, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+func (e *Effective) applyToAll(ids []string, key string, inline map[string]bool, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
 	for _, id := range ids {
 		if inline[id] {
 			continue
 		}
-		if err := e.applyOverride(byID[id], ov, where, layer, by, byID); err != nil {
+		if _, still := byID[id]; !still {
+			continue // disabled through its capability earlier in this loop
+		}
+		if err := e.applyOverride(byID[id], overrideTarget(key, id), ov, where, layer, by, byID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// overrideTarget is what an override key names for one matched rule: a
+// pattern names each rule itself, an exact key the rule or its capability.
+func overrideTarget(key, id string) string {
+	if strings.ContainsAny(key, "*?[") {
+		return id
+	}
+	return key
 }
 
 // inlineIDs are the rules a catalog defines itself, as opposed to selects.
@@ -849,10 +913,18 @@ func overrideKeys(overrides map[string]catalog.Override) []string {
 // must exist; a pattern may match nothing.
 func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]string, error) {
 	if !strings.ContainsAny(key, "*?[") {
-		if _, ok := byID[key]; !ok {
+		// A capability's id reaches its implementations as well.
+		var ids []string
+		for id, r := range byID {
+			if r.Covers(key) {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
 			return nil, fmt.Errorf("%s: rules.%s: no such rule in the catalogs loaded before this one", where, key)
 		}
-		return []string{key}, nil
+		sort.Strings(ids)
+		return ids, nil
 	}
 	rx, err := regexp.Compile(catalog.GlobRegexp(key))
 	if err != nil {
@@ -868,8 +940,19 @@ func matchRuleIDs(key string, byID map[string]*model.Rule, where string) ([]stri
 	return ids, nil
 }
 
-func (e *Effective) applyOverride(r *model.Rule, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+// applyOverride applies the override written for key to r: the rule itself,
+// or an implementation of the capability key names. Through a capability,
+// `when` gates the implementation instead of replacing its own condition,
+// and accept reaches only the outcome implementations.
+func (e *Effective) applyOverride(r *model.Rule, key string, ov catalog.Override, where, layer, by string, byID map[string]*model.Rule) error {
+	viaCapability := r.ID != key
 	rc := RuleConf{Enabled: ov.Enabled, Reason: ov.Reason, Severity: ov.Severity, Params: ov.Params, Accept: ov.Accept}
+	if r.Kind == model.KindCapability || (viaCapability && r.Kind != model.KindOutcome) {
+		rc.Accept = nil
+	}
+	if r.Kind == model.KindCapability {
+		rc.Params = nil
+	}
 	if ov.Raise != 0 {
 		if ov.Raise < 0 || ov.Severity != "" {
 			return fmt.Errorf("%s: rules.%s: raise must be positive and not combined with severity", where, r.ID)
@@ -886,7 +969,7 @@ func (e *Effective) applyOverride(r *model.Rule, ov catalog.Override, where, lay
 	if _, still := byID[r.ID]; !still {
 		return nil
 	}
-	if err := applyScope(r, ov, where); err != nil {
+	if err := applyScope(r, ov, where, viaCapability); err != nil {
 		return err
 	}
 	return tightenPolicy(r, ov, where, by)
@@ -894,14 +977,17 @@ func (e *Effective) applyOverride(r *model.Rule, ov catalog.Override, where, lay
 
 // applyScope replaces a rule's `when` and `tiers` from a catalog override.
 // A locked rule keeps its applicability: narrowing either would weaken it.
-func applyScope(r *model.Rule, ov catalog.Override, where string) error {
+func applyScope(r *model.Rule, ov catalog.Override, where string, viaCapability bool) error {
 	if ov.When == nil && len(ov.Tiers) == 0 {
 		return nil
 	}
 	if r.Locked {
 		return fmt.Errorf("%s: rules.%s: rule is locked by %s; when and tiers cannot change", where, r.ID, r.PolicySource())
 	}
-	if ov.When != nil {
+	switch {
+	case ov.When != nil && viaCapability:
+		r.Gate = *ov.When
+	case ov.When != nil:
 		r.When = *ov.When
 	}
 	if len(ov.Tiers) > 0 {
@@ -1016,7 +1102,7 @@ func keepExceptionPolicy(c *catalog.Catalog, prev, r *model.Rule) error {
 func (e *Effective) CheckExceptions(where string, exs []model.Exception) error {
 	for _, ex := range exs {
 		for i := range e.Rules {
-			if e.Rules[i].ID == ex.Rule && !e.Rules[i].ExceptionsAllowed() {
+			if e.Rules[i].Covers(ex.Rule) && !e.Rules[i].ExceptionsAllowed() {
 				return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", where, ex.Rule, e.Rules[i].PolicySource())
 			}
 		}

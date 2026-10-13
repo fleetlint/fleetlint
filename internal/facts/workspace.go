@@ -2,6 +2,7 @@ package facts
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/fleetlint/fleetlint/internal/repo"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // workspaceMembers finds the member directories of a monorepo from whatever
@@ -16,12 +18,12 @@ import (
 // only directories that contain a stack manifest count, so a `packages/*`
 // glob does not turn a README folder into a scope. A member with its own
 // .git (a submodule or a separate checkout) is a repository, not a scope.
-func workspaceMembers(r *repo.Repo) []string {
+func workspaceMembers(r *repo.Repo, manifests []string) []string {
 	set := map[string]bool{}
 	add := func(dirs []string) {
 		for _, d := range dirs {
 			d = strings.Trim(strings.TrimPrefix(d, "./"), "/")
-			if d != "" && d != "." && hasManifest(r, d) && !ownRepo(r, d) {
+			if d != "" && d != "." && hasManifest(r, d, manifests) && !ownRepo(r, d) {
 				set[d] = true
 			}
 		}
@@ -45,12 +47,14 @@ func ownRepo(r *repo.Repo, dir string) bool {
 	return err == nil
 }
 
-func hasManifest(r *repo.Repo, dir string) bool {
-	for _, markers := range stackMarkers {
-		for _, m := range markers {
-			if r.Has(dir + "/" + m) {
+func hasManifest(r *repo.Repo, dir string, manifests []string) bool {
+	for _, m := range manifests {
+		if strings.ContainsAny(m, "*?[") {
+			if len(r.Glob(dir+"/"+m)) > 0 {
 				return true
 			}
+		} else if r.Has(dir + "/" + m) {
+			return true
 		}
 	}
 	return false
@@ -188,34 +192,22 @@ func anyStrings(v any) []string {
 	return out
 }
 
-// notProjects are top-level directories whose manifests belong to examples,
-// fixtures or dependencies rather than to a part of the product.
-var notProjects = map[string]bool{
-	"vendor": true, "third_party": true, "node_modules": true, "testdata": true, "test": true, "tests": true,
-	"examples": true, "example": true, "samples": true, "sample": true, "docs": true, "doc": true,
-	"build": true, "dist": true, "target": true, "out": true,
-}
-
 // nestedProjects finds projects that sit in a top-level directory without a
 // workspace file declaring them, such as a `frontend/` with its own
 // package.json next to a Go module. Only tracked manifests one level down
 // count, so dependencies and build output are never mistaken for projects.
-func nestedProjects(r *repo.Repo) []string {
+func nestedProjects(r *repo.Repo, manifests []string) []string {
 	if !r.HasGit() {
 		return nil
 	}
 	set := map[string]bool{}
 	for _, f := range r.TrackedInScope() {
 		dir, name, ok := strings.Cut(f, "/")
-		if !ok || strings.Contains(name, "/") || strings.HasPrefix(dir, ".") || notProjects[dir] {
+		if !ok || strings.Contains(name, "/") || strings.HasPrefix(dir, ".") || stacks.NotProjects[dir] {
 			continue
 		}
-		for _, markers := range stackMarkers {
-			for _, m := range markers {
-				if name == m {
-					set[dir] = true
-				}
-			}
+		if slices.ContainsFunc(manifests, func(m string) bool { ok, _ := path.Match(m, name); return ok }) {
+			set[dir] = true
 		}
 	}
 	out := make([]string, 0, len(set))

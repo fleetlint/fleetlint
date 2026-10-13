@@ -9,6 +9,7 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 
+	"github.com/fleetlint/fleetlint/internal/ci"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
@@ -30,8 +31,10 @@ func (e *Env) ciAccessors() []cel.EnvOption {
 				}
 				return types.Bool(repo.MatchGlob(p, n))
 			}))),
-		unaryStr("triggers", strList, func(s string) ref.Val { return strs(e.triggers(s)) }),
-		unaryStr("jobs", mapList, func(s string) ref.Val { return types.DefaultTypeAdapter.NativeToValue(e.jobs(s)) }),
+		unaryStr("triggers", strList, func(s string) ref.Val { return strs(ci.Triggers(e.repo, s)) }),
+		unaryStr("jobs", mapList, func(s string) ref.Val { return types.DefaultTypeAdapter.NativeToValue(ci.Jobs(e.repo, s)) }),
+		unaryStr("ci_kind", str, func(s string) ref.Val { return types.String(ci.Kind(s)) }),
+		unaryStr("includes", mapList, func(s string) ref.Val { return types.DefaultTypeAdapter.NativeToValue(ci.Includes(e.repo, s)) }),
 		cel.Function("grep", cel.Overload("grep_string_string", []*cel.Type{str, str}, mapList,
 			cel.BinaryBinding(func(pattern, re ref.Val) ref.Val {
 				p, ok1 := pattern.Value().(string)
@@ -61,66 +64,6 @@ func (e *Env) ciAccessors() []cel.EnvOption {
 				return types.DefaultTypeAdapter.NativeToValue(list)
 			}))),
 	}
-}
-
-// triggers lists the event names a workflow reacts to, whatever the YAML
-// shape (`on: push`, `on: [push, pull_request]`, `on: {push: {...}}`).
-func (e *Env) triggers(path string) []string {
-	doc, ok, err := e.repo.Doc(repo.FormatYAML, path)
-	if !ok || err != nil {
-		return nil
-	}
-	m, _ := doc.(map[string]any)
-	switch on := m["on"].(type) {
-	case string:
-		return []string{on}
-	case []any:
-		out := make([]string, 0, len(on))
-		for _, v := range on {
-			out = append(out, str(v))
-		}
-		return out
-	case map[string]any:
-		out := make([]string, 0, len(on))
-		for k := range on {
-			out = append(out, k)
-		}
-		sortStrings(out)
-		return out
-	}
-	return nil
-}
-
-// jobs lists a workflow's jobs as `{name, timeout_minutes, permissions, runs_on, uses}`
-// with zero values for absent fields. timeout_minutes is 0 when unset.
-func (e *Env) jobs(path string) []any {
-	doc, ok, err := e.repo.Doc(repo.FormatYAML, path)
-	if !ok || err != nil {
-		return []any{}
-	}
-	m, _ := doc.(map[string]any)
-	jobs, _ := m["jobs"].(map[string]any)
-	names := make([]string, 0, len(jobs))
-	for name := range jobs {
-		names = append(names, name)
-	}
-	sortStrings(names)
-	out := make([]any, 0, len(names))
-	for _, name := range names {
-		job, _ := jobs[name].(map[string]any)
-		perms := job["permissions"]
-		if perms == nil {
-			perms = map[string]any{}
-		}
-		out = append(out, map[string]any{
-			"name":            name,
-			"timeout_minutes": intOf(job["timeout-minutes"]),
-			"permissions":     perms,
-			"runs_on":         str(job["runs-on"]),
-			"uses":            str(job["uses"]),
-		})
-	}
-	return out
 }
 
 // commits returns the newest n commits as `{hash, author, email, subject,
@@ -235,21 +178,4 @@ func excerpt(line string) string {
 		return line[:77] + "..."
 	}
 	return line
-}
-
-func intOf(v any) int64 {
-	switch t := v.(type) {
-	case int64:
-		return t
-	case int:
-		return int64(t)
-	case float64:
-		return int64(t)
-	case uint64:
-		return int64(t) //nolint:gosec // workflow timeouts never approach the int64 range
-	case string:
-		i, _ := strconv.ParseInt(t, 10, 64)
-		return i
-	}
-	return 0
 }

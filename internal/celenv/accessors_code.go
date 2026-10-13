@@ -17,10 +17,12 @@ var (
 	codeExts = map[string]bool{
 		".go": true, ".py": true, ".rs": true, ".ts": true, ".tsx": true, ".js": true, ".jsx": true, ".mjs": true,
 		".cjs": true, ".kt": true, ".kts": true, ".java": true, ".dart": true, ".swift": true, ".sh": true,
+		".rb": true, ".php": true, ".cs": true, ".fs": true, ".c": true, ".cc": true, ".cpp": true, ".h": true,
+		".hpp": true, ".vue": true, ".svelte": true, ".scala": true,
 	}
-	codeSkipRe = regexp.MustCompile(`(^|/)(vendor|third_party|node_modules|packages|build|dist|target|out|\.dart_tool|\.gradle|coverage|generated)/` +
+	codeSkipRe = regexp.MustCompile(`(^|/)(vendor|third_party|node_modules|build|dist|target|out|\.dart_tool|\.gradle|coverage|generated)/` +
 		`|\.(g|freezed|gr|mocks|config)\.dart$|\.pb\.go$|_pb2\.py$|\.min\.js$|(^|/)l10n/app_localizations[^/]*\.dart$`)
-	testPathRe = regexp.MustCompile(`(^|/)(test|tests|__tests__|spec|androidTest|integration_test|testdata)/|_test\.|\.test\.|\.spec\.|(^|/)test_[^/]*\.py$|Test\.(kt|java)$`)
+	testPathRe = regexp.MustCompile(`(^|/)(test|tests|__tests__|spec|androidTest|integration_test|testdata|e2e|cypress)/|_test\.|\.test\.|\.spec\.|\.cy\.|_spec\.rb$|(^|/)(test_[^/]*|tests|conftest)\.py$|Tests?\.(kt|java|cs)$`)
 )
 
 const codeLineMax = 200

@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/fix/compose"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/rootfs"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // APIVersion is the catalog format this binary reads.
@@ -42,7 +44,7 @@ const APIVersion = "fleetlint.org/v1"
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
 const (
-	EngineLevel    = 2
+	EngineLevel    = 3
 	MinEngineLevel = 1
 )
 
@@ -66,8 +68,9 @@ func checkEngine(c *Catalog) error {
 // another, which is fetched once and kept in the user's cache.
 type Source struct {
 	// Presets holds presets/<name>.yaml, Templates holds templates/..., Rules
-	// holds rules/<family>/<name>.yaml, the library presets select from.
-	Presets, Templates, Rules fs.FS
+	// holds rules/<family>/<name>.yaml, the library presets select from, and
+	// Stacks holds stacks/<id>.yaml.
+	Presets, Templates, Rules, Stacks fs.FS
 	// Version is how reports name this source.
 	Version string
 	// Pinned is true when the repository chose the version.
@@ -79,12 +82,29 @@ type Source struct {
 		val  *Library
 		err  error
 	}
+	stacks struct {
+		once sync.Once
+		val  []stacks.Def
+		err  error
+	}
+}
+
+// StackDefs returns the source's stack definitions, parsed once; a catalog
+// without stacks/ (engine level 2 and older) gets the legacy set.
+func (s *Source) StackDefs() ([]stacks.Def, error) {
+	s.stacks.once.Do(func() {
+		s.stacks.val, s.stacks.err = stacks.Load(s.Stacks)
+		if s.stacks.err == nil && len(s.stacks.val) == 0 {
+			s.stacks.val = stacks.Legacy()
+		}
+	})
+	return s.stacks.val, s.stacks.err
 }
 
 // Builtin returns the catalog the binary was built with: one Source per
 // process, so its library is parsed once.
 var Builtin = sync.OnceValue(func() *Source {
-	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Version: ModuleVersion()}
+	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Stacks: data.Stacks, Version: ModuleVersion()}
 })
 
 // Describe names the source for a report.
@@ -99,7 +119,10 @@ func (s *Source) Describe() string {
 const ConfigName = ".fleetlint.yaml"
 
 // FixTemplates serves the source's templates to the fix planner.
-func (s *Source) FixTemplates() compose.Templates { return compose.Templates{FS: s.Templates} }
+func (s *Source) FixTemplates() compose.Templates {
+	defs, _ := s.StackDefs() // a broken stacks/ already failed the configuration load
+	return compose.Templates{FS: s.Templates, Stacks: defs}
+}
 
 // FixTemplatesOver serves the source's templates with the given file
 // systems in front: the first that has a file wins.
@@ -107,7 +130,9 @@ func (s *Source) FixTemplatesOver(layers ...fs.FS) compose.Templates {
 	if len(layers) == 0 {
 		return s.FixTemplates()
 	}
-	return compose.Templates{FS: overlayFS(append(layers, s.Templates))}
+	t := s.FixTemplates()
+	t.FS = overlayFS(append(layers, s.Templates))
+	return t
 }
 
 // overlayFS reads from the first layer that has the file.
@@ -354,7 +379,7 @@ func (l *Loader) Pin(repoURL, version string) (*Source, error) {
 		name += " (" + commit[:12] + ")"
 	}
 	root := os.DirFS(dir)
-	l.Source = &Source{Presets: root, Templates: root, Rules: root, Version: name, Pinned: true}
+	l.Source = &Source{Presets: root, Templates: root, Rules: root, Stacks: root, Version: name, Pinned: true}
 	if len(l.Source.PresetNames()) == 0 {
 		return nil, fmt.Errorf("catalog %s from %s: no presets/ directory", version, repoURL)
 	}
@@ -454,7 +479,8 @@ func (l Loader) loadPreset(name string) (*Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unknown preset %q (catalog %s has: %s)", name, src.Version, strings.Join(src.PresetNames(), ", "))
 	}
-	c, err := Parse(b)
+	// A preset is versioned with the catalog: the tag (or commit) it ships in.
+	c, err := parse(b, src.Version)
 	if err != nil {
 		return nil, fmt.Errorf("preset %s: %w", name, err)
 	}
@@ -650,7 +676,11 @@ func (l Loader) readGit(ref string) ([]byte, error) {
 }
 
 // Parse decodes and validates a catalog document.
-func Parse(b []byte) (*Catalog, error) {
+func Parse(b []byte) (*Catalog, error) { return parse(b, "") }
+
+// parse decodes a catalog; version names one that states none, which is how
+// a preset takes the version of the catalog release it ships in.
+func parse(b []byte, version string) (*Catalog, error) {
 	if err := probeEngine(b); err != nil {
 		return nil, err
 	}
@@ -663,6 +693,9 @@ func Parse(b []byte) (*Catalog, error) {
 	}
 	if c.Kind != "Catalog" {
 		return nil, fmt.Errorf("kind %q not supported (want Catalog)", c.Kind)
+	}
+	if c.Metadata.Version == "" {
+		c.Metadata.Version = version
 	}
 	if c.Metadata.Name == "" || c.Metadata.Version == "" {
 		return nil, errors.New("metadata.name and metadata.version are required")
@@ -790,14 +823,21 @@ func probeEngine(b []byte) error {
 }
 
 // ruleIDRe is the id grammar; ids name files, anchors and report rows.
-var ruleIDRe = regexp.MustCompile(`^[a-z0-9-]+/[a-z0-9-]+$`)
+var ruleIDRe = regexp.MustCompile(`^[a-z0-9-]+/[a-z0-9-]+(/[a-z0-9-]+)?$`)
 
 func validateRule(r *model.Rule) error {
 	if r.ID == "" {
 		return errors.New("rule without id")
 	}
 	if !ruleIDRe.MatchString(r.ID) {
-		return fmt.Errorf("rule %s: id must be family/name in lowercase letters, digits and dashes", r.ID)
+		return fmt.Errorf("rule %s: id must be family/name (or family/name/stack for an implementation) in lowercase letters, digits and dashes", r.ID)
+	}
+	if capID, stack, ok := model.SplitImplementation(r.ID); ok {
+		if r.Kind == model.KindCapability {
+			return fmt.Errorf("rule %s: a capability id is family/name; family/name/stack is an implementation", r.ID)
+		}
+		r.Capability, r.Stack = capID, stack
+		r.Stacks = []string{stack}
 	}
 	if r.Title == "" || r.Requirement == "" {
 		return fmt.Errorf("rule %s: title and requirement are required", r.ID)
@@ -840,6 +880,11 @@ func validateKind(r *model.Rule) error {
 		}
 	case model.KindOutcome:
 		return validateOutcome(r)
+	case model.KindCapability:
+		if r.Expr != "" || r.Run != "" || r.Foreach != "" || len(r.Satisfiers) > 0 || len(r.Partials) > 0 || (len(r.Stacks) > 0 && !slices.Equal(r.Stacks, []string{"any"})) {
+			return fmt.Errorf("rule %s: a capability only states the requirement; its implementations (%s/<stack>) check it", r.ID, r.ID)
+		}
+		r.Stacks = []string{"any"} // like a per-stack rule: not at a root that only hosts members
 	default:
 		return fmt.Errorf("rule %s: unknown kind %q", r.ID, r.Kind)
 	}

@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"sync"
 
@@ -18,6 +17,7 @@ import (
 	"cel.dev/cel-go/common/types/traits"
 	"cel.dev/cel-go/ext"
 
+	"github.com/fleetlint/fleetlint/internal/ci"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -42,11 +42,13 @@ var Accessors = []Accessor{
 	{"makefile(path: string) -> map", "`{targets: list<string>, deps: map<string, list<string>>, recipes: map<string, list<string>>}`; null when absent."},
 	{"scan(path: string, regex: string) -> list<int>", "1-based line numbers where the regex matches."},
 	{"matchesAny(list: list<string>, regex: string) -> bool", "True if any element matches the regex."},
-	{"workflows() -> list<string>", "Paths of CI workflow files (`.github/workflows`, `.gitea/workflows`)."},
-	{"tagged_workflows() -> list<string>", "Workflow paths triggered by tag pushes (`on.push.tags`), i.e. release pipelines."},
-	{"steps(path: string) -> list<map>", "Every step of every job in a workflow, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields."},
-	{"jobs(path: string) -> list<map>", "Every job of a workflow as `{name, timeout_minutes, permissions, runs_on, uses}`; `timeout_minutes` is 0 when unset."},
-	{"triggers(path: string) -> list<string>", "Event names a workflow reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape."},
+	{"workflows() -> list<string>", "Paths of CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes."},
+	{"ci_kind(path: string) -> string", "The CI system of a file from `workflows()`: `github`, `gitea`, `forgejo` or `gitlab`."},
+	{"tagged_workflows() -> list<string>", "CI files a tag push starts (`on.push.tags`; GitLab rules on `$CI_COMMIT_TAG` or `only: tags`), i.e. release pipelines."},
+	{"steps(path: string) -> list<map>", "Every step of every job in a CI file, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields. A GitLab job is one step whose `run` is its before_script, script and after_script."},
+	{"jobs(path: string) -> list<map>", "Every job of a CI file as `{name, timeout_minutes, permissions, runs_on, uses, image, interruptible}`; `timeout_minutes` is 0 when unset (GitLab `timeout:` durations are converted); `interruptible` is GitLab's."},
+	{"triggers(path: string) -> list<string>", "Event names a CI file reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape; a GitLab pipeline reads as `push`, plus `pull_request` for merge request pipelines and `schedule`."},
+	{"includes(path: string) -> list<map>", "What a GitLab CI file includes, as `{type, target, ref}` (type `local`, `project`, `remote`, `template` or `component`; ref is the project ref or component version); empty for other files."},
 	{"tags() -> list<string>", "Git tags, newest version first."},
 	{"tag_signed(name: string) -> bool", "True if the tag is an annotated tag carrying a PGP, SSH or X.509 signature; false for lightweight or unsigned tags. The signature is not verified."},
 	{"commits(n: int) -> list<map>", "Newest n commits as `{hash, author, email, subject, body, trailers, lines}`; `lines` is insertions plus deletions; empty without git."},
@@ -195,6 +197,7 @@ func expressions(r model.Rule) []expression {
 			out = append(out, expression{where, expr, list})
 		}
 	}
+	add("gate", r.Gate, false)
 	add("when", r.When, false)
 	add("foreach", r.Foreach, true)
 	if r.Kind == model.KindExpr || r.Kind == "" {
@@ -349,8 +352,6 @@ func (e *Env) functions() []cel.EnvOption {
 	}
 }
 
-func sortStrings(s []string) { sort.Strings(s) }
-
 // copyMap shallow-copies params so normalization never mutates the rule.
 func copyMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
@@ -364,62 +365,19 @@ func copyMap(in map[string]any) map[string]any {
 // to decide whether a string item in `foreach` names a file.
 func (e *Env) HasFile(path string) bool { return e.repo.Has(path) }
 
-func (e *Env) workflowPaths() []string {
-	return append(e.repo.Glob(".github/workflows/*.y*ml"), e.repo.Glob(".gitea/workflows/*.y*ml")...)
-}
+func (e *Env) workflowPaths() []string { return ci.Files(e.repo) }
 
 func (e *Env) taggedWorkflows() []string {
 	var out []string
-	for _, wf := range e.workflowPaths() {
-		doc, ok, err := e.repo.Doc(repo.FormatYAML, wf)
-		if !ok || err != nil {
-			continue
-		}
-		m, _ := doc.(map[string]any)
-		on, _ := m["on"].(map[string]any)
-		push, _ := on["push"].(map[string]any)
-		if tags, _ := push["tags"].([]any); len(tags) > 0 {
+	for _, wf := range ci.Files(e.repo) {
+		if len(ci.TagPatterns(e.repo, wf)) > 0 {
 			out = append(out, wf)
 		}
 	}
 	return out
 }
 
-// steps flattens a workflow's jobs into one list of step maps with stable
-// keys so expressions never hit a missing field.
-func (e *Env) steps(path string) []any {
-	doc, ok, err := e.repo.Doc(repo.FormatYAML, path)
-	if !ok || err != nil {
-		return []any{}
-	}
-	m, _ := doc.(map[string]any)
-	jobs, _ := m["jobs"].(map[string]any)
-	out := []any{}
-	for jobName, j := range jobs {
-		job, _ := j.(map[string]any)
-		list, _ := job["steps"].([]any)
-		for _, s := range list {
-			step, _ := s.(map[string]any)
-			with, _ := step["with"].(map[string]any)
-			if with == nil {
-				with = map[string]any{}
-			}
-			out = append(out, map[string]any{
-				"job":  jobName,
-				"name": str(step["name"]),
-				"uses": str(step["uses"]),
-				"run":  str(step["run"]),
-				"with": with,
-			})
-		}
-	}
-	return out
-}
-
-func str(v any) string {
-	s, _ := v.(string)
-	return s
-}
+func (e *Env) steps(path string) []any { return ci.Steps(e.repo, path) }
 
 func unaryStr(name string, out *cel.Type, fn func(string) ref.Val) cel.EnvOption {
 	return cel.Function(name, cel.Overload(name+"_string", []*cel.Type{cel.StringType}, out,

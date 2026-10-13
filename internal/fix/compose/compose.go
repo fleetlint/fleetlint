@@ -13,6 +13,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/repo"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // The hook configuration and the check workflow are assembled from a shared
@@ -29,6 +30,17 @@ const (
 // composed ones.
 type Templates struct {
 	FS fs.FS
+	// Stacks say which feature or image gives a stack its environment; nil
+	// is the legacy set.
+	Stacks []stacks.Def
+}
+
+func (t Templates) stack(id string) (stacks.Def, bool) {
+	defs := t.Stacks
+	if defs == nil {
+		defs = stacks.Legacy()
+	}
+	return stacks.Find(defs, id)
 }
 
 // Template returns the content of a template by name, e.g. "editorconfig"
@@ -70,9 +82,9 @@ func (t Templates) Compose(name string, p fix.Project) (body []byte, ok bool, er
 	case file == releaseTemplate:
 		body, err = t.composeRelease(stack, p)
 	case file == renovateTemplate:
-		body, err = composeRenovate(stack, p)
+		body, err = t.composeRenovate(stack, p)
 	case p.Container == facts.ContainerDevcontainer:
-		body, err = composeDevcontainer(stack, p)
+		body, err = t.composeDevcontainer(stack, p)
 	default:
 		// Only the dev container mode has a devcontainer.json.
 		return nil, true, nil
@@ -101,25 +113,10 @@ func withRunner(text string, p fix.Project) string {
 	return text
 }
 
-// devImages are the images targets run in with `container: docker|podman`.
-var devImages = map[string]string{
-	"go":      "mcr.microsoft.com/devcontainers/go:1",
-	"python":  "mcr.microsoft.com/devcontainers/python:3",
-	"rust":    "mcr.microsoft.com/devcontainers/rust:1",
-	"node":    "mcr.microsoft.com/devcontainers/javascript-node:22",
-	"kotlin":  "mcr.microsoft.com/devcontainers/java:21",
-	"flutter": devcontainerFlutter,
-	"hugo":    "ghcr.io/gohugoio/hugo:latest",
-	"java":    "mcr.microsoft.com/devcontainers/java:21",
-	"dotnet":  "mcr.microsoft.com/devcontainers/dotnet:9.0",
-	"cpp":     devcontainerCpp,
-	"ruby":    "mcr.microsoft.com/devcontainers/ruby:3",
-	"php":     "mcr.microsoft.com/devcontainers/php:8",
-}
-
-func devImage(stack string) string {
-	if img, ok := devImages[stack]; ok {
-		return img
+// devImage is the image targets run in with `container: docker|podman`.
+func (t Templates) devImage(stack string) string {
+	if d, ok := t.stack(stack); ok && d.RunImage != "" {
+		return d.RunImage
 	}
 	return devcontainerBase
 }
@@ -157,21 +154,21 @@ func (t Templates) composeRunner(file string, p fix.Project) ([]byte, error) {
 	inContainer := p.Container != "" && p.Container != facts.ContainerNone
 	switch file {
 	case repo.RunnerFile(repo.RunnerJust):
-		return []byte(composeJustfile(plain, p, inContainer)), nil
+		return []byte(composeJustfile(plain, p, inContainer, t.devImage(p.Stack))), nil
 	case repo.RunnerFile(repo.RunnerTask):
-		return []byte(composeTaskfile(plain, p, inContainer)), nil
+		return []byte(composeTaskfile(plain, p, inContainer, t.devImage(p.Stack))), nil
 	}
 	if !inContainer {
 		return []byte(plain), nil
 	}
-	return composeMakefile(plain, p)
+	return composeMakefile(plain, p, t.devImage(p.Stack))
 }
 
 var phonyRe = regexp.MustCompile(`(?m)^\.PHONY: (.*)$`)
 
 // composeMakefile wraps the Makefile template's targets in the container
 // switch: outside the container every target is forwarded into it.
-func composeMakefile(plain string, p fix.Project) ([]byte, error) {
+func composeMakefile(plain string, p fix.Project, devImage string) ([]byte, error) {
 	m := phonyRe.FindStringSubmatchIndex(plain)
 	if m == nil {
 		return nil, fmt.Errorf("the Makefile template has no .PHONY line to take the targets from")
@@ -180,7 +177,7 @@ func composeMakefile(plain string, p fix.Project) ([]byte, error) {
 	b.WriteString(plain[:m[0]])
 	fmt.Fprintf(&b, switchComment+"\nCONTAINER ?= 1\n", containerNeeds(p))
 	if p.Container != facts.ContainerDevcontainer {
-		fmt.Fprintf(&b, "DEV_IMAGE ?= %s\n", devImage(p.Stack))
+		fmt.Fprintf(&b, "DEV_IMAGE ?= %s\n", devImage)
 	}
 	fmt.Fprintf(&b, "TARGETS := %s\n\nifeq ($(CONTAINER)$(IN_CONTAINER),1)\n.PHONY: $(TARGETS)\n$(TARGETS):\n", plain[m[2]:m[3]])
 	forward := "make $@ $(filter-out CONTAINER=%,$(MAKEOVERRIDES)) CONTAINER=0"
@@ -195,7 +192,7 @@ func composeMakefile(plain string, p fix.Project) ([]byte, error) {
 
 // composeJustfile fills the justfile template: without a container the
 // recipes run their commands directly, with one each command is prefixed.
-func composeJustfile(plain string, p fix.Project, inContainer bool) string {
+func composeJustfile(plain string, p fix.Project, inContainer bool, devImage string) string {
 	if !inContainer {
 		return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", ""), "%RUN%", "")
 	}
@@ -203,21 +200,21 @@ func composeJustfile(plain string, p fix.Project, inContainer bool) string {
 	// just does not interpolate inside string literals: the image is concatenated.
 	prefix := "'" + containerPrefix(p, "$PWD", "' + dev_image + '") + "'"
 	if p.Container != facts.ContainerDevcontainer {
-		sw += fmt.Sprintf("dev_image := env_var_or_default(\"DEV_IMAGE\", \"%s\")\n", devImage(p.Stack))
+		sw += fmt.Sprintf("dev_image := env_var_or_default(\"DEV_IMAGE\", \"%s\")\n", devImage)
 	}
 	sw += fmt.Sprintf("run := if env_var_or_default(\"IN_CONTAINER\", \"\") == \"1\" { \"\" } else if env_var_or_default(\"CONTAINER\", \"1\") == \"0\" { \"\" } else { %s }\n", prefix)
 	return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", sw), "%RUN%", "{{run}}")
 }
 
 // composeTaskfile does the same for a Taskfile.
-func composeTaskfile(plain string, p fix.Project, inContainer bool) string {
+func composeTaskfile(plain string, p fix.Project, inContainer bool, devImage string) string {
 	if !inContainer {
 		return strings.ReplaceAll(strings.ReplaceAll(plain, "%SWITCH%\n", ""), "%RUN%", "")
 	}
 	sw := fmt.Sprintf(switchComment, containerNeeds(p)) + "\nvars:\n"
 	image := "{{.DEV_IMAGE}}"
 	if p.Container != facts.ContainerDevcontainer {
-		sw += fmt.Sprintf("  DEV_IMAGE: '{{.DEV_IMAGE | default \"%s\"}}'\n", devImage(p.Stack))
+		sw += fmt.Sprintf("  DEV_IMAGE: '{{.DEV_IMAGE | default \"%s\"}}'\n", devImage)
 	}
 	sw += fmt.Sprintf("  RUN: '{{if or (eq (.IN_CONTAINER | default \"\") \"1\") (eq (.CONTAINER | default \"1\") \"0\")}}{{else}}%s{{end}}'\n",
 		strings.ReplaceAll(containerPrefix(p, "$PWD", image), "'", "''"))
@@ -330,7 +327,7 @@ func (t Templates) composeCheck(stack string, p fix.Project) ([]byte, error) {
 		return []byte(head + withRunner(inside, p)), err
 	case facts.ContainerDocker, facts.ContainerPodman:
 		head = strings.Replace(head, "    runs-on: ubuntu-latest\n",
-			"    runs-on: ubuntu-latest\n    container: "+devImage(stack)+"   # the image the task runner uses locally\n    env:\n      IN_CONTAINER: \"1\"\n", 1)
+			"    runs-on: ubuntu-latest\n    container: "+t.devImage(stack)+"   # the image the task runner uses locally\n    env:\n      IN_CONTAINER: \"1\"\n", 1)
 	}
 	var b strings.Builder
 	b.WriteString(head)
@@ -382,7 +379,7 @@ func (t Templates) composeRelease(stack string, p fix.Project) ([]byte, error) {
 	switch p.Container {
 	case facts.ContainerDocker, facts.ContainerPodman:
 		head = strings.Replace(head, "    runs-on: ubuntu-latest\n",
-			"    runs-on: ubuntu-latest\n    container: "+devImage(stack)+"   # the image the task runner uses locally\n", 1)
+			"    runs-on: ubuntu-latest\n    container: "+t.devImage(stack)+"   # the image the task runner uses locally\n", 1)
 		head = strings.Replace(head, "    env:\n", "    env:\n      IN_CONTAINER: \"1\"\n", 1)
 	case facts.ContainerDevcontainer:
 		head = strings.Replace(head, "    env:\n", "    env:\n      CONTAINER: \"0\"   # no dev container on the release runner: targets run on its toolchains\n", 1)

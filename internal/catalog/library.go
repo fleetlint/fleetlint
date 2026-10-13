@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,6 +20,10 @@ import (
 // rules/<family>/<name>.yaml, the file's path spelling the rule's id. A
 // preset (or any catalog) selects from it with `- use: <id or glob>` in its
 // rules list instead of defining the rule inline.
+//
+// A capability (kind: capability) states a requirement; its implementations
+// live next to it at rules/<family>/<name>/<stack>.yaml and inherit every
+// field they do not set. Selecting the capability selects them all.
 
 // useEntry is a `use:` item of a catalog's rules list and where it stood.
 type useEntry struct {
@@ -36,11 +41,13 @@ type Library struct {
 // Library parses the source's rules/ directory once. A source without one
 // has an empty library.
 func (s *Source) Library() (*Library, error) {
-	s.lib.once.Do(func() { s.lib.val, s.lib.err = loadLibrary(s.Rules, "library "+s.Version) })
+	s.lib.once.Do(func() { s.lib.val, s.lib.err = loadLibrary(s.Rules, "library "+s.Version, nil) })
 	return s.lib.val, s.lib.err
 }
 
-func loadLibrary(fsys fs.FS, source string) (*Library, error) {
+// loadLibrary parses a rules/ tree. Implementations inherit from a
+// capability in the same tree or, for a catalog's own library, in base.
+func loadLibrary(fsys fs.FS, source string, base *Library) (*Library, error) {
 	lib := &Library{rules: map[string]model.Rule{}, source: map[string]string{}}
 	if fsys == nil {
 		return lib, nil
@@ -50,6 +57,22 @@ func loadLibrary(fsys fs.FS, source string) (*Library, error) {
 	} else if err != nil {
 		return nil, err
 	}
+	impls, err := lib.readRules(fsys, source)
+	if err != nil {
+		return nil, err
+	}
+	if err := lib.inheritAll(impls, base, source); err != nil {
+		return nil, err
+	}
+	sort.Strings(lib.ids)
+	lib.link()
+	return lib, nil
+}
+
+// readRules adds every plain rule and capability of the tree and returns
+// the implementation files, which need their capability first.
+func (l *Library) readRules(fsys fs.FS, source string) (map[string][]byte, error) {
+	impls := map[string][]byte{}
 	err := fs.WalkDir(fsys, "rules", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".yaml") {
 			return err
@@ -58,21 +81,65 @@ func loadLibrary(fsys fs.FS, source string) (*Library, error) {
 		if err != nil {
 			return err
 		}
+		if _, _, ok := model.SplitImplementation(pathID(p)); ok {
+			impls[p] = b
+			return nil
+		}
 		r, err := parseLibraryRule(b, p)
 		if err != nil {
 			return err
 		}
-		lib.rules[r.ID] = r
-		lib.source[r.ID] = source
-		lib.ids = append(lib.ids, r.ID)
+		l.add(r, source)
 		return nil
 	})
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(lib.ids)
-	return lib, nil
+	return impls, err
 }
+
+// inheritAll builds each implementation from its capability, found in this
+// library or, for a catalog's own library, in base.
+func (l *Library) inheritAll(impls map[string][]byte, base *Library, source string) error {
+	for p, b := range impls {
+		capID, _, _ := model.SplitImplementation(pathID(p))
+		capRule, ok := l.rules[capID]
+		if !ok && base != nil {
+			capRule, ok = base.rules[capID]
+		}
+		if !ok || capRule.Kind != model.KindCapability {
+			return fmt.Errorf("%s: implements %s, which is not a capability in the library", p, capID)
+		}
+		r, err := inherit(capRule, b, p)
+		if err != nil {
+			return err
+		}
+		l.add(r, source)
+	}
+	return nil
+}
+
+func (l *Library) add(r model.Rule, source string) {
+	l.rules[r.ID] = r
+	l.source[r.ID] = source
+	l.ids = append(l.ids, r.ID)
+}
+
+// link records on each capability the stacks it has implementations for.
+func (l *Library) link() {
+	for id, r := range l.rules {
+		if r.Kind != model.KindCapability {
+			continue
+		}
+		r = r.Clone()
+		r.Implementations = nil
+		for _, other := range l.ids {
+			if impl := l.rules[other]; impl.Capability == id {
+				r.Implementations = append(r.Implementations, impl.Stack)
+			}
+		}
+		l.rules[id] = r
+	}
+}
+
+func pathID(p string) string { return strings.TrimSuffix(strings.TrimPrefix(p, "rules/"), ".yaml") }
 
 // parseLibraryRule reads one rule file; the id must spell the path.
 func parseLibraryRule(b []byte, p string) (model.Rule, error) {
@@ -80,8 +147,7 @@ func parseLibraryRule(b []byte, p string) (model.Rule, error) {
 	if err := yamlsafe.Unmarshal(b, &r, yaml.Strict()); err != nil {
 		return r, fmt.Errorf("%s: %w", p, err)
 	}
-	want := strings.TrimSuffix(strings.TrimPrefix(p, "rules/"), ".yaml")
-	if r.ID != want {
+	if want := pathID(p); r.ID != want {
 		return r, fmt.Errorf("%s: rule id %q must be %q (the path spells the id)", p, r.ID, want)
 	}
 	if r.Use != "" {
@@ -99,6 +165,93 @@ func parseLibraryRule(b []byte, p string) (model.Rule, error) {
 	return r, nil
 }
 
+// inherit builds an implementation from its file and its capability: every
+// field the file sets wins, the rest comes from the capability. References
+// add up; the capability's `when` becomes the implementation's gate.
+func inherit(capRule model.Rule, b []byte, p string) (model.Rule, error) {
+	var impl model.Rule
+	if err := yamlsafe.Unmarshal(b, &impl, yaml.Strict()); err != nil {
+		return impl, fmt.Errorf("%s: %w", p, err)
+	}
+	var set map[string]any
+	if err := yamlsafe.Unmarshal(b, &set); err != nil {
+		return impl, fmt.Errorf("%s: %w", p, err)
+	}
+	if want := pathID(p); impl.ID != want {
+		return impl, fmt.Errorf("%s: rule id %q must be %q (the path spells the id)", p, impl.ID, want)
+	}
+	if _, ok := set["kind"]; !ok || impl.Kind == model.KindCapability {
+		return impl, fmt.Errorf("%s: an implementation states its kind (expr, outcome, go or command)", p)
+	}
+	for _, key := range []string{"use", "stacks"} {
+		if _, ok := set[key]; ok {
+			return impl, fmt.Errorf("%s: an implementation takes no %s: (the path names its stack)", p, key)
+		}
+	}
+	out := capRule.Clone()
+	out.ID, out.Kind, out.When = impl.ID, impl.Kind, impl.When
+	out.Gate = capRule.When
+	out.Implementations = nil
+	has := func(key string) bool { _, ok := set[key]; return ok }
+	inheritScalars(&out, impl, has)
+	for _, ref := range impl.Refs {
+		if !slices.Contains(out.Refs, ref) {
+			out.Refs = append(out.Refs, ref)
+		}
+	}
+	if has("fix") {
+		out.Fix.Human = firstNonEmpty(impl.Fix.Human, capRule.Fix.Human)
+		out.Fix.Agent = firstNonEmpty(impl.Fix.Agent, capRule.Fix.Agent)
+		out.Fix.Actions = impl.Fix.Actions
+	}
+	if err := validateRule(&out); err != nil {
+		return out, fmt.Errorf("%s: %w", p, err)
+	}
+	if err := validatePolicy([]model.Rule{out}); err != nil {
+		return out, fmt.Errorf("%s: %w", p, err)
+	}
+	return out, nil
+}
+
+// inheritScalars copies the fields the implementation file sets.
+func inheritScalars(out *model.Rule, impl model.Rule, has func(string) bool) {
+	if has("title") {
+		out.Title = impl.Title
+	}
+	if has("severity") {
+		out.Severity = impl.Severity
+	}
+	if has("tiers") {
+		out.Tiers = impl.Tiers
+	}
+	if has("scope") {
+		out.Scope = impl.Scope
+	}
+	if has("requirement") {
+		out.Requirement = impl.Requirement
+	}
+	if has("rationale") {
+		out.Rationale = impl.Rationale
+	}
+	if has("message") {
+		out.Message = impl.Message
+	}
+	if has("since") {
+		out.Since = impl.Since
+	}
+	if has("locked") {
+		out.Locked = impl.Locked
+	}
+	if has("min_severity") {
+		out.MinSeverity = impl.MinSeverity
+	}
+	if has("exceptions") {
+		out.AllowExceptions = impl.AllowExceptions
+	}
+	out.Params, out.Foreach, out.Expr, out.Run = impl.Params, impl.Foreach, impl.Expr, impl.Run
+	out.Satisfiers, out.Partials = impl.Satisfiers, impl.Partials
+}
+
 // wrapRules indents a single rule document into a `rules:` list so the
 // list-level checks apply to it.
 func wrapRules(b []byte) []byte {
@@ -113,13 +266,14 @@ func wrapRules(b []byte) []byte {
 func (l *Library) IDs() []string { return l.ids }
 
 // Select resolves a use pattern: an exact id must exist, a glob must match
-// at least one rule. `*` spans the family separator.
+// at least one rule. `*` spans the family separator. A capability brings
+// its implementations along.
 func (l *Library) Select(pattern string) ([]string, error) {
 	if !strings.ContainsAny(pattern, "*?") {
 		if _, ok := l.rules[pattern]; !ok {
 			return nil, fmt.Errorf("use %s: no such rule in the library (it has %d rules)", pattern, len(l.ids))
 		}
-		return []string{pattern}, nil
+		return l.withImplementations(pattern), nil
 	}
 	rx, err := regexp.Compile(GlobRegexp(pattern))
 	if err != nil {
@@ -135,6 +289,21 @@ func (l *Library) Select(pattern string) ([]string, error) {
 		return nil, fmt.Errorf("use %s: matches no rule in the library", pattern)
 	}
 	return out, nil
+}
+
+// withImplementations is the id, followed by its implementations when it
+// names a capability.
+func (l *Library) withImplementations(id string) []string {
+	out := []string{id}
+	if l.rules[id].Kind != model.KindCapability {
+		return out
+	}
+	for _, other := range l.ids {
+		if l.rules[other].Capability == id {
+			out = append(out, other)
+		}
+	}
+	return out
 }
 
 // GlobRegexp turns a rule-id pattern into a regular expression; `*` spans
@@ -167,7 +336,7 @@ func (l Loader) libraryFor(c *Catalog) (*Library, error) {
 	if c.Library == nil {
 		return shared, nil
 	}
-	own, err := loadLibrary(c.Library, c.Metadata.Name+"@"+c.Metadata.Version+" rules/")
+	own, err := loadLibrary(c.Library, c.Metadata.Name+"@"+c.Metadata.Version+" rules/", shared)
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", c.Metadata.Name, err)
 	}
@@ -182,6 +351,7 @@ func (l Loader) libraryFor(c *Catalog) (*Library, error) {
 		merged.ids = append(merged.ids, id)
 	}
 	sort.Strings(merged.ids)
+	merged.link()
 	return merged, nil
 }
 

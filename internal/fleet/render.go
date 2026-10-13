@@ -330,7 +330,8 @@ func (v *view) repoColumns() []column {
 	if any(func(r RepoReport) bool { return r.Team != "" }) {
 		cols = append(cols, column{"Team", func(r RepoReport) tcell { return txt(r.Team) }})
 	}
-	cols = append(cols,
+	cols = append(
+		cols,
 		column{"Stacks", func(r RepoReport) tcell {
 			if r.Err != "" {
 				return tcell{Text: "could not be checked: " + r.Err, Class: "err"}
@@ -354,7 +355,8 @@ func (v *view) repoColumns() []column {
 	if any(func(r RepoReport) bool { return len(r.Disabled) > 0 }) {
 		cols = append(cols, column{"Disabled", checked(func(r RepoReport) tcell { return num(len(r.Disabled)) })})
 	}
-	return append(cols,
+	return append(
+		cols,
 		column{"Checked", checked(func(r RepoReport) tcell { return checkedCell(r.Git) })},
 		column{"Last commit", checked(func(r RepoReport) tcell { return lastCommitCell(r.Git, v) })},
 	)

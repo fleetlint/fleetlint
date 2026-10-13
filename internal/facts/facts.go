@@ -5,13 +5,12 @@
 package facts
 
 import (
-	"fmt"
 	"net/url"
-	"slices"
-	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/ci"
 	"github.com/fleetlint/fleetlint/internal/repo"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // Source says where a fact's value came from.
@@ -111,12 +110,18 @@ type Overrides struct {
 	// FleetTier is the tier a fleet file sets; it applies only when the
 	// configuration file does not pin one.
 	FleetTier int
+	// StackDefs are the catalog's stack definitions; nil means the legacy set.
+	StackDefs []stacks.Def
 }
 
 // Discover computes facts for a repository, applying overrides last.
 func Discover(r *repo.Repo, ov Overrides) Facts {
 	f := Facts{Name: r.Name(), Sources: map[string]Source{}, HasGit: r.HasGit()}
-	f.Stacks = detectStacks(r)
+	defs := ov.StackDefs
+	if defs == nil {
+		defs = stacks.Legacy()
+	}
+	f.Stacks = stacks.Detect(r, defs)
 	f.Sources["stacks"] = SourceDetected
 	f.Forge, f.ForgeHost = detectForge(r.RemoteURL())
 	f.Sources["forge"] = SourceDetected
@@ -129,7 +134,7 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 		f.Container = ContainerDevcontainer
 	}
 	f.Sources["container"] = SourceDetected
-	f.Layout, f.Members = detectLayout(r)
+	f.Layout, f.Members = detectLayout(r, stacks.Manifests(defs))
 	f.Sources["layout"] = SourceDetected
 	f.CI = detectCI(r)
 	f.Release = detectRelease(r)
@@ -194,85 +199,6 @@ func (f Facts) TierSource() string {
 // Public is a convenience for rules.
 func (f Facts) Public() bool { return f.Visibility == VisibilityPublic }
 
-var stackMarkers = map[string][]string{
-	"go":      {"go.mod"},
-	"python":  {"pyproject.toml", "setup.py", "requirements.txt"},
-	"rust":    {"Cargo.toml"},
-	"node":    {"package.json"},
-	"kotlin":  {"build.gradle.kts", "settings.gradle.kts", "build.gradle"},
-	"flutter": {"pubspec.yaml"},
-	"hugo":    {"hugo.toml", "hugo.yaml", "hugo.json", "config/_default/hugo.toml", "config/_default/hugo.yaml", "config/_default/config.toml"},
-	"java":    {"pom.xml"},
-	"dotnet":  {"global.json", "Directory.Build.props"},
-	"cpp":     {"CMakeLists.txt", "meson.build", "conanfile.txt", "conanfile.py", "vcpkg.json"},
-	"ruby":    {"Gemfile"},
-	"php":     {"composer.json"},
-}
-
-// stackGlobs are markers whose name varies: solution and project files, gemspecs.
-var stackGlobs = map[string][]string{
-	"dotnet": {"*.sln", "*.slnx", "*.csproj", "*.fsproj"},
-	"ruby":   {"*.gemspec"},
-}
-
-// hasProjectFile looks for a project file at most two directories down
-// (src/App/App.csproj), outside directories that hold examples, fixtures
-// or dependencies, so a testdata/x.csproj does not make a repository .NET.
-func hasProjectFile(r *repo.Repo, pattern string) bool {
-	for _, f := range r.Glob(pattern) {
-		dirs := strings.Split(f, "/")
-		dirs = dirs[:len(dirs)-1]
-		if len(dirs) <= 2 && !slices.ContainsFunc(dirs, func(d string) bool { return notProjects[d] || strings.HasPrefix(d, ".") }) {
-			return true
-		}
-	}
-	return false
-}
-
-func detectStacks(r *repo.Repo) []string {
-	var out []string
-	for stack, markers := range stackMarkers {
-		if anyMarker(markers, r.Has) {
-			out = append(out, stack)
-		}
-	}
-	for stack, globs := range stackGlobs {
-		if !slices.Contains(out, stack) && anyMarker(globs, func(g string) bool { return hasProjectFile(r, g) }) {
-			out = append(out, stack)
-		}
-	}
-	if !slices.Contains(out, "hugo") && legacyHugo(r) {
-		out = append(out, "hugo")
-	}
-	// A Flutter project's Android shell lives under android/, so a root
-	// pubspec plus a root Groovy build file is still Flutter, not a Kotlin
-	// project. A root build.gradle.kts means a real Gradle project.
-	if slices.Contains(out, "flutter") && slices.Contains(out, "kotlin") && !r.Has("build.gradle.kts") {
-		out = slices.DeleteFunc(out, func(s string) bool { return s == "kotlin" })
-	}
-	sort.Strings(out)
-	return out
-}
-
-func anyMarker(markers []string, has func(string) bool) bool {
-	for _, m := range markers {
-		if has(m) {
-			return true
-		}
-	}
-	return false
-}
-
-// legacyHugo recognises an older Hugo site: a config.toml that names the
-// baseURL next to a content directory.
-func legacyHugo(r *repo.Repo) bool {
-	if !r.Has("config.toml") || !r.Has("content") {
-		return false
-	}
-	text, ok := r.Text("config.toml")
-	return ok && strings.Contains(text, "baseURL")
-}
-
 func detectForge(remote string) (forge, host string) {
 	if remote == "" {
 		return "unknown", ""
@@ -319,11 +245,11 @@ func detectVisibility(r *repo.Repo) Visibility {
 	return VisibilityUnknown
 }
 
-func detectLayout(r *repo.Repo) (string, []string) {
-	if members := workspaceMembers(r); len(members) > 0 {
+func detectLayout(r *repo.Repo, manifests []string) (string, []string) {
+	if members := workspaceMembers(r, manifests); len(members) > 0 {
 		return "workspace", members
 	}
-	if members := nestedProjects(r); len(members) > 0 {
+	if members := nestedProjects(r, manifests); len(members) > 0 {
 		return "nested", members
 	}
 	return "single", nil
@@ -337,7 +263,10 @@ func detectCI(r *repo.Repo) []string {
 	if r.IsDir(".gitea/workflows") {
 		out = append(out, "gitea-actions")
 	}
-	if r.Has(".gitlab-ci.yml") {
+	if r.IsDir(".forgejo/workflows") {
+		out = append(out, "forgejo-actions")
+	}
+	if r.Has(".gitlab-ci.yml") || r.Has(".gitlab-ci.yaml") {
 		out = append(out, "gitlab-ci")
 	}
 	if r.Has(".woodpecker.yml") || r.IsDir(".woodpecker") {
@@ -354,8 +283,8 @@ func detectRelease(r *repo.Repo) Release {
 	if r.Has("cliff.toml") {
 		rel.Mechanisms = append(rel.Mechanisms, "git-cliff")
 	}
-	for _, wf := range append(r.Glob(".github/workflows/*.y*ml"), r.Glob(".gitea/workflows/*.y*ml")...) {
-		if pats := tagTriggers(r, wf); len(pats) > 0 {
+	for _, wf := range ci.Files(r) {
+		if pats := ci.TagPatterns(r, wf); len(pats) > 0 {
 			rel.Mechanisms = append(rel.Mechanisms, "workflow:"+wf)
 			rel.TagPatterns = append(rel.TagPatterns, pats...)
 		}
@@ -365,23 +294,6 @@ func detectRelease(r *repo.Repo) Release {
 	}
 	rel.Exists = len(rel.Mechanisms) > 0
 	return rel
-}
-
-// tagTriggers returns the push.tags patterns of a workflow, if any.
-func tagTriggers(r *repo.Repo, wf string) []string {
-	doc, ok, err := r.Doc(repo.FormatYAML, wf)
-	if !ok || err != nil {
-		return nil
-	}
-	m, _ := doc.(map[string]any)
-	on, _ := m["on"].(map[string]any)
-	push, _ := on["push"].(map[string]any)
-	tags, _ := push["tags"].([]any)
-	out := make([]string, 0, len(tags))
-	for _, t := range tags {
-		out = append(out, strings.TrimSpace(strings.Trim(fmtAny(t), `"'`)))
-	}
-	return out
 }
 
 func detectTaskRunner(r *repo.Repo, want string) TaskRunner {
@@ -419,11 +331,4 @@ func defaultTier(f Facts) (int, string) {
 		return 2, "tags"
 	}
 	return 3, ""
-}
-
-func fmtAny(v any) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprint(v)
 }

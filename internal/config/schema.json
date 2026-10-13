@@ -65,20 +65,9 @@
           "stacks": {
             "type": "array",
             "items": {
-              "enum": [
-                "go",
-                "python",
-                "rust",
-                "node",
-                "kotlin",
-                "flutter",
-                "hugo",
-                "java",
-                "dotnet",
-                "cpp",
-                "ruby",
-                "php"
-              ]
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$",
+              "description": "A stack id the catalog defines in stacks/ (go, python, rust, node, java, kotlin, flutter, hugo, dotnet, cpp, ruby, php in the fleetlint catalog)."
             },
             "description": "The stacks of this directory, when detection gets them wrong. Nothing else inherits them."
           },
@@ -194,21 +183,10 @@
           "description": "Deprecated since 0.3: write the root's stacks as `scopes: [{path: ., stacks: [...]}]`. Still read for one release, for the root directory only.",
           "type": "array",
           "items": {
-            "enum": [
-              "go",
-              "python",
-              "rust",
-              "node",
-              "kotlin",
-              "flutter",
-              "hugo",
-              "java",
-              "dotnet",
-              "cpp",
-              "ruby",
-              "php"
-            ]
-          }
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$",
+              "description": "A stack id the catalog defines in stacks/ (go, python, rust, node, java, kotlin, flutter, hugo, dotnet, cpp, ruby, php in the fleetlint catalog)."
+            }
         },
         "forge": {
           "enum": [

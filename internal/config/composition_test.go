@@ -117,7 +117,7 @@ func TestSelectedRuleKeepsItsFirstCatalog(t *testing.T) {
 	})
 	eff := loadDir(t, dir)
 	r, _ := ruleByID(eff, "lint/go-config")
-	if r.SelectedBy != "fleetlint-recommended@0.1.0" || r.Layer != catalog.LayerPreset {
+	if r.SelectedBy != "fleetlint-recommended@"+catalog.Builtin().Version || r.Layer != catalog.LayerPreset {
 		t.Errorf("a rule already loaded is not re-attributed by a later use: selected_by=%s layer=%s", r.SelectedBy, r.Layer)
 	}
 	n := 0

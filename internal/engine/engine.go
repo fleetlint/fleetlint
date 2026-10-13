@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/rules"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // Run is one evaluation of a repository.
@@ -197,6 +198,7 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 		}
 	}
 	exceptions := append(append([]model.Exception{}, eff.Exceptions...), sc.Exceptions...)
+	caps := capabilitiesOf(rulesInScope)
 	results := make([]model.Result, 0, len(rulesInScope))
 	for _, rule := range rulesInScope {
 		if ctx.Err() != nil {
@@ -205,7 +207,14 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 		if !rule.AppliesInScope(sc.Path, hostsMembers) {
 			continue
 		}
-		res := evaluateRule(ctx, env, r, f, rule, opts)
+		if rule.Kind == model.KindCapability {
+			if res, ok := capabilityGap(rule, f, caps); ok {
+				res.Scope = sc.Path
+				results = append(results, res)
+			}
+			continue
+		}
+		res := evaluateRule(ctx, env, r, f, rule, opts, caps)
 		res.Scope = sc.Path
 		applyExceptions(&res, exceptions)
 		results = append(results, res)
@@ -213,9 +222,9 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 	return results, nil
 }
 
-func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, opts Options) model.Result {
+func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, opts Options, caps capabilities) model.Result {
 	res := model.Result{Rule: rule, Severity: rule.Severity, Status: model.StatusPass}
-	na, why, whenErr := notApplicable(env, f, rule)
+	na, why, whenErr := notApplicable(env, f, rule, caps)
 	if whenErr != nil {
 		res.Status, res.Err = model.StatusError, whenErr.Error()
 		return res
@@ -238,7 +247,7 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		findings, err = evalExpr(env, rule)
 	case model.KindOutcome:
 		var partial *model.Partial
-		findings, evidence, partial, err = evalOutcome(env, rule)
+		findings, evidence, partial, err = evalOutcome(env, rule, caps.fallback(rule))
 		if partial != nil {
 			res.Severity = partial.Severity // a partial match reports at its own severity
 		}
@@ -246,6 +255,8 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		findings, evidence, err = evalGo(ctx, r, f, rule)
 	case model.KindCommand:
 		findings, err = evalCommand(ctx, r, f, rule)
+	case model.KindCapability:
+		err = fmt.Errorf("capability %s is checked by its implementations", rule.ID)
 	default:
 		err = fmt.Errorf("unknown rule kind %q", rule.Kind)
 	}
@@ -263,12 +274,26 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 // notApplicable decides whether a rule is out of scope. An error means the
 // `when` expression could not be evaluated; the caller reports a rule error,
 // because a rule that cannot run must never pass.
-func notApplicable(env *celenv.Env, f facts.Facts, rule model.Rule) (bool, string, error) {
+func notApplicable(env *celenv.Env, f facts.Facts, rule model.Rule, caps capabilities) (bool, string, error) {
 	if !rule.AppliesToTier(f.Tier) {
 		return true, fmt.Sprintf("tier %d not in %v", f.Tier, rule.Tiers), nil
 	}
 	if !rule.AppliesToStacks(f.Stacks) {
 		return true, fmt.Sprintf("stacks %v not in %v", f.Stacks, rule.Stacks), nil
+	}
+	if rule.Stack == stacks.Any {
+		if len(caps.uncovered(rule.Capability, f.Stacks)) == 0 {
+			return true, "every stack here has its own implementation", nil
+		}
+	}
+	if rule.Gate != "" {
+		ok, err := env.Check(rule.Gate, rule.Params)
+		if err != nil {
+			return false, "", fmt.Errorf("gate: %w", err)
+		}
+		if !ok {
+			return true, "capability when: " + rule.Gate, nil
+		}
 	}
 	if rule.When != "" {
 		ok, err := env.Check(rule.When, rule.Params)
@@ -301,14 +326,28 @@ func evalExpr(env *celenv.Env, rule model.Rule) ([]model.Finding, error) {
 // `accept` additions); the first that holds is the evidence of a pass.
 // Otherwise the first matching partial, returned so its severity applies,
 // or the rule's message is the finding.
-func evalOutcome(env *celenv.Env, rule model.Rule) ([]model.Finding, string, *model.Partial, error) {
+func evalOutcome(env *celenv.Env, rule model.Rule, fallback *model.Rule) ([]model.Finding, string, *model.Partial, error) {
+	type candidate struct {
+		owner model.Rule
+		s     model.Satisfier
+	}
+	var list []candidate
 	for _, s := range append(append([]model.Satisfier{}, rule.Satisfiers...), rule.AcceptedSatisfiers()...) {
-		ok, err := satisfied(env, rule, s)
+		list = append(list, candidate{rule, s})
+	}
+	// The capability's stack-neutral implementation counts for every stack.
+	if fallback != nil {
+		for _, s := range append(append([]model.Satisfier{}, fallback.Satisfiers...), fallback.AcceptedSatisfiers()...) {
+			list = append(list, candidate{*fallback, s})
+		}
+	}
+	for _, c := range list {
+		ok, err := satisfied(env, c.owner, c.s)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("satisfier %s: %w", s.Name, err)
+			return nil, "", nil, fmt.Errorf("satisfier %s: %w", c.s.Name, err)
 		}
 		if ok {
-			return nil, "satisfied by " + s.Name, nil, nil
+			return nil, "satisfied by " + c.s.Name, nil, nil
 		}
 	}
 	for i, p := range rule.Partials {
@@ -445,7 +484,7 @@ func applyExceptions(res *model.Result, exceptions []model.Exception) {
 		}
 		for j := range exceptions {
 			ex := &exceptions[j]
-			if ex.Rule != res.Rule.ID || ex.Expired || !matches(ex.Match, candidate) {
+			if !res.Rule.Covers(ex.Rule) || ex.Expired || !matches(ex.Match, candidate) {
 				continue
 			}
 			res.Findings[i].Exception = ex
@@ -473,4 +512,72 @@ func matches(pattern string, f model.Finding) bool {
 		return false
 	}
 	return repo.MatchGlob(pattern, f.Path)
+}
+
+// capabilityGap is a capability's own result: shown only where a present
+// stack has no implementation, so the gap in the catalog is visible.
+func capabilityGap(rule model.Rule, f facts.Facts, caps capabilities) (model.Result, bool) {
+	gaps := caps.gaps(rule.ID, f.Stacks)
+	if len(gaps) == 0 || !rule.AppliesToTier(f.Tier) {
+		return model.Result{}, false
+	}
+	return model.Result{
+		Rule: rule, Severity: rule.Severity, Status: model.StatusNotApplicable,
+		Evidence: fmt.Sprintf("no implementation for %s (add rules/%s/<stack>.yaml)", strings.Join(gaps, ", "), rule.ID),
+	}, true
+}
+
+// capabilities indexes the implementations among a scope's rules: which
+// stacks each capability covers, and its stack-neutral implementation.
+type capabilities struct {
+	stacks  map[string]map[string]bool
+	neutral map[string]model.Rule
+}
+
+func capabilitiesOf(rules []model.Rule) capabilities {
+	c := capabilities{stacks: map[string]map[string]bool{}, neutral: map[string]model.Rule{}}
+	for _, r := range rules {
+		switch {
+		case r.Capability == "":
+		case r.Stack == stacks.Any:
+			c.neutral[r.Capability] = r
+		default:
+			if c.stacks[r.Capability] == nil {
+				c.stacks[r.Capability] = map[string]bool{}
+			}
+			c.stacks[r.Capability][r.Stack] = true
+		}
+	}
+	return c
+}
+
+// uncovered are the present stacks without their own implementation.
+func (c capabilities) uncovered(capability string, present []string) []string {
+	var out []string
+	for _, s := range present {
+		if !c.stacks[capability][s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// gaps are the present stacks nothing checks the capability for.
+func (c capabilities) gaps(capability string, present []string) []string {
+	if _, ok := c.neutral[capability]; ok {
+		return nil
+	}
+	return c.uncovered(capability, present)
+}
+
+// fallback returns the stack-neutral implementation whose satisfiers also
+// count for a stack's own outcome implementation.
+func (c capabilities) fallback(r model.Rule) *model.Rule {
+	if r.Capability == "" || r.Stack == stacks.Any {
+		return nil
+	}
+	if fb, ok := c.neutral[r.Capability]; ok && fb.Kind == model.KindOutcome {
+		return &fb
+	}
+	return nil
 }
