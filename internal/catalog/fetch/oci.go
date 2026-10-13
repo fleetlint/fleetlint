@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"golang.org/x/sync/errgroup"
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
@@ -23,6 +25,7 @@ import (
 const (
 	ociFetchTimeout = 2 * time.Minute
 	ociMaxFile      = 8 << 20
+	ociParallel     = 16
 	titleAnnotation = "org.opencontainers.image.title"
 	// bundleArtifactTypes are the media types cosign has used for bundle referrers.
 	bundleArtifactType    = "application/vnd.dev.sigstore.bundle.v0.3+json"
@@ -96,8 +99,22 @@ func Artifact(ctx context.Context, repo *remote.Repository, o OCIRef) (*OCIArtif
 	if len(manifest.Layers) > MaxFiles {
 		return nil, fmt.Errorf("manifest %s has %d layers; at most %d files are read", desc.Digest, len(manifest.Layers), MaxFiles)
 	}
-	art := &OCIArtifact{Digest: strings.TrimPrefix(desc.Digest.String(), "sha256:"), Files: map[string][]byte{}}
-	for _, layer := range manifest.Layers {
+	art := &OCIArtifact{Digest: strings.TrimPrefix(desc.Digest.String(), "sha256:")}
+	if art.Files, err = fetchFiles(ctx, repo, manifest.Layers); err != nil {
+		return nil, err
+	}
+	art.Bundles, err = fetchBundles(ctx, repo, desc)
+	return art, err
+}
+
+// fetchFiles reads the titled layers, several at a time: a catalog version
+// is hundreds of small blobs, and one round trip each would take minutes.
+func fetchFiles(ctx context.Context, repo *remote.Repository, layers []ocispec.Descriptor) (map[string][]byte, error) {
+	files := map[string][]byte{}
+	var mu sync.Mutex
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(ociParallel)
+	for _, layer := range layers {
 		title := layer.Annotations[titleAnnotation]
 		if title == "" {
 			continue // an untitled layer is not a file
@@ -105,14 +122,18 @@ func Artifact(ctx context.Context, repo *remote.Repository, o OCIRef) (*OCIArtif
 		if layer.Size > ociMaxFile {
 			return nil, fmt.Errorf("layer %s (%s) is %d bytes; the limit is %d", title, layer.Digest, layer.Size, ociMaxFile)
 		}
-		b, err := content.FetchAll(ctx, repo.Blobs(), layer)
-		if err != nil {
-			return nil, fmt.Errorf("layer %s: %w", title, err)
-		}
-		art.Files[title] = b
+		g.Go(func() error {
+			b, err := content.FetchAll(ctx, repo.Blobs(), layer)
+			if err != nil {
+				return fmt.Errorf("layer %s: %w", title, err)
+			}
+			mu.Lock()
+			files[title] = b
+			mu.Unlock()
+			return nil
+		})
 	}
-	art.Bundles, err = fetchBundles(ctx, repo, desc)
-	return art, err
+	return files, g.Wait()
 }
 
 // fetchBundles collects the sigstore bundles attached to the manifest as
