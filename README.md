@@ -1,3 +1,5 @@
+<img src="assets/fleetlint.svg" alt="fleetlint logo" width="96" align="right">
+
 # fleetlint
 
 Policy for a fleet of repositories. fleetlint checks how a repository is set up (hooks, task runner, lint configuration, CI, release pipeline) against a catalog of rules, reports how far it is from compliant, and tells you or your coding agent exactly how to close each gap.
