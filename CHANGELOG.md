@@ -35,6 +35,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 - `fleetlint init` detects stacks with the catalog's definitions.
 - A GitLab `include: local:` without a wildcard names one file, not every file of that name in the tree; a `timeout:` in days or as bare seconds is read.
 - A capability's own `when` also applies to the "no implementation" note.
+- A workspace glob that reaches into a test or fixture directory (`__tests__`, `fixtures`, `__mocks__`, `testdata`) does not make a member there, and Go sources next to a go.mod do not make each directory a nested project.
+- JSON, YAML and TOML files that start with a byte-order mark are read; a `package.json` saved by a Windows editor made rules error before.
 - `repo.hooks` recognises lefthook under all its file names (`lefthook.yml`, `.yaml`, `.toml`, `.json`, `.jsonc`, with or without a leading dot).
 
 ## [0.3.0] - 2026-10-13

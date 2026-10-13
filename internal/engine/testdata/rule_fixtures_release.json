@@ -1,0 +1,57 @@
+{
+ "public/license": [
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "license.md": "MIT\n"
+   },
+   "fail": {
+    "go.mod": "module x\n",
+    "docs/LICENSE": "MIT\n"
+   }
+  },
+  {
+   "pass": {
+    "go.mod": "module x\n",
+    "UNLICENSE": "public domain\n"
+   }
+  }
+ ],
+ "repo/toolchain-pinned/rust": [
+  {
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"a\"\n",
+    "rust-toolchain.toml": "[toolchain]\nchannel = \"nightly-2026-01-15\"\n"
+   },
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"a\"\n",
+    "rust-toolchain.toml": "[toolchain]\nchannel = \"stable\"\n"
+   },
+   "message": "no Rust toolchain is pinned"
+  }
+ ],
+ "repo/toolchain-pinned/java": [
+  {
+   "pass": {
+    "pom.xml": "<project/>\n",
+    ".java-version": "temurin-21\n"
+   },
+   "fail": {
+    "pom.xml": "<project/>\n",
+    ".java-version": "system\n"
+   }
+  }
+ ],
+ "deps/vulnerability-scan/node": [
+  {
+   "pass": {
+    "package.json": "{\"dependencies\":{\"a\":\"1\"}}",
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: npm audit --audit-level=high\n"
+   },
+   "fail": {
+    "package.json": "{\"dependencies\":{\"a\":\"1\"}}",
+    ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: npm audit signatures\n"
+   }
+  }
+ ]
+}
