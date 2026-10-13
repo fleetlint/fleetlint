@@ -56,6 +56,9 @@ type fakeRegistry struct {
 	tags      map[string]string // tag -> digest
 	types     map[string]string // manifest digest -> media type
 	referrers map[string][]ocispec.Descriptor
+	// tagSchema serves referrers the way ghcr.io does: no referrers API,
+	// a sha256-<hex> tag whose index records the empty config type.
+	tagSchema bool
 }
 
 func newFakeRegistry() *fakeRegistry {
@@ -92,8 +95,27 @@ func (r *fakeRegistry) push(tag, artifactType string, layers []ocispec.Descripto
 	desc := ocispec.Descriptor{MediaType: ocispec.MediaTypeImageManifest, Digest: godigest.Digest(d), Size: int64(len(raw)), ArtifactType: artifactType}
 	if subject != nil {
 		r.referrers[subject.Digest.String()] = append(r.referrers[subject.Digest.String()], desc)
+		if r.tagSchema {
+			r.writeTagSchema(subject.Digest.String())
+		}
 	}
 	return desc
+}
+
+// writeTagSchema stores the referrers of subject as cosign does without a
+// referrers API. The caller holds the lock.
+func (r *fakeRegistry) writeTagSchema(subject string) {
+	idx := ocispec.Index{MediaType: ocispec.MediaTypeImageIndex}
+	idx.SchemaVersion = 2
+	for _, d := range r.referrers[subject] {
+		d.ArtifactType = ocispec.MediaTypeEmptyJSON
+		idx.Manifests = append(idx.Manifests, d)
+	}
+	raw, _ := json.Marshal(idx)
+	d := digestOf(raw)
+	r.manifests[d] = raw
+	r.types[d] = ocispec.MediaTypeImageIndex
+	r.tags[strings.Replace(subject, ":", "-", 1)] = d
 }
 
 func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
@@ -136,6 +158,10 @@ func (r *fakeRegistry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Length", fmt.Sprint(len(raw)))
 		_, _ = w.Write(raw)
 	case "referrers":
+		if r.tagSchema {
+			http.NotFound(w, req)
+			return
+		}
 		idx := ocispec.Index{MediaType: ocispec.MediaTypeImageIndex, Manifests: r.referrers[ref]}
 		idx.SchemaVersion = 2
 		if idx.Manifests == nil {
@@ -225,7 +251,14 @@ func TestLoadOCIByDigest(t *testing.T) {
 // Signatures: the virtual sigstore signs the manifest; the loader accepts
 // the artifact for a matching signer and refuses it for anyone else.
 func TestLoadOCISigned(t *testing.T) {
+	for name, tagSchema := range map[string]bool{"referrers API": false, "referrers tag schema": true} {
+		t.Run(name, func(t *testing.T) { testLoadOCISigned(t, tagSchema) })
+	}
+}
+
+func testLoadOCISigned(t *testing.T, tagSchema bool) {
 	reg, name, desc := pushCatalog(t)
+	reg.tagSchema = tagSchema
 	virtual, err := ca.NewVirtualSigstore()
 	if err != nil {
 		t.Fatal(err)

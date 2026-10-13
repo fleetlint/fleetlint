@@ -31,6 +31,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- Signed OCI artifacts on registries without the referrers API (ghcr.io) are verified: cosign lists their bundles under a `sha256-<digest>` tag with the empty config type, which was skipped as "no sigstore bundle". At most 32 referrers are read.
 - A `foreach` item the expression builds itself (a map literal, `map()`, `flatten()`) locates its finding with path, line and label like an item an accessor returns; the finding showed the dumped map before.
 - `jobs()` reports `runs_on` when `runs-on` is a list or a `{group, labels}` map. `commits()` has `root`, true for a commit without parents.
 - `fleetlint init` detects stacks with the catalog's definitions.

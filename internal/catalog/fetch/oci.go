@@ -28,6 +28,8 @@ const (
 	bundleArtifactType    = "application/vnd.dev.sigstore.bundle.v0.3+json"
 	bundleArtifactTypeOld = "application/vnd.dev.sigstore.bundle+json;version=0.3"
 	bundleArtifactTypeV1  = "application/vnd.dev.sigstore.bundle.v0.4+json"
+	// maxReferrers bounds the referrer manifests read for one artifact.
+	maxReferrers = 32
 )
 
 // OCIRef is a parsed `oci://<registry>/<repository>[:<tag>][@sha256:<digest>]`
@@ -117,10 +119,14 @@ func Artifact(ctx context.Context, repo *remote.Repository, o OCIRef) (*OCIArtif
 // referrers, whatever media type cosign used for them.
 func fetchBundles(ctx context.Context, repo *remote.Repository, subject ocispec.Descriptor) ([][]byte, error) {
 	var bundles [][]byte
+	read := 0
 	err := repo.Referrers(ctx, subject, "", func(referrers []ocispec.Descriptor) error {
 		for _, ref := range referrers {
-			if !isBundleType(ref.ArtifactType) {
+			if !mayBeBundle(ref.ArtifactType) {
 				continue
+			}
+			if read++; read > maxReferrers {
+				return fmt.Errorf("more than %d referrers", maxReferrers)
 			}
 			found, err := bundleLayers(ctx, repo, ref)
 			if err != nil {
@@ -158,6 +164,13 @@ func bundleLayers(ctx context.Context, repo *remote.Repository, ref ocispec.Desc
 		out = append(out, b)
 	}
 	return out, nil
+}
+
+// mayBeBundle reports a referrer whose manifest may hold a bundle. In the
+// referrers tag schema (registries without the referrers API, such as
+// ghcr.io) cosign records the empty config type instead of the bundle type.
+func mayBeBundle(artifactType string) bool {
+	return isBundleType(artifactType) || artifactType == "" || artifactType == ocispec.MediaTypeEmptyJSON
 }
 
 func isBundleType(mediaType string) bool {
