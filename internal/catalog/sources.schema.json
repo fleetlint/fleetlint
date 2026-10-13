@@ -16,9 +16,6 @@
     "catalog": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "version"
-      ],
       "description": "The fleetlint catalog version this repository runs with (presets, library and fix templates): a tag or a full commit SHA, and the repository when it is not fleetlint/catalog. One version holds for a run; a sources file may set it for every repository.",
       "properties": {
         "version": {
@@ -29,8 +26,44 @@
         "repo": {
           "type": "string",
           "description": "The catalog repository (https or ssh). Default: https://github.com/fleetlint/catalog.git"
+        },
+        "oci": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The catalog version as a published artifact: <registry>/<repository>:<tag>, optionally @sha256:<digest> (ghcr.io/fleetlint/catalog:v0.1.0). Instead of version and repo. A tag of ghcr.io/fleetlint/catalog is verified against the catalog repository's signature; any other tag needs signers in the sources file, a digest needs none."
         }
-      }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "version"
+          ],
+          "not": {
+            "required": [
+              "oci"
+            ]
+          }
+        },
+        {
+          "required": [
+            "oci"
+          ],
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "version"
+                ]
+              },
+              {
+                "required": [
+                  "repo"
+                ]
+              }
+            ]
+          }
+        }
+      ]
     },
     "extends": {
       "type": "array",

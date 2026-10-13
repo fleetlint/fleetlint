@@ -81,6 +81,9 @@ func (l Loader) loadOCI(ref string) ([]*Catalog, error) {
 			return nil, fmt.Errorf("%s: %w", ref, err)
 		}
 	}
+	if isSourceArtifact(art.Files) {
+		return nil, errSourceArtifact(ref)
+	}
 	cats, err := catalogsFromArtifact(ref, art)
 	if err != nil {
 		return nil, err

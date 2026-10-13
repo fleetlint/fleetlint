@@ -155,8 +155,10 @@ func (s *Sources) validateBaseline() error {
 			return fmt.Errorf("signers[%d]: %w", i, err)
 		}
 	}
-	if s.Catalog != nil && s.Catalog.Version == "" {
-		return errors.New("catalog.version is required: a tag or a full commit SHA")
+	if s.Catalog != nil {
+		if err := s.Catalog.Validate(); err != nil {
+			return err
+		}
 	}
 	if s.Catalog != nil && s.Catalog.Repo != "" {
 		if err := ValidRepoURL(s.Catalog.Repo); err != nil {

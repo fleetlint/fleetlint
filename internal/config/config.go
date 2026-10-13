@@ -393,8 +393,8 @@ func validateScopes(scopes *[]Scope) error {
 // validateChoices checks the settings that name a tool or a version.
 func validateChoices(f *File) error {
 	if pin := f.Catalog; pin != nil {
-		if pin.Version == "" {
-			return errors.New("catalog.version is required: a tag or a full commit SHA")
+		if err := pin.Validate(); err != nil {
+			return err
 		}
 		if pin.Repo != "" {
 			if err := catalog.ValidRepoURL(pin.Repo); err != nil {
@@ -699,8 +699,16 @@ func (e *Effective) choosePin(src *catalog.Sources, l *catalog.Loader) error {
 	if e.Pin == nil {
 		return nil
 	}
+	if err := e.Pin.Validate(); err != nil {
+		return fmt.Errorf("%s: %w", FileName, err)
+	}
 	var err error
-	if e.Source, err = l.Pin(e.Pin.Repo, e.Pin.Version); err != nil {
+	if e.Pin.OCI != "" {
+		e.Source, err = l.PinOCI(e.Pin.OCI)
+	} else {
+		e.Source, err = l.Pin(e.Pin.Repo, e.Pin.Version)
+	}
+	if err != nil {
 		return fmt.Errorf("%s: %w", FileName, err)
 	}
 	return nil

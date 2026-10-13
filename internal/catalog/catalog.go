@@ -302,15 +302,36 @@ type Metadata struct {
 // Pin names a version of the fleetlint catalog: a tag or a full commit SHA,
 // and the repository when it is not the project's.
 type Pin struct {
-	Version string `yaml:"version"`
+	Version string `yaml:"version,omitempty"`
 	Repo    string `yaml:"repo,omitempty"`
+	// OCI pins the version as a published artifact instead of a git tag:
+	// `<registry>/<repository>:<tag>` and/or `@sha256:<digest>`.
+	OCI string `yaml:"oci,omitempty"`
+}
+
+// Validate checks that the pin names one version one way.
+func (p *Pin) Validate() error {
+	switch {
+	case p.OCI != "" && (p.Version != "" || p.Repo != ""):
+		return errors.New("catalog: oci names the version on its own; drop version and repo")
+	case p.OCI != "":
+		_, err := parseOCIRef(ociPrefix + strings.TrimPrefix(p.OCI, ociPrefix))
+		return err
+	case p.Version == "":
+		return errors.New("catalog: version (a tag or a full commit SHA) or oci is required")
+	}
+	return nil
 }
 
 // Same reports whether two pins name the same version; a nil pin is the
-// built-in catalog.
+// built-in catalog. A tag of the published artifact is the same version as
+// that tag of the catalog repository.
 func (p *Pin) Same(o *Pin) bool {
 	if p == nil || o == nil {
 		return p == nil && o == nil
+	}
+	if p.OCI != "" || o.OCI != "" {
+		return p.sameOCI(o)
 	}
 	return p.Version == o.Version && repoOrDefault(p.Repo) == repoOrDefault(o.Repo)
 }
@@ -326,6 +347,9 @@ func repoOrDefault(repo string) string {
 func (p *Pin) String() string {
 	if p == nil {
 		return "the built-in catalog"
+	}
+	if p.OCI != "" {
+		return "catalog " + strings.TrimPrefix(p.OCI, ociPrefix)
 	}
 	if p.Repo == "" || p.Repo == DefaultRepo {
 		return "catalog " + p.Version
@@ -701,6 +725,24 @@ func (l Loader) readGit(ref string) ([]byte, error) {
 	return b, nil
 }
 
+// validate checks the metadata every catalog states.
+func (m Metadata) validate() error {
+	if m.Name == "" || m.Version == "" {
+		return errors.New("metadata.name and metadata.version are required")
+	}
+	switch m.Layer {
+	case "", LayerOrg, LayerTeam:
+	default:
+		return fmt.Errorf("metadata.layer must be org or team (got %q); presets and the repository are implied", m.Layer)
+	}
+	if m.Catalog != nil {
+		if err := m.Catalog.Validate(); err != nil {
+			return fmt.Errorf("metadata.%w", err)
+		}
+	}
+	return nil
+}
+
 // Parse decodes and validates a catalog document.
 func Parse(b []byte) (*Catalog, error) { return parse(b, "") }
 
@@ -723,16 +765,8 @@ func parse(b []byte, version string) (*Catalog, error) {
 	if c.Metadata.Version == "" {
 		c.Metadata.Version = version
 	}
-	if c.Metadata.Name == "" || c.Metadata.Version == "" {
-		return nil, errors.New("metadata.name and metadata.version are required")
-	}
-	switch c.Metadata.Layer {
-	case "", LayerOrg, LayerTeam:
-	default:
-		return nil, fmt.Errorf("metadata.layer must be org or team (got %q); presets and the repository are implied", c.Metadata.Layer)
-	}
-	if c.Metadata.Catalog != nil && c.Metadata.Catalog.Version == "" {
-		return nil, errors.New("metadata.catalog.version is required: a tag or a full commit SHA")
+	if err := c.Metadata.validate(); err != nil {
+		return nil, err
 	}
 	if err := checkEngine(&c); err != nil {
 		return nil, err
