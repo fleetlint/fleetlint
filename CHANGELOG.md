@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-14
+
 ### Added
 
 - The HTML fleet report links each rule id to its documentation (its page on fleetlint.org, or the rule's first reference for an organisation's own rule) and shows the rule's title, severity and requirement on hover.
