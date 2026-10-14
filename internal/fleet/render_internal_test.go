@@ -151,3 +151,30 @@ func TestGitStateStale(t *testing.T) {
 		t.Fatal("thirteen months without a commit is stale")
 	}
 }
+
+// A rule id in the HTML shows its summary on hover and links to its docs:
+// the fleetlint.org page for a built-in rule, else its first reference.
+func TestRuleIDsLinkToTheirDocs(t *testing.T) {
+	t.Parallel()
+	builtin := res("repo/no-tracked-junk", model.StatusFail, model.SeverityError, false)
+	builtin.Rule.Title = "No editor, OS or backup files are tracked"
+	builtin.Rule.Requirement = "Files such as .DS_Store\n  are never committed. " + strings.Repeat("word ", 100)
+	own := res("acme/approved-base", model.StatusFail, model.SeverityWarning, false)
+	own.Rule.Refs = []string{"https://wiki.acme.example/base-images"}
+	plain := res("acme/no-refs", model.StatusPass, model.SeverityWarning, false)
+	rep := &Report{Repos: []RepoReport{{Name: "x", Results: []model.Result{builtin, own, plain}}}, Rules: []string{"acme/approved-base", "acme/no-refs", "repo/no-tracked-junk"}}
+	page := string(renderHTML(newView(rep, nil)))
+	for _, want := range []string{
+		"title=\"No editor, OS or backup files are tracked\nseverity: error\n\nFiles such as .DS_Store are never committed.",
+		`<a href="https://fleetlint.org/rules/repo--no-tracked-junk/"><code>repo/no-tracked-junk</code></a>`,
+		`<a href="https://wiki.acme.example/base-images"><code>acme/approved-base</code></a>`,
+		`<code>acme/no-refs</code></td>`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	if d := ruleDocs(rep)["repo/no-tracked-junk"]; len(d.Hint) > maxRuleHint+100 || !strings.HasSuffix(d.Hint, " ...") {
+		t.Errorf("a long requirement is cut at a word: %d %q", len(d.Hint), d.Hint[len(d.Hint)-10:])
+	}
+}

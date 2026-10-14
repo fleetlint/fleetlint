@@ -152,10 +152,11 @@ type view struct {
 	prev         *snapshot  // the previous run, nil without history
 	stats        []ruleStat // applicable somewhere, in rule order
 	inapplicable []string   // selected somewhere, applicable nowhere
+	docs         map[string]ruleDoc
 }
 
 func newView(rep *Report, prev *snapshot) *view {
-	v := &view{rep: rep, prev: prev}
+	v := &view{rep: rep, prev: prev, docs: ruleDocs(rep)}
 	for _, rule := range rep.Rules {
 		s := statFor(rep, rule)
 		if s.applicable() {
@@ -274,7 +275,7 @@ func (v *view) levers() table {
 			errRules = i + 1
 		}
 		t.Rows = append(t.Rows, []tcell{
-			num(i + 1), code(s.ID),
+			num(i + 1), v.ruleCell(s.ID),
 			{Text: s.Worst.String(), Class: sevClass(s.Worst)},
 			txt(fmt.Sprintf("%d of %d", s.Fail, s.Pass+s.Fail+s.Excepted)), numIf(s.Fixable, "ok"),
 			txt(share(cumErr, totalErr)), txt(share(cum, total)),
@@ -484,7 +485,7 @@ func (v *view) rules() table {
 		Head:  []string{"Rule", "Pass", "Fail", "Fixable", "Rule errors", "Excepted", "n/a", "Not selected"},
 	}
 	for _, s := range v.stats {
-		t.Rows = append(t.Rows, []tcell{code(s.ID), num(s.Pass), numIf(s.Fail, sevClass(s.Worst)), numIf(s.Fixable, "ok"), numIf(s.Errs, "err"), num(s.Excepted), num(s.NA), num(s.NotSelected)})
+		t.Rows = append(t.Rows, []tcell{v.ruleCell(s.ID), num(s.Pass), numIf(s.Fail, sevClass(s.Worst)), numIf(s.Fixable, "ok"), numIf(s.Errs, "err"), num(s.Excepted), num(s.NA), num(s.NotSelected)})
 	}
 	return t
 }
@@ -622,7 +623,7 @@ func renderHTML(v *view) []byte {
 	}
 	b.WriteString("</tr></thead><tbody>")
 	for _, s := range v.stats {
-		fmt.Fprintf(&b, "<tr data-fail=%d><td><code>%s</code></td>", s.Fail+s.Errs, html.EscapeString(s.ID))
+		fmt.Fprintf(&b, "<tr data-fail=%d>%s", s.Fail+s.Errs, v.ruleCell(s.ID).html())
 		for _, r := range v.rep.Repos {
 			c := cellFor(r, s.ID)
 			fmt.Fprintf(&b, "<td class=\"c %s\"><abbr title=\"%s\">%s</abbr></td>", markClass(c.Mark), html.EscapeString(c.Title), html.EscapeString(c.Mark))
