@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-15
+
 ### Added
 
 - **`combine:` on a capability** says how its implementations add up in a scope: `all` (the default) needs every implementation that runs to pass, `any` needs one. With `any`, the implementations that failed pass once one passes, with the evidence `satisfied by <id> (combine: any)`; errors stay errors. For what belongs to the repository rather than to each stack, such as a release: a Go CLI published as an npm package with provenance passes `release/provenance` for its Go side too. Implementations inherit it and may not set it; the catalog schema has it.
