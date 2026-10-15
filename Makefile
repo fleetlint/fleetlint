@@ -26,9 +26,11 @@ GOCOVER_VERSION     ?= v1.5.0
 GREMLINS_VERSION    ?= v0.6.0
 # Tools are built with this module's toolchain: golangci-lint refuses code that targets a newer Go than it was built with.
 TOOLCHAIN   := $(shell go env GOVERSION)
-# `make tools` installs into GOPATH/bin; those come first, whatever else is on the caller's PATH
-# (a golangci-lint built with an older Go elsewhere would refuse this module).
-export PATH := $(shell go env GOPATH)/bin:$(PATH)
+# `make tools` installs into bin/tools/, not the GOPATH/bin other projects share and rebuild with
+# their own Go; those come first, whatever else is on the caller's PATH (a golangci-lint or
+# govulncheck built with an older Go refuses this module).
+TOOLS_BIN   := $(CURDIR)/bin/tools
+export PATH := $(TOOLS_BIN):$(PATH)
 BIN         := bin/fleetlint
 
 # CONTAINER=1 runs every target inside the dev container (needs Docker and the devcontainer CLI);
@@ -47,10 +49,10 @@ help: ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*##' '{printf "  %-12s %s\n", $$1, $$2}'
 
 tools: ## install the pinned Go tools the gates use (CI runs this; gitleaks, syft and diff-cover come from their own installers)
-	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
-	GOTOOLCHAIN=$(TOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
-	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/boumenot/gocover-cobertura@$(GOCOVER_VERSION)
-	GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
+	GOBIN=$(TOOLS_BIN) GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
+	GOBIN=$(TOOLS_BIN) GOTOOLCHAIN=$(TOOLCHAIN) go install golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION)
+	GOBIN=$(TOOLS_BIN) GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/boumenot/gocover-cobertura@$(GOCOVER_VERSION)
+	GOBIN=$(TOOLS_BIN) GOTOOLCHAIN=$(TOOLCHAIN) go install github.com/go-gremlins/gremlins/cmd/gremlins@$(GREMLINS_VERSION)
 
 fmt: ## format in place
 	golangci-lint fmt
