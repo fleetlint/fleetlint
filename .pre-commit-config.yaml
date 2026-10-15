@@ -48,13 +48,14 @@ repos:
     hooks:
       - id: golangci-fmt
         name: golangci-lint fmt
-        entry: golangci-lint fmt
+        # The pinned binary from `make tools`, not whichever golangci-lint is first on PATH.
+        entry: bash -c 'PATH="$(go env GOPATH)/bin:$PATH" exec golangci-lint fmt'
         language: system
         types: [go]
         pass_filenames: false
       - id: golangci-lint
         name: golangci-lint (new issues)
-        entry: golangci-lint run --new-from-rev=HEAD
+        entry: bash -c 'PATH="$(go env GOPATH)/bin:$PATH" exec golangci-lint run --new-from-rev=HEAD'
         language: system
         types: [go]
         pass_filenames: false
