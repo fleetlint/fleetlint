@@ -29,7 +29,8 @@
   {
    "pass": {
     ".changeset/config.json": "{}",
-    "go.mod": "module x\n"
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
    }
   },
   {

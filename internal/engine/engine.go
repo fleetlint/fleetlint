@@ -220,7 +220,31 @@ func evaluateScope(ctx context.Context, r *repo.Repo, f facts.Facts, eff *config
 		applyExceptions(&res, exceptions)
 		results = append(results, res)
 	}
+	combineAny(results)
 	return results, nil
+}
+
+// combineAny settles the capabilities whose implementations combine with
+// `any`: once one implementation passes in the scope, the others that
+// failed pass too, naming the one that carried it. Errors stay errors.
+func combineAny(results []model.Result) {
+	carried := map[string]string{}
+	for _, res := range results {
+		if res.Rule.Combine == model.CombineAny && res.Status == model.StatusPass {
+			if _, ok := carried[res.Rule.Capability]; !ok {
+				carried[res.Rule.Capability] = res.Rule.ID
+			}
+		}
+	}
+	for i := range results {
+		res := &results[i]
+		by, ok := carried[res.Rule.Capability]
+		if !ok || res.Rule.Combine != model.CombineAny || res.Status != model.StatusFail {
+			continue
+		}
+		res.Status, res.Severity, res.Findings = model.StatusPass, res.Rule.Severity, nil
+		res.Evidence = "satisfied by " + by + " (combine: any)"
+	}
 }
 
 func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, opts Options, caps capabilities) model.Result {
@@ -511,10 +535,11 @@ func matches(pattern string, f model.Finding) bool {
 // stack-neutral one when every stack has its own, a stack's exemption
 // (`when: "false"`) with a reason a person can read. "" means it runs.
 func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) string {
+	// Without a stack the stack-neutral implementation runs: every repository
+	// is checked by something. Where that means nothing (no dependencies,
+	// no code), the implementation's own `when` says so.
 	switch {
-	case rule.Stack == stacks.Any && len(f.Stacks) == 0:
-		return "no stack detected here"
-	case rule.Stack == stacks.Any && len(caps.uncovered(rule.Capability, f.Stacks)) == 0:
+	case rule.Stack == stacks.Any && len(f.Stacks) > 0 && len(caps.uncovered(rule.Capability, f.Stacks)) == 0:
 		return "every stack here has its own implementation"
 	case rule.Stack != "" && rule.When == "false":
 		return "the capability does not apply to " + rule.Stack + " (see the requirement)"

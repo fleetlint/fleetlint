@@ -259,9 +259,9 @@ func checkImplementation(impl model.Rule, set map[string]any, p string) error {
 			return fmt.Errorf("%s: partials[%d]: severity is required", p, i)
 		}
 	}
-	for _, key := range []string{"use", "stacks"} {
+	for _, key := range []string{"use", "stacks", "combine"} {
 		if _, ok := set[key]; ok {
-			return fmt.Errorf("%s: an implementation takes no %s: (the path names its stack)", p, key)
+			return fmt.Errorf("%s: an implementation takes no %s: (the path names its stack; combine comes from the capability)", p, key)
 		}
 	}
 	return nil

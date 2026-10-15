@@ -329,7 +329,7 @@
  "lint/configured/kotlin": [
   {
    "pass": {
-    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n"
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"dev.detekt\") version \"2.0.0-alpha.6\"\n}\n"
    },
    "fail": {
     "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
@@ -343,26 +343,37 @@
    },
    "fail": {
     "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
-    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    allowedLines: 50\n  CognitiveComplexMethod:\n    active: true\n"
    },
    "message": "no build file applies"
+  },
+  {
+   "pass": {
+    "build.gradle.kts": "plugins {\n    alias(libs.plugins.kotlin.jvm)\n    alias(libs.plugins.detekt)\n}\n",
+    "gradle/libs.versions.toml": "[plugins]\nkotlin-jvm = { id = \"org.jetbrains.kotlin.jvm\", version = \"2.4.21\" }\ndetekt = { id = \"dev.detekt\", version = \"2.0.0-alpha.6\" }\n"
+   },
+   "fail": {
+    "build.gradle.kts": "plugins {\n    alias(libs.plugins.kotlin.jvm)\n    alias(libs.plugins.detekt)\n}\n",
+    "gradle/libs.versions.toml": "[plugins]\nkotlin-jvm = { id = \"org.jetbrains.kotlin.jvm\", version = \"2.4.21\" }\ndetekt = { id = \"io.gitlab.arturbosch.detekt\", version = \"1.23.8\" }\n"
+   },
+   "message": "detekt 1.x"
   }
  ],
  "lint/strict/kotlin": [
   {
    "pass": {
-    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
-    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"dev.detekt\") version \"2.0.0-alpha.6\"\n}\n",
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: true\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    allowedLines: 50\n  CognitiveComplexMethod:\n    active: true\n"
    },
    "fail": {
-    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
-    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    threshold: 50\n  CognitiveComplexMethod:\n    active: true\n"
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"dev.detekt\") version \"2.0.0-alpha.6\"\n}\n",
+    "config/detekt/detekt.yml": "exceptions:\n  SwallowedException:\n    active: false\n  TooGenericExceptionCaught:\n    active: true\nempty-blocks:\n  EmptyCatchBlock:\n    active: true\ncomplexity:\n  LongMethod:\n    active: true\n    allowedLines: 50\n  CognitiveComplexMethod:\n    active: true\n"
    },
    "message": "(exceptions.SwallowedException)"
   },
   {
    "fail": {
-    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n",
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"dev.detekt\") version \"2.0.0-alpha.6\"\n}\n",
     "config/detekt/detekt.yml": "exceptions:\nempty-blocks:\n  EmptyCatchBlock:\n"
    },
    "message": "detekt rule is not active"

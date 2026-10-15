@@ -53,5 +53,29 @@
     ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    runs-on: x\n    steps:\n      - run: npm audit signatures\n"
    }
   }
+ ],
+ "release/signing": [
+  {
+   "pass": {
+    ".github/workflows/release.yml": "name: release\non:\n  push:\n    tags: [\"v*\"]\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n      - run: ./gradlew :app:assembleRelease\n      - run: apksigner verify --print-certs app/build/outputs/apk/release/app-release.apk\n      - run: gh release create \"$GITHUB_REF_NAME\" app/build/outputs/apk/release/app-release.apk\n",
+    "build.gradle.kts": "plugins { id(\"com.android.application\") version \"9.4.1\" }\n"
+   },
+   "fail": {
+    ".github/workflows/release.yml": "name: release\non:\n  push:\n    tags: [\"v*\"]\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n      - run: ./gradlew :app:assembleRelease\n      - run: gh release create \"$GITHUB_REF_NAME\" app/build/outputs/apk/release/app-release.apk\n",
+    "build.gradle.kts": "plugins { id(\"com.android.application\") version \"9.4.1\" }\n"
+   },
+   "message": "release artifacts are not signed"
+  },
+  {
+   "pass": {
+    ".github/workflows/release.yml": "name: release\non:\n  push:\n    tags: [\"v*\"]\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n      - run: ./gradlew publishToMavenCentral\n",
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.4.21\"\n    `maven-publish`\n    signing\n}\n"
+   },
+   "fail": {
+    ".github/workflows/release.yml": "name: release\non:\n  push:\n    tags: [\"v*\"]\njobs:\n  release:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n      - run: ./gradlew publishToMavenCentral\n",
+    "build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.4.21\"\n    `maven-publish`\n}\n"
+   },
+   "message": "release artifacts are not signed"
+  }
  ]
 }

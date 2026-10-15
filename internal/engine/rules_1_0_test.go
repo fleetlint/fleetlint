@@ -117,11 +117,11 @@ func TestOneDotZeroRules(t *testing.T) {
 		t.Run(id, func(t *testing.T) {
 			t.Parallel()
 			pass := run(t, withDefaults(tc.pass), tier1Public)
-			if s := status(t, pass, id); s.Status != model.StatusPass {
+			if s := resultOf(t, pass, id); s.Status != model.StatusPass {
 				t.Errorf("pass fixture: %s %q %+v", s.Status, s.Err, s.Findings)
 			}
 			fail := run(t, withDefaults(tc.fail), tier1Public)
-			s := status(t, fail, id)
+			s := resultOf(t, fail, id)
 			if s.Status != model.StatusFail {
 				t.Fatalf("fail fixture: %s %q evidence=%q", s.Status, s.Err, s.Evidence)
 			}
@@ -153,18 +153,18 @@ func TestContainerImageReleases(t *testing.T) {
 	}
 	bare := run(t, withDefaults(build("")), tier1Public)
 	for id, want := range map[string]model.Status{"release/sbom": model.StatusFail, "release/provenance": model.StatusPass, "release/checksums": model.StatusPass} {
-		if s := status(t, bare, id); s.Status != want {
+		if s := resultOf(t, bare, id); s.Status != want {
 			t.Errorf("without options, %s: %s %q, want %s", id, s.Status, s.Err, want)
 		}
 	}
 	attested := run(t, withDefaults(build(", sbom: true, provenance: mode=max")), tier1Public)
 	for _, id := range []string{"release/sbom", "release/provenance", "release/checksums"} {
-		if s := status(t, attested, id); s.Status != model.StatusPass {
+		if s := resultOf(t, attested, id); s.Status != model.StatusPass {
 			t.Errorf("with sbom and provenance, %s: %s %q %+v", id, s.Status, s.Err, s.Findings)
 		}
 	}
 	off := run(t, withDefaults(build(", provenance: false")), tier1Public)
-	if s := status(t, off, "release/provenance"); s.Status != model.StatusFail {
+	if s := capStatus(t, off, "release/provenance"); s.Status != model.StatusFail {
 		t.Errorf("provenance: false must not satisfy the rule: %s", s.Status)
 	}
 }
@@ -230,15 +230,15 @@ func TestDevEnvironmentVersionVariables(t *testing.T) {
 func TestLibraryHeuristicAndForksDoc(t *testing.T) {
 	t.Parallel()
 	app := run(t, map[string]string{"go.mod": "module x\n", "cmd/x/main.go": "package main\n"}, tier1Public)
-	if s := status(t, app, "release/api-compatibility"); s.Status != model.StatusNotApplicable {
+	if s := capStatus(t, app, "release/api-compatibility"); s.Status != model.StatusNotApplicable {
 		t.Errorf("an application is not held to API compatibility: %s %+v", s.Status, s.Findings)
 	}
 	forks := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/dep => github.com/me/dep v1.2.3\n", "docs/FORKS.md": "# Forks\n\n- dep: local patch\n"}, tier1Public)
-	if s := status(t, forks, "deps/forks-documented"); s.Status != model.StatusPass {
+	if s := capStatus(t, forks, "deps/forks-documented"); s.Status != model.StatusPass {
 		t.Errorf("docs/FORKS.md documents the fork: %s %+v", s.Status, s.Findings)
 	}
 	none := run(t, map[string]string{"go.mod": "module x\n\nreplace example.com/sib => ../sib\n"}, tier1Public)
-	if s := status(t, none, "deps/forks-documented"); s.Status != model.StatusNotApplicable {
+	if s := capStatus(t, none, "deps/forks-documented"); s.Status != model.StatusNotApplicable {
 		t.Errorf("a local replace is a sibling, not a fork: %s", s.Status)
 	}
 }

@@ -930,6 +930,19 @@ func validateRule(r *model.Rule) error {
 	default:
 		return fmt.Errorf("rule %s: scope must be each, root or members (got %q)", r.ID, r.Scope)
 	}
+	return validateCombine(r)
+}
+
+// validateCombine accepts combine only on a capability (and so on the
+// implementations that inherit it).
+func validateCombine(r *model.Rule) error {
+	switch {
+	case r.Combine == "":
+	case r.Combine != model.CombineAll && r.Combine != model.CombineAny:
+		return fmt.Errorf("rule %s: combine must be all or any (got %q)", r.ID, r.Combine)
+	case r.Kind != model.KindCapability && r.Capability == "":
+		return fmt.Errorf("rule %s: combine is set on a capability, for its implementations", r.ID)
+	}
 	return nil
 }
 

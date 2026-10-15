@@ -568,12 +568,10 @@
   "quality/duplication-gate": [
     {
       "pass": {
-        "go.mod": "module x\n",
         "pyproject.toml": "[project]\nname = \"x\"\n",
         "Makefile": "lint:\n\tpylint src\n"
       },
       "fail": {
-        "go.mod": "module x\n",
         "pyproject.toml": "[project]\nname = \"x\"\n\n[tool.pylint.\"messages control\"]\ndisable = [\n  \"missing-docstring\",\n  \"duplicate-code\",\n]\n",
         "Makefile": "lint:\n\tpylint src\n"
       },
@@ -584,6 +582,20 @@
         "go.mod": "module x\n",
         ".golangci.yml": "version: \"2\"\nlinters:\n  default: all\n  disable:\n    - dupl\n"
       }
+    },
+    {
+      "fail": {
+        "go.mod": "module x\n",
+        "pyproject.toml": "[project]\nname = \"x\"\n",
+        "Makefile": "lint:\n\tpylint src\n"
+      },
+      "pass": {
+        "go.mod": "module x\n",
+        "pyproject.toml": "[project]\nname = \"x\"\n",
+        "Makefile": "lint:\n\tpylint src\n",
+        ".golangci.yml": "version: \"2\"\nlinters:\n  enable: [dupl]\n"
+      },
+      "message": "duplication"
     }
   ]
 }

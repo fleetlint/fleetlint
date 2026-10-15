@@ -69,7 +69,7 @@ func TestTemplatesSatisfyTheRules(t *testing.T) {
 				check = append(append([]string{}, check...), "format/configured/"+stack)
 			}
 			for _, id := range check {
-				if s := status(t, out, id); s.Status != model.StatusPass {
+				if s := resultOf(t, out, id); s.Status != model.StatusPass {
 					t.Errorf("%s: %s %q %+v", id, s.Status, s.Err, s.Findings)
 				}
 			}
@@ -184,7 +184,7 @@ func TestAlteredTemplatesStillPass(t *testing.T) {
 				check = append(append([]string{}, rules...), "taskrunner/container", "repo/dev-environment")
 			}
 			for _, id := range check {
-				if s := status(t, out, id); s.Status != model.StatusPass {
+				if s := resultOf(t, out, id); s.Status != model.StatusPass {
 					t.Errorf("%s: %s %q %+v", id, s.Status, s.Err, s.Findings)
 				}
 			}
@@ -206,7 +206,7 @@ func TestLintFixesSatisfyTheirRules(t *testing.T) {
 		"rust":   {map[string]string{"Cargo.toml": "[package]\nname = \"x\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"}, []string{"lint/configured/rust", "lint/strict/rust"}},
 		"node":   {map[string]string{"package.json": "{\"name\": \"x\"}\n", "tsconfig.json": "{\n  \"compilerOptions\": {\n    \"target\": \"es2022\"\n  }\n}\n"}, []string{"lint/configured/node", "types/strict/node"}},
 		// The analyzer plugins are wired by hand; the fix writes their configuration.
-		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"io.gitlab.arturbosch.detekt\") version \"1.23.8\"\n}\n"}, []string{"lint/configured/kotlin", "lint/strict/kotlin"}},
+		"kotlin":  {map[string]string{"build.gradle.kts": "plugins {\n    kotlin(\"jvm\") version \"2.2.0\"\n    id(\"dev.detekt\") version \"2.0.0-alpha.6\"\n}\n"}, []string{"lint/configured/kotlin", "lint/strict/kotlin"}},
 		"flutter": {map[string]string{"pubspec.yaml": "name: x\n"}, []string{"lint/configured/flutter", "types/strict/flutter"}},
 		"java":    {map[string]string{"pom.xml": "<project><build><plugins><plugin><artifactId>maven-checkstyle-plugin</artifactId></plugin></plugins></build></project>\n"}, []string{"lint/configured/java", "lint/strict/java"}},
 		"dotnet":  {map[string]string{"global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n"}, []string{"lint/configured/dotnet", "lint/strict/dotnet"}},

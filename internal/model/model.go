@@ -179,7 +179,23 @@ type Rule struct {
 	// Implementations lists, on a capability, the stacks it has an
 	// implementation for.
 	Implementations []string `yaml:"-" json:"implementations,omitempty"`
+	// Combine, on a capability, says how its implementations add up in a
+	// scope: every one must pass (all, the default) or one passing is
+	// enough (any). Implementations inherit it.
+	Combine Combine `yaml:"combine,omitempty" json:"combine,omitempty"`
 }
+
+// Combine is how a capability's implementations add up in a scope.
+type Combine string
+
+const (
+	// CombineAll needs every implementation that runs to pass: each stack
+	// has its own linter, so a Go and Node repository needs both.
+	CombineAll Combine = "all"
+	// CombineAny needs one: a release belongs to the repository, so the
+	// stack that publishes it decides, not every stack present.
+	CombineAny Combine = "any"
+)
 
 // SplitImplementation splits an implementation id (family/name/stack) into
 // the capability id and the stack; ok is false for any other id.

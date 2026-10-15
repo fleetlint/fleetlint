@@ -47,6 +47,52 @@ func status(t *testing.T, run *engine.Run, id string) model.Result {
 	return model.Result{}
 }
 
+// resultOf is status for a rule and capStatus for a capability.
+func resultOf(t *testing.T, run *engine.Run, id string) model.Result {
+	t.Helper()
+	for _, r := range run.Results {
+		if r.Rule.Capability == id {
+			return capStatus(t, run, id)
+		}
+	}
+	return status(t, run, id)
+}
+
+// capStatus is a capability's result at the root, as a reader would sum it
+// up: an implementation that did not pass if there is one (each must pass;
+// combine: any has already settled its own), otherwise one that passed (a
+// stack's own before the stack-neutral one), otherwise a not-applicable one.
+func capStatus(t *testing.T, run *engine.Run, capability string) model.Result {
+	t.Helper()
+	var passed, skipped *model.Result
+	for i := range run.Results {
+		r := &run.Results[i]
+		if r.Scope != "" || r.Rule.Capability != capability {
+			continue
+		}
+		switch r.Status {
+		case model.StatusNotApplicable:
+			if skipped == nil {
+				skipped = r
+			}
+		case model.StatusPass:
+			if passed == nil || passed.Rule.Stack == "any" {
+				passed = r
+			}
+		case model.StatusFail, model.StatusError, model.StatusExcepted, model.StatusBaselined:
+			return *r
+		}
+	}
+	switch {
+	case passed != nil:
+		return *passed
+	case skipped != nil:
+		return *skipped
+	}
+	t.Fatalf("no implementation of %s evaluated", capability)
+	return model.Result{}
+}
+
 func TestExprRulesPassAndFail(t *testing.T) {
 	t.Parallel()
 	out := run(t, map[string]string{"go.mod": "module x\n", ".gitignore": "bin/\n"}, "version: 1\nextends: [fleetlint:minimal]\n")
@@ -294,45 +340,45 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	cfg := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1}\n"
 
 	pass := run(t, map[string]string{"go.mod": "module x\n", ".goreleaser.yaml": "sboms:\n  - artifacts: archive\n", ".github/workflows/release.yml": relWorkflow}, cfg)
-	if s := status(t, pass, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by goreleaser" {
+	if s := capStatus(t, pass, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by goreleaser" {
 		t.Fatalf("goreleaser satisfier: %+v", s)
 	}
 
 	viaCmd := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow + "      - run: syft scan dir:. -o spdx-json=sbom.json\n"}, cfg)
-	if s := status(t, viaCmd, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by workflow-command" {
+	if s := capStatus(t, viaCmd, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by workflow-command" {
 		t.Fatalf("workflow-command satisfier: %+v", s)
 	}
 
 	fail := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow}, cfg)
-	if s := status(t, fail, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "unsatisfied" {
+	if s := capStatus(t, fail, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "unsatisfied" {
 		t.Fatalf("no producer must fail at warning: %+v", s)
 	}
 
 	partial := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow, ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: syft scan dir:.\n"}, cfg)
-	if s := status(t, partial, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityInfo || s.Findings[0].Evidence != "sbom-outside-release" {
+	if s := capStatus(t, partial, "release/sbom"); s.Status != model.StatusFail || s.Severity != model.SeverityInfo || s.Findings[0].Evidence != "sbom-outside-release" {
 		t.Fatalf("producer outside release should be an info partial: %+v", s)
 	}
 
 	accepted := run(t, map[string]string{"go.mod": "module x\n", ".github/workflows/release.yml": relWorkflow + "      - run: ./scripts/sbom.sh\n"},
 		cfg+"overrides:\n  release/sbom:\n    accept:\n      - name: own-script\n        expr: tagged_workflows().exists(w, steps(w).exists(s, s.run.contains(\"scripts/sbom.sh\")))\n")
-	if s := status(t, accepted, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by own-script" {
+	if s := capStatus(t, accepted, "release/sbom"); s.Status != model.StatusPass || s.Evidence != "satisfied by own-script" {
 		t.Fatalf("accept should add a satisfier: %+v", s)
 	}
 
 	notRelease := run(t, map[string]string{"go.mod": "module x\n"}, cfg)
-	if s := status(t, notRelease, "release/sbom"); s.Status != model.StatusNotApplicable {
+	if s := capStatus(t, notRelease, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("no release pipeline: n/a, got %+v", s)
 	}
 	cliffOnly := run(t, map[string]string{"go.mod": "module x\n", "cliff.toml": "[changelog]\n"}, cfg)
-	if s := status(t, cliffOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
+	if s := capStatus(t, cliffOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("a changelog generator is not a release pipeline: n/a, got %+v", s)
 	}
 	registryOnly := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish --provenance\n"}, cfg)
-	if s := status(t, registryOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
+	if s := capStatus(t, registryOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("a release that only publishes to a registry: n/a, got %+v", s)
 	}
 	withAssets := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish\n      - run: gh release upload v1 dist/app.tgz\n"}, cfg)
-	if s := status(t, withAssets, "release/sbom"); s.Status != model.StatusFail {
+	if s := capStatus(t, withAssets, "release/sbom"); s.Status != model.StatusFail {
 		t.Fatalf("a registry release that also uploads artifacts is checked, got %+v", s)
 	}
 }
@@ -516,5 +562,47 @@ func TestStacksPerDirectory(t *testing.T) {
 	onlyRoot := run(t, files(), "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - {path: ., stacks: [go]}\n")
 	if len(onlyRoot.Scopes) != 2 || len(onlyRoot.Config.Deprecations) != 0 {
 		t.Errorf("listing only the root keeps discovery: %+v", onlyRoot.Scopes)
+	}
+}
+
+// Without a stack the stack-neutral implementation still runs, so a release
+// of only a container image is checked; capabilities about dependencies or
+// code opt out with their own `when`.
+func TestNeutralImplementationRunsWithoutAStack(t *testing.T) {
+	t.Parallel()
+	image := "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: docker push ghcr.io/x/y:${GITHUB_REF_NAME}\n"
+	unsigned := run(t, map[string]string{".github/workflows/release.yml": image}, tier1Public)
+	if s := status(t, unsigned, "release/signing/any"); s.Status != model.StatusFail {
+		t.Errorf("an unsigned image release without a stack must fail: %s %q", s.Status, s.Evidence)
+	}
+	if s := status(t, unsigned, "deps/vulnerability-scan/any"); s.Status != model.StatusNotApplicable {
+		t.Errorf("no stack, no dependencies to scan: %s %q", s.Status, s.Evidence)
+	}
+	signed := run(t, map[string]string{".github/workflows/release.yml": image + "      - run: cosign sign --yes ghcr.io/x/y@${DIGEST}\n"}, tier1Public)
+	if s := status(t, signed, "release/signing/any"); s.Status != model.StatusPass {
+		t.Errorf("a signed image release without a stack must pass: %s %q", s.Status, s.Evidence)
+	}
+}
+
+// combine: any settles a release capability by the stack that publishes:
+// a Go CLI shipped as an npm package with provenance passes for Go too.
+func TestCombineAnyCarriesTheOtherStacks(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{
+		"go.mod":                        "module x\n",
+		"package.json":                  "{\"name\": \"x\"}\n",
+		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --provenance --access public\n",
+	}
+	out := run(t, files, tier1Public)
+	if s := status(t, out, "release/provenance/node"); s.Status != model.StatusPass {
+		t.Fatalf("npm provenance: %s %q", s.Status, s.Evidence)
+	}
+	s := status(t, out, "release/provenance/any")
+	if s.Status != model.StatusPass || s.Evidence != "satisfied by release/provenance/node (combine: any)" {
+		t.Errorf("the Go side is carried by the npm provenance: %s %q", s.Status, s.Evidence)
+	}
+	// combine: all (the default) is untouched: each stack still needs its own linter.
+	if s := status(t, out, "lint/configured/go"); s.Status != model.StatusFail {
+		t.Errorf("lint/configured/go must not be carried by another stack: %s", s.Status)
 	}
 }

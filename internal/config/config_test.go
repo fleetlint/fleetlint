@@ -174,9 +174,12 @@ func TestAcceptValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, _ := ruleByID(eff, "release/sbom")
-	if len(r.Accept) != 1 || r.Accept[0].Name != "own" || r.Accept[0].Expr != "true" {
-		t.Fatalf("accept not stored: %+v", r.Accept)
+	// An accept on the capability reaches every implementation.
+	for _, id := range []string{"release/sbom/any", "release/sbom/kotlin"} {
+		r, _ := ruleByID(eff, id)
+		if len(r.Accept) != 1 || r.Accept[0].Name != "own" || r.Accept[0].Expr != "true" {
+			t.Fatalf("%s: accept not stored: %+v", id, r.Accept)
+		}
 	}
 }
 

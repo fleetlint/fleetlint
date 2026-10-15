@@ -324,6 +324,10 @@
             "type": "string",
             "description": "The catalog version that added the rule."
           },
+          "combine": {
+            "enum": ["all", "any"],
+            "description": "On a capability: whether every implementation that runs in a scope must pass (all, the default) or one passing is enough (any, for what belongs to the repository rather than to each stack, such as a release)."
+          },
           "locked": {
             "type": "boolean",
             "description": "Later layers cannot disable the rule, lower its severity or redefine it."

@@ -55,12 +55,12 @@ func checkFixture(t *testing.T, id string, tc ruleFixture) {
 		cfg = withSlop
 	}
 	if tc.Pass != nil {
-		if s := status(t, run(t, tc.Pass, cfg), id); s.Status != model.StatusPass {
+		if s := resultOf(t, run(t, tc.Pass, cfg), id); s.Status != model.StatusPass {
 			t.Errorf("pass fixture: %s %q evidence=%q %+v", s.Status, s.Err, s.Evidence, s.Findings)
 		}
 	}
 	if tc.Fail != nil {
-		s := status(t, run(t, tc.Fail, cfg), id)
+		s := resultOf(t, run(t, tc.Fail, cfg), id)
 		if s.Status != model.StatusFail {
 			t.Fatalf("fail fixture: %s %q evidence=%q", s.Status, s.Err, s.Evidence)
 		}
