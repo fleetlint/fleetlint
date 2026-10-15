@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-15
+
 ### Fixed
 
 - `fleetlint docs` shows each capability's `combine` (a column of the capability matrix, a sentence on its page) and says that the stack-neutral implementation also runs where no stack is detected.
