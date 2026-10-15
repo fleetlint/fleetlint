@@ -44,7 +44,7 @@ const APIVersion = "fleetlint.org/v1"
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
 const (
-	EngineLevel    = 3
+	EngineLevel    = 4
 	MinEngineLevel = 1
 )
 

@@ -11,6 +11,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Changed
 
+- **Engine level 4.** Catalogs that use `combine:` state level 4 and need this fleetlint; an older one refuses them with one message instead of failing on an unknown key. Catalogs for levels 1 to 3 still run.
 - The stack-neutral implementation (`any.yaml`) also runs where no stack is detected, so every repository is checked by something: a repository that only releases a container image gets `release/signing`. A capability for which that means nothing says so with a `when` on its `any.yaml`.
 
 ## [0.4.1] - 2026-10-14
