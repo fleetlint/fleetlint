@@ -17,7 +17,7 @@ LICENSE_IGNORE := --ignore=github.com/in-toto/attestation --ignore=github.com/in
 GO_LICENSES_VERSION ?= v2.0.1
 GO_LICENSES := go run github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
 # renovate: datasource=go depName=github.com/golangci/golangci-lint/v2
-GOLANGCI_VERSION    ?= v2.14.0
+GOLANGCI_VERSION    ?= v2.15.0
 # renovate: datasource=go depName=golang.org/x/vuln
 GOVULNCHECK_VERSION ?= v1.9.0
 # renovate: datasource=go depName=github.com/boumenot/gocover-cobertura
