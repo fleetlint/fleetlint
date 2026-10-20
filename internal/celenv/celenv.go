@@ -135,7 +135,8 @@ func CheckList(expr string) error {
 	if err != nil {
 		return err
 	}
-	_, err = c.CompileList(expr)
+	want := cel.ListType(cel.DynType)
+	_, err = c.check(want.String()+"\x00"+expr, expr, want) // the shared checker is concurrent: only the type-checked ASTs are kept
 	return err
 }
 
