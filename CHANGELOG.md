@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-21
+
 Engine level 5: catalog 0.3.0 or newer. Catalogs for levels 1 to 4 still run.
 
 ### Added
