@@ -38,7 +38,7 @@ with --apply it writes them and the report shows the state after them.
 Nothing is committed.`,
 		RunE: func(cmd *cobra.Command, args []string) error { return runFleet(cmd, g, code, f, args) },
 	}
-	cmd.Flags().StringVar(&f.specPath, "repos", "", "fleet file (version, cache, defaults, groups, repos: [{path|url, name, team, group, tier, visibility}])")
+	cmd.Flags().StringVar(&f.specPath, "repos", "", "fleet file (version, cache, include, defaults, groups, repos: [{path|url, name, team, group, tier, visibility}])")
 	cmd.Flags().StringArrayVar(&f.from, "from", nil, "discover repositories on a forge: github:<owner> or gitea:<host>/<owner> (repeatable; archived repositories and forks are skipped)")
 	cmd.Flags().StringArrayVar(&f.discoverRoots, "discover", nil, fmt.Sprintf("find git repositories under a directory, up to %d levels down (repeatable)", fleet.DiscoverDepth))
 	cmd.Flags().StringArrayVar(&f.exclude, "exclude", nil, "with --discover: skip paths matching this glob, relative to the directory (e.g. '*/third_party/*'; repeatable)")
