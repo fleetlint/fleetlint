@@ -108,13 +108,13 @@ type RuleConf struct {
 }
 
 // Disabled records a rule switched off (or lowered) and why, for the report.
-// Layer is who did it: repo for configuration files, org or team for a
+// Label is who did it: repo for configuration files, org or team for a
 // catalog that lowered a rule of an earlier layer.
 type Disabled struct {
 	ID     string `json:"id"`
 	Reason string `json:"reason"`
 	Where  string `json:"where"`
-	Layer  string `json:"layer"`
+	Label  string `json:"label"`
 }
 
 // Effective is the resolved configuration for one repository.
@@ -455,7 +455,7 @@ func (e *Effective) ScopeRules(scopePath string, overrides map[string]catalog.Ov
 		if err != nil {
 			return nil, err
 		}
-		if err := e.applyToAll(ids, key, nil, ov, where, catalog.LayerRepo, where, byID); err != nil {
+		if err := e.applyToAll(ids, key, nil, ov, where, catalog.LabelRepo, where, byID); err != nil {
 			return nil, err
 		}
 	}
@@ -643,10 +643,10 @@ func (e *Effective) resolve(opts Options) error {
 	if err != nil {
 		return err
 	}
-	// Layer order is fixed whatever extends says; within a layer, written order.
-	sort.SliceStable(loaded, func(i, j int) bool {
-		return catalog.LayerRank(loaded[i].Layer) < catalog.LayerRank(loaded[j].Layer)
-	})
+	// Catalogs apply in the order includes and extends list them: the
+	// sources file's baseline first, then the repository's list as written.
+	// Nothing is reordered; policy only tightens, so whoever lists a catalog
+	// first binds the ones after it.
 	own, err := e.ownCatalog(opts.Loader)
 	if err != nil {
 		return err
@@ -714,8 +714,8 @@ func (e *Effective) choosePin(src *catalog.Sources, l *catalog.Loader) error {
 	return nil
 }
 
-// loadEntries loads every extends entry with its includes, settles each
-// catalog's layer and checks that it builds on the run's catalog version.
+// loadEntries loads every extends entry with its includes, labels each
+// catalog and checks that it builds on the run's catalog version.
 func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*catalog.Catalog, error) {
 	var out []*catalog.Catalog
 	for _, en := range entries {
@@ -724,8 +724,9 @@ func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*ca
 			return nil, err
 		}
 		for _, c := range cats {
-			if err := settleLayer(c, en); err != nil {
-				return nil, err
+			settleLabel(c, en)
+			if c.Metadata.Layer != "" && c.Metadata.Label == c.Metadata.Layer {
+				e.Deprecations = append(e.Deprecations, fmt.Sprintf("catalog %s: metadata.layer is deprecated: write it as metadata.label", c.Ref))
 			}
 			if err := e.checkBuildsOn(c); err != nil {
 				return nil, err
@@ -736,40 +737,28 @@ func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*ca
 	return out, nil
 }
 
-// settleLayer gives a catalog its layer: presets are the preset layer; a
-// catalog says org or team in its metadata, and a sources-file alias it is
-// loaded under must agree; anything else is the repository's.
 // notFromRepository reports a built-in preset or a catalog fetched by
 // digest, commit or signature.
 func notFromRepository(c *catalog.Catalog) bool {
-	return catalog.RefLayer(c.Ref) == catalog.LayerPreset || catalog.IsRemoteRef(c.Ref)
+	return catalog.RefLabel(c.Ref) == catalog.LabelPreset || catalog.IsRemoteRef(c.Ref)
 }
 
-func settleLayer(c *catalog.Catalog, en extendsEntry) error {
-	declared := c.Metadata.Layer
-	if !notFromRepository(c) {
-		// A file in the repository is the repository's, whatever it
-		// declares or the sources file calls it; otherwise it could
-		// sort itself above the team and be reported as the organisation.
-		declared = ""
-	}
+// settleLabel gives a catalog its label and records how it came in. Presets
+// are `preset`; any other catalog carries the label it declares, else the
+// sources-file name it is loaded under, else its own name. The label
+// identifies the catalog in reports; it grants nothing.
+func settleLabel(c *catalog.Catalog, en extendsEntry) {
+	c.Via = firstNonEmpty(en.alias, en.ref)
 	switch {
-	case catalog.RefLayer(c.Ref) == catalog.LayerPreset:
-		c.Layer = catalog.LayerPreset
+	case catalog.RefLabel(c.Ref) == catalog.LabelPreset:
+		c.Label = catalog.LabelPreset
 	case c.Ref != en.ref:
-		// An include of the entry: it takes the entry's layer unless it says otherwise.
-		c.Layer = firstNonEmpty(declared, en.layer, catalog.LayerRepo)
-	case en.alias != "" && declared != "" && declared != en.layer:
-		return fmt.Errorf("sources file names %s as %q but its metadata.layer is %q", c.Ref, en.alias, declared)
-	case en.alias != "":
-		c.Layer, c.Alias = en.layer, en.alias
-		if !notFromRepository(c) {
-			c.Layer = catalog.LayerRepo
-		}
+		// An include of the entry: labelled by itself.
+		c.Label = firstNonEmpty(c.Metadata.Label, c.Metadata.Name)
 	default:
-		c.Layer = firstNonEmpty(declared, catalog.LayerRepo)
+		c.Alias = en.alias
+		c.Label = firstNonEmpty(c.Metadata.Label, en.alias, c.Metadata.Name)
 	}
-	return nil
 }
 
 // checkBuildsOn holds a catalog to the run's catalog version: what it
@@ -777,7 +766,7 @@ func settleLayer(c *catalog.Catalog, en extendsEntry) error {
 // presets or selects library rules must declare one, or its content would
 // depend on whichever fleetlint reads it.
 func (e *Effective) checkBuildsOn(c *catalog.Catalog) error {
-	if catalog.RefLayer(c.Ref) == catalog.LayerPreset {
+	if catalog.RefLabel(c.Ref) == catalog.LabelPreset {
 		return nil
 	}
 	declared := c.Metadata.Catalog
@@ -795,7 +784,7 @@ func (e *Effective) checkBuildsOn(c *catalog.Catalog) error {
 
 func includesPreset(c *catalog.Catalog) bool {
 	for _, inc := range c.Metadata.Includes {
-		if catalog.RefLayer(inc) == catalog.LayerPreset {
+		if catalog.RefLabel(inc) == catalog.LabelPreset {
 			return true
 		}
 	}
@@ -813,7 +802,7 @@ func firstNonEmpty(values ...string) string {
 
 // extendsEntry is one `extends` item with its alias resolved.
 type extendsEntry struct {
-	ref, alias, layer string
+	ref, alias string
 }
 
 // extendsEntries lists what the run extends: the sources file's extends
@@ -840,20 +829,19 @@ func (e *Effective) extendsEntries(l *catalog.Loader) ([]extendsEntry, *catalog.
 			continue
 		}
 		seen[ref] = true
-		layer, isAlias := catalog.AliasLayer(ref)
 		target, known := "", false
 		if src != nil {
 			target, known = src.Catalogs[ref]
 		}
 		switch {
 		case known:
-			entries = append(entries, extendsEntry{ref: target, alias: ref, layer: layer})
-		case isAlias && src == nil:
+			entries = append(entries, extendsEntry{ref: target, alias: ref})
+		case catalog.LooksLikeAlias(ref) && src == nil:
 			return nil, nil, fmt.Errorf("%s: extends: %q is a sources-file name but no sources file is set", FileName, ref)
-		case isAlias:
+		case catalog.LooksLikeAlias(ref):
 			return nil, nil, fmt.Errorf("%s: extends: %q is not in the sources file (it has: %s)", FileName, ref, strings.Join(src.Aliases(), ", "))
 		default:
-			entries = append(entries, extendsEntry{ref: ref, layer: catalog.RefLayer(ref)})
+			entries = append(entries, extendsEntry{ref: ref})
 		}
 	}
 	return entries, src, nil
@@ -863,13 +851,16 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 	if e.hasCatalog(c) {
 		return nil
 	}
+	if other := e.sameNameOtherVersion(c); other != nil {
+		return fmt.Errorf("catalog %s is %s@%s but %s@%s is already loaded from %s: one version of a catalog per run (align the pin in the sources file and in the catalogs that include it)", c.Ref, c.Metadata.Name, c.Metadata.Version, other.Metadata.Name, other.Metadata.Version, other.Ref)
+	}
 	e.Catalogs = append(e.Catalogs, c)
 	for i := range c.Rules {
 		r := c.Rules[i]
 		if !c.Trusted && r.Kind == model.KindCommand {
 			return fmt.Errorf("catalog %s: rule %s: command rules are only allowed in the repository's own config", c.Ref, r.ID)
 		}
-		r.Layer = c.Layer
+		r.Label = c.Label
 		prev, seen := byID[r.ID]
 		switch {
 		case !seen:
@@ -911,7 +902,7 @@ func (e *Effective) addExceptions(c *catalog.Catalog, byID map[string]*model.Rul
 		if !known && !e.isDisabled(ex.Rule) {
 			return fmt.Errorf("%s: exceptions: rule %q is not loaded", c.Ref, ex.Rule)
 		}
-		ex.Layer, ex.Where, ex.Expired = c.Layer, c.Ref, expired(ex.Until, now)
+		ex.Label, ex.Where, ex.Expired = c.Label, c.Ref, expired(ex.Until, now)
 		e.Exceptions = append(e.Exceptions, ex)
 	}
 	return nil
@@ -939,7 +930,7 @@ func (e *Effective) applyCatalogOverrides(c *catalog.Catalog, byID map[string]*m
 		if err != nil {
 			return err
 		}
-		if err := e.applyToAll(ids, key, inline, ov, where, c.Layer, by, byID); err != nil {
+		if err := e.applyToAll(ids, key, inline, ov, where, c.Label, by, byID); err != nil {
 			return err
 		}
 	}
@@ -1184,7 +1175,7 @@ func (e *Effective) redefine(c *catalog.Catalog, prev, r *model.Rule) error {
 	}
 	if r.Severity < prev.Severity {
 		e.Weakened = append(e.Weakened, Disabled{
-			ID: r.ID, Where: c.Ref, Layer: r.Layer,
+			ID: r.ID, Where: c.Ref, Label: r.Label,
 			Reason: fmt.Sprintf("%s lowers %s to %s", r.Source, prev.Severity, r.Severity),
 		})
 	}
@@ -1275,7 +1266,7 @@ func (e *Effective) overrideAs(r *model.Rule, rc RuleConf, where, layer string, 
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: disabling a rule requires a reason", where, r.ID)
 		}
-		e.Disabled = append(e.Disabled, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: layer})
+		e.Disabled = append(e.Disabled, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Label: layer})
 		delete(byID, r.ID)
 		return nil
 	}
@@ -1321,7 +1312,7 @@ func (e *Effective) applySeverity(r *model.Rule, rc RuleConf, where, layer strin
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: lowering severity requires a reason", where, r.ID)
 		}
-		e.Weakened = append(e.Weakened, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Layer: layer})
+		e.Weakened = append(e.Weakened, Disabled{ID: r.ID, Reason: rc.Reason, Where: where, Label: layer})
 	}
 	r.Severity = sev
 	return nil
@@ -1366,6 +1357,22 @@ func expired(until string, now time.Time) bool {
 	}
 	t, err := time.Parse("2006-01-02", until)
 	return err == nil && now.After(t.Add(24*time.Hour))
+}
+
+// sameNameOtherVersion finds a loaded fetched catalog with the same name as
+// c but other content: the sources file pins one version and a catalog
+// includes another, say. Files of the repository are not compared: their
+// names are the repository's business.
+func (e *Effective) sameNameOtherVersion(c *catalog.Catalog) *catalog.Catalog {
+	if !notFromRepository(c) || catalog.RefLabel(c.Ref) == catalog.LabelPreset {
+		return nil
+	}
+	for _, have := range e.Catalogs {
+		if notFromRepository(have) && catalog.RefLabel(have.Ref) != catalog.LabelPreset && have.Metadata.Name == c.Metadata.Name && have.Digest != c.Digest {
+			return have
+		}
+	}
+	return nil
 }
 
 func (e *Effective) hasCatalog(c *catalog.Catalog) bool {

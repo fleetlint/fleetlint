@@ -101,6 +101,22 @@ func summarize(repos []RepoReport, now time.Time, key func(RepoReport) string) [
 	return out
 }
 
+// summarizeGroups is summarize over groups with every parent group rolled
+// up: a repository in `incyde/tooling` counts for `incyde/tooling` and for
+// `incyde`.
+func summarizeGroups(repos []RepoReport, now time.Time) []TeamSummary {
+	var expanded []RepoReport
+	for _, r := range repos {
+		expanded = append(expanded, r)
+		for g := parentGroup(r.Group); g != ""; g = parentGroup(g) {
+			up := r
+			up.Group = g
+			expanded = append(expanded, up)
+		}
+	}
+	return summarize(expanded, now, func(r RepoReport) string { return r.Group })
+}
+
 // teamsTable renders a team or group summary; empty when there is none.
 func teamsTable(title, key string, teams []TeamSummary) table {
 	t := table{Title: title, Sortable: true, Head: []string{key, "Repositories", "Unchecked", "Compliance", "Errors", "Warnings", "Excepted", "Disabled", "Lowered", "Exceptions expiring"}}

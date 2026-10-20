@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/config"
+
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/report"
@@ -510,7 +512,7 @@ func (v *view) unversioned() table {
 }
 
 func (v *view) policyTables() []table {
-	cols := []string{"Repository", "Rule", "Layer", "Where", "Reason"}
+	cols := []string{"Repository", "Rule", "Label", "Where", "Reason"}
 	return []table{
 		{Title: "Disabled rules", Head: cols, Rows: collectDisabled(v.rep, false)},
 		{Title: "Lowered severities", Head: cols, Rows: collectDisabled(v.rep, true)},
@@ -527,7 +529,74 @@ func (v *view) sections() (before, after []table) {
 		v.ruleErrors(), v.rules(),
 	}
 	after = append([]table{v.factsToPin(), v.unversioned()}, v.policyTables()...)
+	after = append(after, v.catalogs())
 	return before, after
+}
+
+// catalogs lists every catalog the fleet's repositories applied, with its
+// pin and the repositories that used it, so a rule in the matrix can be
+// followed to the content that defined it.
+func (v *view) catalogs() table {
+	t := table{
+		Title:    "Catalogs",
+		Intro:    "Every catalog a repository applied, with how it is pinned and who used it. The order column is the position in that repository's run (a later catalog adjusts an earlier one within its policy); `fleetlint hierarchy` in a repository prints the same.",
+		Head:     []string{"Catalog", "Label", "Name", "Origin", "Pinned by", "Repositories", "Order"},
+		Sortable: true,
+	}
+	type key struct{ ref, digest, artifact string }
+	type use struct {
+		info   config.CatalogInfo
+		repos  []string
+		orders map[int]bool
+	}
+	uses := map[key]*use{}
+	var keys []key
+	for _, r := range v.rep.Repos {
+		for _, c := range r.Catalogs {
+			k := key{c.Ref, c.Digest, c.Artifact}
+			u := uses[k]
+			if u == nil {
+				u = &use{info: c, orders: map[int]bool{}}
+				uses[k] = u
+				keys = append(keys, k)
+			}
+			u.repos = append(u.repos, r.Name)
+			u.orders[c.Order] = true
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := uses[keys[i]], uses[keys[j]]
+		if len(a.repos) != len(b.repos) {
+			return len(a.repos) > len(b.repos)
+		}
+		return a.info.Ref < b.info.Ref
+	})
+	for _, k := range keys {
+		u := uses[k]
+		orders := make([]int, 0, len(u.orders))
+		for o := range u.orders {
+			orders = append(orders, o)
+		}
+		sort.Ints(orders)
+		parts := make([]string, len(orders))
+		for i, o := range orders {
+			parts[i] = fmt.Sprint(o)
+		}
+		repos := fmt.Sprintf("%d: %s", len(u.repos), strings.Join(u.repos, ", "))
+		t.Rows = append(t.Rows, []tcell{code(u.info.Ref), txt(u.info.Label), txt(u.info.Name + "@" + u.info.Version), txt(u.info.Origin), code(pinOf(u.info)), txt(repos), txt(strings.Join(parts, ", "))})
+	}
+	return t
+}
+
+// pinOf is what fixes a catalog's content, for the fleet table.
+func pinOf(c config.CatalogInfo) string {
+	switch {
+	case c.Artifact != "":
+		return "sha256:" + c.Artifact
+	case c.Digest != "" && c.Origin != config.OriginRepository:
+		return "sha256-" + c.Digest
+	}
+	return "-"
 }
 
 func renderMarkdown(v *view) []byte {
@@ -570,7 +639,7 @@ func collectDisabled(rep *Report, weakened bool) [][]tcell {
 			list = r.Weakened
 		}
 		for _, d := range list {
-			rows = append(rows, []tcell{txt(r.Name), code(d.ID), txt(d.Layer), txt(d.Where), txt(d.Reason)})
+			rows = append(rows, []tcell{txt(r.Name), code(d.ID), txt(d.Label), txt(d.Where), txt(d.Reason)})
 		}
 	}
 	return rows

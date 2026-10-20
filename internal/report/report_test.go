@@ -22,7 +22,7 @@ func sampleRun() *engine.Run {
 	return &engine.Run{
 		Facts: facts.Facts{Name: "demo", Stacks: []string{"go"}, Tier: 2, Sources: map[string]facts.Source{"tier": facts.SourceConfigured}},
 		Config: &config.Effective{
-			Disabled: []config.Disabled{{ID: "hooks/config-present", Reason: "no hooks | yet", Where: "web/.fleetlint.yaml", Layer: "repo"}},
+			Disabled: []config.Disabled{{ID: "hooks/config-present", Reason: "no hooks | yet", Where: "web/.fleetlint.yaml", Label: "repo"}},
 		},
 		Results: []model.Result{
 			{
@@ -143,8 +143,8 @@ func TestJSONAndSARIFRenderers(t *testing.T) {
 	if doc["repo"] == nil || doc["results"] == nil || doc["disabled"] == nil {
 		t.Errorf("json keys: %v", doc)
 	}
-	if d, _ := doc["disabled"].([]any); len(d) != 1 || d[0].(map[string]any)["layer"] != "repo" {
-		t.Errorf("disabled entries must carry their layer: %v", doc["disabled"])
+	if d, _ := doc["disabled"].([]any); len(d) != 1 || d[0].(map[string]any)["label"] != "repo" {
+		t.Errorf("disabled entries must carry their label: %v", doc["disabled"])
 	}
 	var sarif map[string]any
 	if err := json.Unmarshal([]byte(render(t, report.FormatSARIF, report.Options{Version: "1.2.3"})), &sarif); err != nil {
@@ -251,7 +251,7 @@ func TestCheckJSONShape(t *testing.T) {
 	t.Parallel()
 	run := sampleRun()
 	run.Scopes = []engine.ScopeRun{{Path: "web"}}
-	run.Config.Catalogs = []*catalog.Catalog{{Ref: "fleetlint:minimal", Digest: "d", Layer: "preset"}}
+	run.Config.Catalogs = []*catalog.Catalog{{Ref: "fleetlint:minimal", Digest: "d", Label: "preset"}}
 	run.Config.Weakened = run.Config.Disabled
 	run.Results[0].Findings[0].Exception = &model.Exception{Rule: "r", Reason: "r"}
 	var b bytes.Buffer

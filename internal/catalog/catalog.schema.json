@@ -48,12 +48,15 @@
           "minimum": 1,
           "description": "The engine level the catalog was written for."
         },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Who owns the catalog (`org`, `team/mobile`, `security-team`): the name reports attribute its rules and policy to, and a name for `--require`. It does not order catalogs. Default: the sources-file name the catalog is loaded under, else its own name."
+        },
         "layer": {
-          "enum": [
-            "org",
-            "team"
-          ],
-          "description": "Who owns the catalog; counts only for catalogs fetched by digest, commit or signature."
+          "type": "string",
+          "description": "Deprecated spelling of label, still read."
         },
         "catalog": {
           "type": "object",

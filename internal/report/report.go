@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"unicode"
 
+	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -65,7 +66,9 @@ type jsonOut struct {
 	Results  []model.Result    `json:"results"`
 	Disabled []disabledOut     `json:"disabled,omitempty"`
 	Weakened []disabledOut     `json:"weakened,omitempty"`
-	Catalogs []catalogOut      `json:"catalogs"`
+	// Catalogs lists the run's catalogs in the order they applied, with
+	// their pins, so a rule can be followed to the content that defined it.
+	Catalogs []config.CatalogInfo `json:"catalogs"`
 }
 
 // toolOut identifies what produced a report.
@@ -92,23 +95,14 @@ type disabledOut struct {
 	ID     string `json:"id"`
 	Reason string `json:"reason"`
 	Where  string `json:"where"`
-	Layer  string `json:"layer"`
+	Label  string `json:"label"`
 }
 
 // checkFormat versions the check JSON. 2: every field is snake_case
 // (summary, scopes, disabled, catalogs were Go field names in 1), and the
-// summary's rule-error count is rule_errors.
-const checkFormat = 2
-
-type catalogOut struct {
-	Ref      string `json:"ref"`
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Digest   string `json:"digest,omitempty"`
-	Artifact string `json:"artifact,omitempty"`
-	Layer    string `json:"layer"`
-	Alias    string `json:"alias,omitempty"`
-}
+// summary's rule-error count is rule_errors. 3: `catalogs` is the hierarchy
+// (order, origin, via, includes, counts) and `layer` is a free label.
+const checkFormat = 3
 
 func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 	out := jsonOut{
@@ -121,9 +115,7 @@ func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 	for _, d := range run.Config.Weakened {
 		out.Weakened = append(out.Weakened, disabledOut(d))
 	}
-	for _, c := range run.Config.Catalogs {
-		out.Catalogs = append(out.Catalogs, catalogOut{Ref: c.Ref, Name: c.Metadata.Name, Version: c.Metadata.Version, Digest: c.Digest, Artifact: c.Artifact, Layer: c.Layer, Alias: c.Alias})
-	}
+	out.Catalogs = run.Config.Hierarchy()
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
@@ -311,6 +303,11 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 		paid := run.Baseline.Entries - run.Baseline.Used
 		w.line(paint(dim, fmt.Sprintf("baseline %s: %d entries, %d still matching, %d paid off (run `fleetlint baseline` to shrink it)", plainText(run.Baseline.Path), run.Baseline.Entries, run.Baseline.Used, paid)))
 	}
+	w.line()
+	w.line(paint(dim, HierarchyIntro))
+	if err := WriteHierarchy(w.w, run.Config.Hierarchy()); err != nil && w.err == nil {
+		w.err = err
+	}
 	if !run.Config.Exists {
 		w.line()
 		w.line(paint(dim, "no .fleetlint.yaml found; used "+strings.Join(run.Config.File.Extends, ", ")+". Run `fleetlint init` to write it."))
@@ -323,6 +320,12 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 
 func writeAgent(w io.Writer, run *engine.Run, opts Options) error {
 	if err := WriteActions(w, run.Facts.Name, run.Results); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "\n%s\n\n", HierarchyIntro); err != nil {
+		return err
+	}
+	if err := WriteHierarchy(w, run.Config.Hierarchy()); err != nil {
 		return err
 	}
 	_, err := fmt.Fprintf(w, "\nProduced by %s.\n", builtWith(opts))

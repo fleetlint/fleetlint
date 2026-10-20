@@ -13,8 +13,9 @@ import (
 
 // jsonFormat versions fleet.json. 2: results name their rule by id and the
 // definitions are stored once, under `definitions`. 3: summary fields are
-// snake_case, its rule-error count is rule_errors.
-const jsonFormat = 3
+// snake_case, its rule-error count is rule_errors. 4: each repository
+// lists its catalogs in the order they applied, with their pins.
+const jsonFormat = 4
 
 type reportOut struct {
 	Version     int                   `json:"version"`
@@ -43,7 +44,10 @@ type repoOut struct {
 	Disabled   []config.Disabled `json:"disabled,omitempty"`
 	Weakened   []config.Disabled `json:"weakened,omitempty"`
 	Exceptions []model.Exception `json:"exceptions,omitempty"`
-	Err        string            `json:"error,omitempty"`
+	// Catalogs are the repository's catalogs in the order they applied,
+	// with their pins.
+	Catalogs []config.CatalogInfo `json:"catalogs,omitempty"`
+	Err      string               `json:"error,omitempty"`
 }
 
 // resultOut is a result without its rule: Rule is the id, and Definition
@@ -73,7 +77,7 @@ func (rep *Report) MarshalJSON() ([]byte, error) {
 		ro := repoOut{
 			Name: r.Name, Team: r.Team, Group: r.Group, Source: r.Source, Git: r.Git, Facts: r.Facts,
 			Compliance: r.Compliance(), Fixable: r.Fixable(), Summary: r.Summary,
-			Disabled: r.Disabled, Weakened: r.Weakened, Exceptions: r.Exceptions, Err: r.Err,
+			Disabled: r.Disabled, Weakened: r.Weakened, Exceptions: r.Exceptions, Catalogs: r.Catalogs, Err: r.Err,
 			Results: make([]resultOut, 0, len(r.Results)),
 		}
 		for _, res := range r.Results {

@@ -1,12 +1,17 @@
 .catalogs
 .catalogs[].digest
-.catalogs[].layer
+.catalogs[].exceptions
+.catalogs[].label
 .catalogs[].name
+.catalogs[].order
+.catalogs[].origin
+.catalogs[].overrides
 .catalogs[].ref
+.catalogs[].rules
 .catalogs[].version
 .disabled
 .disabled[].id
-.disabled[].layer
+.disabled[].label
 .disabled[].reason
 .disabled[].where
 .facts
@@ -83,6 +88,6 @@
 .version
 .weakened
 .weakened[].id
-.weakened[].layer
+.weakened[].label
 .weakened[].reason
 .weakened[].where

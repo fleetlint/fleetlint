@@ -100,13 +100,13 @@
       "type": "object",
       "minProperties": 1,
       "propertyNames": {
-        "pattern": "^(org|team/[a-z0-9][a-z0-9._-]*)$"
+        "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
       },
       "additionalProperties": {
         "type": "string",
         "minLength": 1
       },
-      "description": "org and team/<name> mapped to catalog references."
+      "description": "Names (`org`, `team/mobile`, `compliance/pci`) mapped to catalog references; a repository writes the name in extends."
     }
   }
 }

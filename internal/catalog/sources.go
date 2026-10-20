@@ -17,19 +17,36 @@ import (
 	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
 
-// Layers say who owns a catalog or an override. Catalogs resolve in this
-// order, so a later layer overrides an earlier one within the earlier
-// layer's locks and floors.
+// Labels say who owns a catalog, for attribution in reports and for
+// `--require`. Presets are `preset` and the repository's own file is `repo`;
+// any other catalog carries the label it declares in metadata.label, or the
+// sources-file name it was loaded under, or its own name. Labels do not
+// order catalogs: the order of includes and of `extends` does.
 const (
-	LayerPreset = "preset"
-	LayerOrg    = "org"
-	LayerTeam   = "team"
-	LayerRepo   = "repo"
+	LabelPreset = "preset"
+	LabelRepo   = "repo"
 )
 
-var layerOrder = []string{LayerPreset, LayerOrg, LayerTeam, LayerRepo}
+// aliasRe is the shape of a sources-file name: a word, optionally with
+// slashes (`org`, `team/mobile`, `compliance/pci`), never a path or a URL.
+var aliasRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$`)
 
-var teamAliasRe = regexp.MustCompile(`^team/[a-z0-9][a-z0-9._-]*$`)
+// LooksLikeAlias reports whether ref has the shape of a sources-file name
+// rather than of a preset, a pinned reference or a file.
+func LooksLikeAlias(ref string) bool {
+	if strings.HasPrefix(ref, presetPrefix) || isPinnedRef(ref) || strings.HasSuffix(ref, ".yaml") || strings.HasSuffix(ref, ".yml") {
+		return false
+	}
+	return aliasRe.MatchString(ref)
+}
+
+// ValidLabel checks a catalog's metadata.label: one line of plain text.
+func ValidLabel(label string) error {
+	if strings.TrimSpace(label) != label || label == "" || len(label) > 64 || strings.ContainsAny(label, "\n\r\t") {
+		return fmt.Errorf("metadata.label %q must be a short label without surrounding spaces or line breaks", label)
+	}
+	return nil
+}
 
 // Sources maps the names repositories write in `extends` to catalog
 // references, so that URLs and pins live in one file per organization.
@@ -47,34 +64,13 @@ type Sources struct {
 	Catalogs map[string]string `yaml:"catalogs"`
 }
 
-// AliasLayer returns the layer an alias belongs to: `org` is the
-// organization baseline, `team/<name>` a team catalog.
-func AliasLayer(alias string) (string, bool) {
-	switch {
-	case alias == LayerOrg:
-		return LayerOrg, true
-	case teamAliasRe.MatchString(alias):
-		return LayerTeam, true
-	}
-	return "", false
-}
-
-// RefLayer returns the layer of a reference written directly in `extends`.
-func RefLayer(ref string) string {
+// RefLabel returns the label of a reference written directly in `extends`:
+// preset for a preset, repo for anything else until the catalog says.
+func RefLabel(ref string) string {
 	if strings.HasPrefix(ref, presetPrefix) {
-		return LayerPreset
+		return LabelPreset
 	}
-	return LayerRepo
-}
-
-// LayerRank orders layers for resolution; unknown layers sort last.
-func LayerRank(layer string) int {
-	for i, l := range layerOrder {
-		if l == layer {
-			return i
-		}
-	}
-	return len(layerOrder)
+	return LabelRepo
 }
 
 // LoadSources reads a sources file from a local path, an https URL with a
@@ -131,8 +127,8 @@ func (s *Sources) validate(local string) error {
 	}
 	for _, alias := range s.Aliases() {
 		target := s.Catalogs[alias]
-		if _, ok := AliasLayer(alias); !ok {
-			return fmt.Errorf("catalogs.%s: names are `org` or `team/<name>`", alias)
+		if !aliasRe.MatchString(alias) {
+			return fmt.Errorf("catalogs.%s: a name is lowercase words joined by `/` (`org`, `team/mobile`, `compliance/pci`)", alias)
 		}
 		switch {
 		case strings.HasPrefix(target, presetPrefix), isPinnedRef(target):

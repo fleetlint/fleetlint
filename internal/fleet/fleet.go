@@ -34,8 +34,15 @@ type Spec struct {
 	Version int     `yaml:"version"`
 	Cache   string  `yaml:"cache,omitempty"`
 	Repos   []Entry `yaml:"repos"`
+	// Include names other fleet files, relative to this one: a team's fleet
+	// inside the organisation's. Their repositories are added with their own
+	// defaults and groups settled first; this file's defaults fill what
+	// they leave open.
+	Include []string `yaml:"include,omitempty"`
 	// Defaults apply to every repository, Groups to the repositories of a
-	// group (discovered ones too); an entry's own values win.
+	// group (discovered ones too); an entry's own values win. A group may
+	// be nested (`incyde/tooling`): the entry's group, then each parent
+	// group, then the defaults.
 	Defaults Settings            `yaml:"defaults,omitempty"`
 	Groups   map[string]Settings `yaml:"groups,omitempty"`
 	// Unversioned is filled by discovery, never read from a fleet file.
@@ -59,9 +66,15 @@ func (s Settings) validate() error {
 	return nil
 }
 
-// settle fills what the entry leaves open from its group, then the defaults.
+// settle fills what the entry leaves open from its group, each parent
+// group, then the defaults.
 func (s *Spec) settle(e Entry) Entry {
-	for _, from := range []Settings{s.Groups[e.Group], s.Defaults} {
+	chain := make([]Settings, 0, 4)
+	for g := e.Group; g != ""; g = parentGroup(g) {
+		chain = append(chain, s.Groups[g])
+	}
+	chain = append(chain, s.Defaults)
+	for _, from := range chain {
 		e.Team = firstNonEmpty(e.Team, from.Team)
 		e.Visibility = firstNonEmpty(e.Visibility, from.Visibility)
 		if e.Tier == 0 {
@@ -69,6 +82,15 @@ func (s *Spec) settle(e Entry) Entry {
 		}
 	}
 	return e
+}
+
+// parentGroup is the group one level up (`incyde/tooling` → `incyde`), or
+// "" at the top.
+func parentGroup(g string) string {
+	if i := strings.LastIndex(g, "/"); i > 0 {
+		return g[:i]
+	}
+	return ""
 }
 
 // Entry is one repository: a local path or a git URL (cloned into the cache).
@@ -93,8 +115,18 @@ type Entry struct {
 // Normalize validates an entry built outside a fleet file.
 func (e *Entry) Normalize() error { return e.normalize("") }
 
-// LoadSpec reads and validates a fleet file.
-func LoadSpec(path string) (*Spec, error) {
+// LoadSpec reads and validates a fleet file, with the fleet files it
+// includes.
+func LoadSpec(path string) (*Spec, error) { return loadSpecFrom(path, map[string]bool{}) }
+
+func loadSpecFrom(path string, seen map[string]bool) (*Spec, error) {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if seen[path] {
+		return nil, fmt.Errorf("%s includes itself (cycle)", path)
+	}
+	seen[path] = true
 	b, err := os.ReadFile(path) //nolint:gosec // the user names the fleet file
 	if err != nil {
 		return nil, err
@@ -126,7 +158,58 @@ func LoadSpec(path string) (*Spec, error) {
 		}
 		names[e.Name] = true
 	}
+	if err := s.loadIncludes(path, names, seen); err != nil {
+		return nil, err
+	}
 	return &s, nil
+}
+
+// loadIncludes reads each included fleet file and takes its repositories,
+// settled with the included file's own defaults and groups, so the
+// including file's defaults only fill what the team left open.
+func (s *Spec) loadIncludes(path string, names map[string]bool, seen map[string]bool) error {
+	base := filepath.Dir(path)
+	for _, inc := range s.Include {
+		p := inc
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(base, p)
+		}
+		sub, err := loadSpecFrom(p, seen)
+		if err != nil {
+			return fmt.Errorf("%s: include %s: %w", path, inc, err)
+		}
+		if err := s.take(sub, names); err != nil {
+			return fmt.Errorf("%s: include %s: %w", path, inc, err)
+		}
+	}
+	return nil
+}
+
+// take adds an included fleet's repositories, groups it does not define
+// itself, its cache when it has none, and what it found unversioned.
+func (s *Spec) take(sub *Spec, names map[string]bool) error {
+	if s.Cache == "" {
+		s.Cache = sub.Cache
+	}
+	for _, e := range sub.Repos {
+		e = sub.settle(e)
+		if names[e.Name] {
+			return fmt.Errorf("duplicate repository name %q", e.Name)
+		}
+		names[e.Name] = true
+		s.Repos = append(s.Repos, e)
+	}
+	for name, g := range sub.Groups {
+		if _, mine := s.Groups[name]; mine {
+			continue
+		}
+		if s.Groups == nil {
+			s.Groups = map[string]Settings{}
+		}
+		s.Groups[name] = g
+	}
+	s.Unversioned = append(s.Unversioned, sub.Unversioned...)
+	return nil
 }
 
 // normalize validates one entry, resolves its path against the fleet file
@@ -198,7 +281,9 @@ type RepoReport struct {
 	Exceptions []model.Exception `json:"exceptions,omitempty"`
 	// Deprecations name configuration forms the repository still uses.
 	Deprecations []string `json:"deprecations,omitempty"`
-	Err          string   `json:"error,omitempty"`
+	// Catalogs are the repository's catalogs in the order they applied.
+	Catalogs []config.CatalogInfo `json:"catalogs,omitempty"`
+	Err      string               `json:"error,omitempty"`
 }
 
 // Compliance is the share of applicable rules that pass or are excepted.
@@ -287,7 +372,7 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 	sort.Strings(rep.Rules)
 	sort.SliceStable(rep.Repos, func(i, j int) bool { return urgent(rep.Repos[i], rep.Repos[j]) })
 	rep.Teams = summarize(rep.Repos, opts.Now, func(r RepoReport) string { return r.Team })
-	rep.Groups = summarize(rep.Repos, opts.Now, func(r RepoReport) string { return r.Group })
+	rep.Groups = summarizeGroups(rep.Repos, opts.Now)
 	rep.Unversioned = spec.Unversioned
 	return rep, nil
 }
@@ -319,7 +404,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	}
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
-	rr.Disabled, rr.Weakened, rr.Deprecations = eff.Disabled, eff.Weakened, eff.Deprecations
+	rr.Disabled, rr.Weakened, rr.Deprecations, rr.Catalogs = eff.Disabled, eff.Weakened, eff.Deprecations, eff.Hierarchy()
 	if eff.Source != nil && eff.Source.Pinned {
 		rr.Catalog = eff.Source.Version
 	}

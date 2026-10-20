@@ -22,6 +22,7 @@ func writeMarkdown(w io.Writer, run *engine.Run, opts Options) error {
 	fails := failing(run.Results)
 	if len(fails) == 0 {
 		b.WriteString("No findings.\n")
+		writeMarkdownHierarchy(&b, run)
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
@@ -49,8 +50,17 @@ func writeMarkdown(w io.Writer, run *engine.Run, opts Options) error {
 		fmt.Fprintf(&b, "- **%s**: %s\n", cellText(r.Rule.ID), cellText(instr))
 	}
 	b.WriteString("\n</details>\n")
+	writeMarkdownHierarchy(&b, run)
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// writeMarkdownHierarchy adds the catalogs of the run, collapsed: a reader
+// of the pull-request comment can follow a rule to the catalog that set it.
+func writeMarkdownHierarchy(b *strings.Builder, run *engine.Run) {
+	b.WriteString("\n<details><summary>Catalogs, in the order they applied</summary>\n\n")
+	b.WriteString(HierarchyMarkdown(run.Config.Hierarchy()))
+	b.WriteString("\n</details>\n")
 }
 
 func failing(results []model.Result) []model.Result {

@@ -54,10 +54,10 @@ func TestCatalogOverrides(t *testing.T) {
 	if _, still := rules["repo/gitignore-present"]; still {
 		t.Error("a rule disabled by the catalog is gone")
 	}
-	if len(eff.Disabled) != 1 || eff.Disabled[0].Layer != "org" || eff.Disabled[0].Reason == "" {
+	if len(eff.Disabled) != 1 || eff.Disabled[0].Label != "org" || eff.Disabled[0].Reason == "" {
 		t.Errorf("the disable is recorded with its layer and reason: %+v", eff.Disabled)
 	}
-	if len(eff.Weakened) != 1 || eff.Weakened[0].ID != "hooks/config-present" || eff.Weakened[0].Layer != "org" {
+	if len(eff.Weakened) != 1 || eff.Weakened[0].ID != "hooks/config-present" || eff.Weakened[0].Label != "org" {
 		t.Errorf("the lowered severity is recorded with its layer: %+v", eff.Weakened)
 	}
 

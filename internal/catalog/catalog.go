@@ -225,10 +225,14 @@ type Catalog struct {
 	// Templates holds fix templates shipped with the catalog (templates/...),
 	// which overlay the preset ones; nil when the catalog brings none.
 	Templates fs.FS `yaml:"-"`
-	// Layer is who owns the catalog (preset, org, team or repo); Alias is the
-	// sources-file name it was referenced by, if any. Both are set by config.
-	Layer string `yaml:"-"`
+	// Label is the catalog's label (preset, repo, or what a fetched catalog
+	// declares or is named); Alias is the sources-file name it was
+	// referenced by, if any; Via is the `extends` entry that brought it in
+	// (its alias or reference, or the including catalog's reference). All
+	// three are set by config.
+	Label string `yaml:"-"`
 	Alias string `yaml:"-"`
+	Via   string `yaml:"-"`
 	// Library holds rules/<family>/<name>.yaml shipped with the catalog (a
 	// git tree or an OCI artifact); its `use:` entries search it before the
 	// source's library. nil when the catalog brings none.
@@ -289,8 +293,12 @@ type Metadata struct {
 	// Engine is the engine level the catalog was written for; 0 means it
 	// does not say. See EngineLevel.
 	Engine int `yaml:"engine,omitempty"`
-	// Layer is who owns the catalog: org or team. Presets are the preset
-	// layer, a catalog that says nothing is the repository's.
+	// Label says who owns the catalog (`org`, `team/mobile`, `security-team`):
+	// attribution in reports and a name for `--require`. It does not order
+	// catalogs. A catalog that says nothing is labelled by the sources-file
+	// name it is loaded under, or by its own name. Layer is the 0.5 spelling,
+	// still read.
+	Label string `yaml:"label,omitempty"`
 	Layer string `yaml:"layer,omitempty"`
 	// Catalog is the version of the fleetlint catalog this one builds on:
 	// the presets it includes and the library it selects from come from
@@ -730,10 +738,10 @@ func (m Metadata) validate() error {
 	if m.Name == "" || m.Version == "" {
 		return errors.New("metadata.name and metadata.version are required")
 	}
-	switch m.Layer {
-	case "", LayerOrg, LayerTeam:
-	default:
-		return fmt.Errorf("metadata.layer must be org or team (got %q); presets and the repository are implied", m.Layer)
+	if m.Label != "" {
+		if err := ValidLabel(m.Label); err != nil {
+			return err
+		}
 	}
 	if m.Catalog != nil {
 		if err := m.Catalog.Validate(); err != nil {
@@ -764,6 +772,9 @@ func parse(b []byte, version string) (*Catalog, error) {
 	}
 	if c.Metadata.Version == "" {
 		c.Metadata.Version = version
+	}
+	if c.Metadata.Label == "" {
+		c.Metadata.Label = c.Metadata.Layer // the 0.5 spelling
 	}
 	if err := c.Metadata.validate(); err != nil {
 		return nil, err
@@ -823,7 +834,7 @@ func Local(name string, raw []byte, rules []model.Rule, overrides map[string]Ove
 		APIVersion: APIVersion, Kind: "Catalog",
 		Metadata: Metadata{Name: name, Version: "local"},
 		Rules:    rules, Overrides: overrides, Exceptions: exceptions,
-		Ref: name, Trusted: true, Layer: LayerRepo,
+		Ref: name, Trusted: true, Label: LabelRepo,
 	}
 	if err := requireSeverity(raw); err != nil {
 		return nil, err

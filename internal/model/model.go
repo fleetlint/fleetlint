@@ -163,8 +163,8 @@ type Rule struct {
 	// SelectedBy is the catalog that took a library rule in with `use:`;
 	// Source then names the library. Empty for an inline definition.
 	SelectedBy string `yaml:"-" json:"selected_by,omitempty"`
-	// Layer is who owns the definition: preset, org, team or repo.
-	Layer string `yaml:"-" json:"layer,omitempty"`
+	// Label is who owns the definition: preset, org, team or repo.
+	Label string `yaml:"-" json:"label,omitempty"`
 	// PolicyBy is the catalog that locked the rule or set its floor when that
 	// is not the catalog that defined it.
 	PolicyBy string `yaml:"-" json:"policy_by,omitempty"`
@@ -386,9 +386,9 @@ type Exception struct {
 	Until  string `yaml:"until,omitempty" json:"until,omitempty"`
 	// Expired is computed at run time.
 	Expired bool `yaml:"-" json:"expired,omitempty"`
-	// Layer and Where say who declared the exception: the repository, a
+	// Label and Where say who declared the exception: the repository, a
 	// scope, or a catalog (by ref). Filled by the loader.
-	Layer string `yaml:"-" json:"layer,omitempty"`
+	Label string `yaml:"-" json:"label,omitempty"`
 	Where string `yaml:"-" json:"where,omitempty"`
 }
 

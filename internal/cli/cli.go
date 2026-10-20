@@ -66,7 +66,7 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, err
 
 	var code int
 	//nolint:contextcheck // cobra hands the context from ExecuteContext to each command via cmd.Context()
-	root.AddCommand(checkCmd(g, &code), factsCmd(g), explainCmd(g), initCmd(g, &code), fixCmd(g, &code), fleetCmd(g, &code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
+	root.AddCommand(checkCmd(g, &code), factsCmd(g), explainCmd(g), hierarchyCmd(g), initCmd(g, &code), fixCmd(g, &code), fleetCmd(g, &code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
 	root.SetArgs(withDefaultCommand(root, args))
 	if err := root.ExecuteContext(ctx); err != nil {
 		return classify(err), err
@@ -247,7 +247,7 @@ func catalogVersionCmd(g *globals) *cobra.Command {
 			}
 			b.WriteString("\n")
 			for _, c := range eff.Catalogs {
-				line := fmt.Sprintf("  %-28s %-10s %-7s", c.Ref, orNone(c.Metadata.Version), c.Layer)
+				line := fmt.Sprintf("  %-28s %-10s %-7s", c.Ref, orNone(c.Metadata.Version), c.Label)
 				if c.Digest != "" {
 					line += " sha256-" + c.Digest[:min(12, len(c.Digest))]
 				}

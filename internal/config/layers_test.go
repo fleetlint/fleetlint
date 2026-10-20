@@ -46,12 +46,13 @@ func loadLayered(t *testing.T, files map[string]string) (*config.Effective, erro
 	return config.Load(dir, config.Options{Loader: testLoader()})
 }
 
-func TestSourcesResolveInLayerOrder(t *testing.T) {
+func TestSourcesResolveInWrittenOrder(t *testing.T) {
 	t.Parallel()
-	// team is written before org; the fixed order must still let team override org.
+	// The sources file's baseline (org) comes first, then the repository's
+	// extends in written order: the team catalog adjusts the org's rules.
 	eff, err := loadLayered(t, map[string]string{
-		config.FileName: "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, org, fleetlint:minimal]\nrules:\n  - {id: repo/own, kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\noverrides:\n  org/kept: {severity: warning, reason: local tooling}\n",
-		"standards/sources.yaml": "version: 1\ncatalogs:\n  org: " + remote("org.yaml", layerCatalog("acme", "org/kept", "error", "org/lowered", "error")) +
+		config.FileName: "version: 1\nsources: standards/sources.yaml\nextends: [team/mobile, fleetlint:minimal]\nrules:\n  - {id: repo/own, kind: expr, severity: info, expr: 'true', message: m, fix: {human: h}}\noverrides:\n  org/kept: {severity: warning, reason: local tooling}\n",
+		"standards/sources.yaml": "version: 1\nextends: [org]\ncatalogs:\n  org: " + remote("org.yaml", layerCatalog("acme", "org/kept", "error", "org/lowered", "error")) +
 			"\n  team/mobile: " + remote("mobile.yaml", layerCatalog("mobile", "org/lowered", "warning", "team/own", "error")) + "\n",
 	})
 	if err != nil {
@@ -60,9 +61,9 @@ func TestSourcesResolveInLayerOrder(t *testing.T) {
 	layers := map[string]string{}
 	sev := map[string]model.Severity{}
 	for _, r := range eff.Rules {
-		layers[r.ID], sev[r.ID] = r.Layer, r.Severity
+		layers[r.ID], sev[r.ID] = r.Label, r.Severity
 	}
-	want := map[string]string{"org/kept": "org", "org/lowered": "team", "team/own": "team", "repo/own": "repo", "repo/gitignore-present": "preset"}
+	want := map[string]string{"org/kept": "org", "org/lowered": "team/mobile", "team/own": "team/mobile", "repo/own": "repo", "repo/gitignore-present": "preset"}
 	for id, layer := range want {
 		if layers[id] != layer {
 			t.Errorf("rule %s: layer %q, want %q", id, layers[id], layer)
@@ -73,33 +74,29 @@ func TestSourcesResolveInLayerOrder(t *testing.T) {
 	}
 	byLayer := map[string]string{}
 	for _, w := range eff.Weakened {
-		byLayer[w.Layer] = w.ID
+		byLayer[w.Label] = w.ID
 	}
-	if byLayer["team"] != "org/lowered" || byLayer["repo"] != "org/kept" {
-		t.Errorf("weakenings must name their layer, got %+v", eff.Weakened)
+	if byLayer["team/mobile"] != "org/lowered" || byLayer["repo"] != "org/kept" {
+		t.Errorf("weakenings must name their label, got %+v", eff.Weakened)
 	}
 	if err := eff.Requires([]string{"org", "team/mobile", "acme"}); err != nil {
 		t.Errorf("--require must accept aliases and names: %v", err)
 	}
 }
 
-// A catalog file in the repository is the repository's: it cannot claim the
-// org layer, and neither its name nor a sources alias satisfies --require.
-func TestRepositoryFilesCannotPoseAsTheOrganisation(t *testing.T) {
+// A catalog file in the repository may call itself anything, but neither
+// its name nor a sources alias satisfies --require: only fetched content
+// counts as the organisation's.
+func TestRepositoryFilesCannotSatisfyRequire(t *testing.T) {
 	t.Parallel()
 	eff, err := loadLayered(t, map[string]string{
 		config.FileName: "version: 1\nsources: s.yaml\nextends: [org, own.yaml]\n",
 		"s.yaml":        "version: 1\ncatalogs:\n  org: fake.yaml\n",
 		"fake.yaml":     layerCatalog("acme-baseline", "org/x", "error"),
-		"own.yaml":      strings.Replace(layerCatalog("acme", "org/y", "error"), "version: 1.0.0", "version: 1.0.0, layer: org", 1),
+		"own.yaml":      strings.Replace(layerCatalog("acme", "org/y", "error"), "version: 1.0.0", "version: 1.0.0, label: org", 1),
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, c := range eff.Catalogs {
-		if c.Layer != catalog.LayerRepo && c.Layer != catalog.LayerPreset {
-			t.Errorf("%s: layer %s", c.Ref, c.Layer)
-		}
 	}
 	for _, name := range []string{"acme-baseline", "acme", "org"} {
 		if err := eff.Requires([]string{name}); err == nil {
@@ -116,9 +113,12 @@ func TestSourcesRejected(t *testing.T) {
 			config.FileName: "version: 1\nsources: s.yaml\nextends: [org, team/web]\n",
 			"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n", "org.yaml": org,
 		},
-		"alias that is not org or team": {
-			config.FileName: "version: 1\nsources: s.yaml\nextends: [platform]\n",
-			"s.yaml":        "version: 1\ncatalogs:\n  platform: org.yaml\n", "org.yaml": org,
+		"alias that is not a name": {
+			config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n",
+			"s.yaml":        "version: 1\ncatalogs:\n  org: org.yaml\n  \"Platform Team\": org.yaml\n", "org.yaml": org,
+		},
+		"alias without a sources file": {
+			config.FileName: "version: 1\nextends: [platform/base]\n",
 		},
 		"unknown key in sources": {
 			config.FileName: "version: 1\nsources: s.yaml\nextends: [org]\n",
@@ -243,7 +243,7 @@ func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
 	if b, err := tpl.Template("editorconfig"); err != nil || len(b) == 0 {
 		t.Errorf("preset templates remain: %v", err)
 	}
-	if r, ok := ruleByID(eff, "repo/no-tracked-junk"); !ok || r.Layer != catalog.LayerPreset {
+	if r, ok := ruleByID(eff, "repo/no-tracked-junk"); !ok || r.Label != catalog.LabelPreset {
 		t.Errorf("the include came through: %+v", r)
 	}
 }

@@ -115,8 +115,8 @@ func entriesFor(root string, rels []string) []Entry {
 		if count[e.Name] > 1 {
 			e.Name = strings.ReplaceAll(rel, "/", "-")
 		}
-		if i := strings.Index(rel, "/"); i > 0 {
-			e.Group = rel[:i]
+		if i := strings.LastIndex(rel, "/"); i > 0 {
+			e.Group = rel[:i] // the directories above it, nested groups joined by `/`
 		}
 		out = append(out, e)
 	}

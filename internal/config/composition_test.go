@@ -117,8 +117,8 @@ func TestSelectedRuleKeepsItsFirstCatalog(t *testing.T) {
 	})
 	eff := loadDir(t, dir)
 	r, _ := ruleByID(eff, "lint/configured/go")
-	if r.SelectedBy != "fleetlint-recommended@"+catalog.Builtin().Version || r.Layer != catalog.LayerPreset {
-		t.Errorf("a rule already loaded is not re-attributed by a later use: selected_by=%s layer=%s", r.SelectedBy, r.Layer)
+	if r.SelectedBy != "fleetlint-recommended@"+catalog.Builtin().Version || r.Label != catalog.LabelPreset {
+		t.Errorf("a rule already loaded is not re-attributed by a later use: selected_by=%s layer=%s", r.SelectedBy, r.Label)
 	}
 	n := 0
 	for _, x := range eff.Rules {
@@ -142,8 +142,8 @@ func TestInlineRedefinitionAcrossLayersIsRecorded(t *testing.T) {
 	if r.Title != "looser" || r.Severity != model.SeverityInfo {
 		t.Fatalf("redefinition applies: %+v", r)
 	}
-	if len(eff.Weakened) != 1 || eff.Weakened[0].ID != "repo/editorconfig" || eff.Weakened[0].Layer != catalog.LayerRepo {
-		t.Errorf("lowering across layers is recorded: %+v", eff.Weakened)
+	if len(eff.Weakened) != 1 || eff.Weakened[0].ID != "repo/editorconfig" || eff.Weakened[0].Label != "org" {
+		t.Errorf("lowering across catalogs is recorded under the catalog's label: %+v", eff.Weakened)
 	}
 	locked := writeAll(t, map[string]string{
 		"org.yaml":      catHead("org", ", includes: [\"fleetlint:minimal\"]") + "rules: []\noverrides:\n  repo/no-tracked-env: {locked: true}\n",
@@ -186,8 +186,8 @@ func TestParallelRuleAndDisabledOriginal(t *testing.T) {
 	if _, ok := ruleByID(eff, "lint/configured/go"); ok {
 		t.Error("the original is disabled")
 	}
-	if len(eff.Disabled) != 1 || eff.Disabled[0].ID != "lint/configured/go" || eff.Disabled[0].Layer != catalog.LayerRepo {
-		t.Errorf("the disable is recorded with its reason and layer: %+v", eff.Disabled)
+	if len(eff.Disabled) != 1 || eff.Disabled[0].ID != "lint/configured/go" || eff.Disabled[0].Label != "org" {
+		t.Errorf("the disable is recorded with its reason and label: %+v", eff.Disabled)
 	}
 }
 

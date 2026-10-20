@@ -80,7 +80,7 @@ func writeSARIF(w io.Writer, run *engine.Run, opts Options) error {
 		Schema:  "https://json.schemastore.org/sarif-2.1.0.json",
 		Version: "2.1.0",
 	}
-	driver := sarifDriver{Name: "fleetlint", Version: opts.Version, InformationURI: "https://github.com/fleetlint/fleetlint", Properties: map[string]any{"catalog": orUnknown(opts.Catalog)}}
+	driver := sarifDriver{Name: "fleetlint", Version: opts.Version, InformationURI: "https://github.com/fleetlint/fleetlint", Properties: map[string]any{"catalog": orUnknown(opts.Catalog), "catalogs": run.Config.Hierarchy()}}
 	seen := map[string]bool{}
 	var results []sarifResult
 	for _, r := range run.Results {
@@ -116,7 +116,7 @@ func toSarifRule(r model.Rule) sarifRule {
 		ShortDescription: sarifText{r.Title},
 		FullDescription:  sarifText{r.Requirement},
 		Help:             sarifText{help},
-		Properties:       map[string]any{"tags": []string{"repository-setup"}, "source": r.Source, "selected_by": r.SelectedBy, "layer": r.Layer},
+		Properties:       map[string]any{"tags": []string{"repository-setup"}, "source": r.Source, "selected_by": r.SelectedBy, "label": r.Label},
 		DefaultConfig:    sarifConfiguration{Level: sarifLevel(r.Severity)},
 	}
 }
