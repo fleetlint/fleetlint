@@ -41,7 +41,7 @@ type Spec struct {
 	Include []string `yaml:"include,omitempty"`
 	// Defaults apply to every repository, Groups to the repositories of a
 	// group (discovered ones too); an entry's own values win. A group may
-	// be nested (`incyde/tooling`): the entry's group, then each parent
+	// be nested (`example/tooling`): the entry's group, then each parent
 	// group, then the defaults.
 	Defaults Settings            `yaml:"defaults,omitempty"`
 	Groups   map[string]Settings `yaml:"groups,omitempty"`
@@ -84,7 +84,7 @@ func (s *Spec) settle(e Entry) Entry {
 	return e
 }
 
-// parentGroup is the group one level up (`incyde/tooling` → `incyde`), or
+// parentGroup is the group one level up (`example` for `example/tooling`), or
 // "" at the top.
 func parentGroup(g string) string {
 	if i := strings.LastIndex(g, "/"); i > 0 {

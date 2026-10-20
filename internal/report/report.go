@@ -303,11 +303,7 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 		paid := run.Baseline.Entries - run.Baseline.Used
 		w.line(paint(dim, fmt.Sprintf("baseline %s: %d entries, %d still matching, %d paid off (run `fleetlint baseline` to shrink it)", plainText(run.Baseline.Path), run.Baseline.Entries, run.Baseline.Used, paid)))
 	}
-	w.line()
-	w.line(paint(dim, HierarchyIntro))
-	if err := WriteHierarchy(w.w, run.Config.Hierarchy()); err != nil && w.err == nil {
-		w.err = err
-	}
+	writeHierarchyBlock(w, run, paint)
 	if !run.Config.Exists {
 		w.line()
 		w.line(paint(dim, "no .fleetlint.yaml found; used "+strings.Join(run.Config.File.Extends, ", ")+". Run `fleetlint init` to write it."))
@@ -315,6 +311,14 @@ func writeFooter(w *errWriter, run *engine.Run, paint func(string, string) strin
 	if run.Facts.Visibility == facts.VisibilityUnknown && run.Facts.ForgeHost != "" {
 		w.line()
 		w.line(paint(dim, "visibility is unknown, so the public/* rules did not run. `fleetlint init` asks "+run.Facts.ForgeHost+" once; or set facts.visibility."))
+	}
+}
+
+func writeHierarchyBlock(w *errWriter, run *engine.Run, paint func(string, string) string) {
+	w.line()
+	w.line(paint(dim, HierarchyIntro))
+	if err := WriteHierarchy(w.w, run.Config.Hierarchy()); err != nil && w.err == nil {
+		w.err = err
 	}
 }
 

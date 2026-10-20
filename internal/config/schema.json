@@ -211,6 +211,15 @@
             "private"
           ]
         },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "An artifact kind the catalog defines in artifacts/ (release-files, image, helm-chart, npm, pypi, crate, gem, maven, nuget, pub, android-app, apple-app in the fleetlint catalog)."
+          },
+          "description": "What the release publishes, when detection misses it (a publish step in a reusable workflow, say). Replaces detection; an empty list says nothing is published, so the release capabilities do not apply."
+        },
         "stacks": {
           "deprecated": true,
           "description": "Deprecated since 0.3: write the root's stacks as `scopes: [{path: ., stacks: [...]}]`. Still read for one release, for the root directory only.",

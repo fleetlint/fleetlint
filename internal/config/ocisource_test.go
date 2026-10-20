@@ -18,7 +18,7 @@ import (
 func catalogTree(t *testing.T) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{"aliases.yaml": data.Aliases}
-	for _, fsys := range []fs.FS{data.Presets, data.Rules, data.Stacks, data.Templates} {
+	for _, fsys := range []fs.FS{data.Presets, data.Rules, data.Stacks, data.Artifacts, data.Templates} {
 		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {
 				return err

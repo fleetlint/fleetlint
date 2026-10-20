@@ -89,7 +89,7 @@ func sourceFromArtifact(ref string, o fetch.OCIRef, art *fetch.OCIArtifact) (*So
 	} else {
 		name += " (sha256:" + art.Digest[:12] + ")"
 	}
-	src := &Source{Presets: files, Templates: files, Rules: files, Stacks: files, Version: name, Pinned: true}
+	src := &Source{Presets: files, Templates: files, Rules: files, Stacks: files, Artifacts: files, Version: name, Pinned: true}
 	if len(src.PresetNames()) == 0 {
 		return nil, fmt.Errorf("catalog %s: the artifact has no presets/ directory; is it a catalog version?", ref)
 	}

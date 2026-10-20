@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/fleetlint/fleetlint/internal/artifacts"
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
 	data "github.com/fleetlint/catalog"
@@ -44,7 +45,7 @@ const APIVersion = "fleetlint.org/v1"
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
 const (
-	EngineLevel    = 4
+	EngineLevel    = 5
 	MinEngineLevel = 1
 )
 
@@ -68,9 +69,9 @@ func checkEngine(c *Catalog) error {
 // another, which is fetched once and kept in the user's cache.
 type Source struct {
 	// Presets holds presets/<name>.yaml, Templates holds templates/..., Rules
-	// holds rules/<family>/<name>.yaml, the library presets select from, and
-	// Stacks holds stacks/<id>.yaml.
-	Presets, Templates, Rules, Stacks fs.FS
+	// holds rules/<family>/<name>.yaml, the library presets select from,
+	// Stacks holds stacks/<id>.yaml and Artifacts artifacts/<id>.yaml.
+	Presets, Templates, Rules, Stacks, Artifacts fs.FS
 	// Version is how reports name this source.
 	Version string
 	// Pinned is true when the repository chose the version.
@@ -85,6 +86,11 @@ type Source struct {
 	stacks struct {
 		once sync.Once
 		val  []stacks.Def
+		err  error
+	}
+	artifacts struct {
+		once sync.Once
+		val  []artifacts.Def
 		err  error
 	}
 	aliases struct {
@@ -127,10 +133,19 @@ func (s *Source) StackDefs() ([]stacks.Def, error) {
 	return s.stacks.val, s.stacks.err
 }
 
+// ArtifactDefs returns the source's artifact definitions, parsed once; a
+// catalog without artifacts/ (engine level 4 and older) has none.
+func (s *Source) ArtifactDefs() ([]artifacts.Def, error) {
+	s.artifacts.once.Do(func() {
+		s.artifacts.val, s.artifacts.err = artifacts.Load(s.Artifacts)
+	})
+	return s.artifacts.val, s.artifacts.err
+}
+
 // Builtin returns the catalog the binary was built with: one Source per
 // process, so its library is parsed once.
 var Builtin = sync.OnceValue(func() *Source {
-	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Stacks: data.Stacks, aliasBytes: data.Aliases, Version: ModuleVersion()}
+	return &Source{Presets: data.Presets, Templates: data.Templates, Rules: data.Rules, Stacks: data.Stacks, Artifacts: data.Artifacts, aliasBytes: data.Aliases, Version: ModuleVersion()}
 })
 
 // Describe names the source for a report.
@@ -437,7 +452,7 @@ func (l *Loader) Pin(repoURL, version string) (*Source, error) {
 		name += " (" + commit[:12] + ")"
 	}
 	root := os.DirFS(dir)
-	l.Source = &Source{Presets: root, Templates: root, Rules: root, Stacks: root, Version: name, Pinned: true}
+	l.Source = &Source{Presets: root, Templates: root, Rules: root, Stacks: root, Artifacts: root, Version: name, Pinned: true}
 	if len(l.Source.PresetNames()) == 0 {
 		return nil, fmt.Errorf("catalog %s from %s: no presets/ directory", version, repoURL)
 	}
@@ -912,12 +927,11 @@ func validateRule(r *model.Rule) error {
 	if !ruleIDRe.MatchString(r.ID) {
 		return fmt.Errorf("rule %s: id must be family/name (or family/name/stack for an implementation) in lowercase letters, digits and dashes", r.ID)
 	}
-	if capID, stack, ok := model.SplitImplementation(r.ID); ok {
-		if r.Kind == model.KindCapability {
-			return fmt.Errorf("rule %s: a capability id is family/name; family/name/stack is an implementation", r.ID)
-		}
-		r.Capability, r.Stack = capID, stack
-		r.Stacks = []string{stack}
+	if err := settleImplementation(r); err != nil {
+		return err
+	}
+	if err := validateBy(r); err != nil {
+		return err
 	}
 	if r.Title == "" || r.Requirement == "" {
 		return fmt.Errorf("rule %s: title and requirement are required", r.ID)
@@ -942,6 +956,40 @@ func validateRule(r *model.Rule) error {
 		return fmt.Errorf("rule %s: scope must be each, root or members (got %q)", r.ID, r.Scope)
 	}
 	return validateCombine(r)
+}
+
+// settleImplementation reads an implementation id (family/name/<target>):
+// the capability it implements and, by the capability's `by`, the stack or
+// the artifact kind it is for.
+func settleImplementation(r *model.Rule) error {
+	capID, target, ok := model.SplitImplementation(r.ID)
+	if !ok {
+		return nil
+	}
+	if r.Kind == model.KindCapability {
+		return fmt.Errorf("rule %s: a capability id is family/name; family/name/<stack or artifact> is an implementation", r.ID)
+	}
+	r.Capability = capID
+	if r.By == model.ByArtifact {
+		r.Artifact, r.Stack, r.Stacks = target, "", nil
+		return nil
+	}
+	r.Stack, r.Artifact = target, ""
+	r.Stacks = []string{target}
+	return nil
+}
+
+// validateBy accepts by only on a capability (and so on the implementations
+// that inherit it), as stack or artifact.
+func validateBy(r *model.Rule) error {
+	switch {
+	case r.By == "":
+	case r.By != model.ByStack && r.By != model.ByArtifact:
+		return fmt.Errorf("rule %s: by must be stack or artifact (got %q)", r.ID, r.By)
+	case r.Kind != model.KindCapability && r.Capability == "":
+		return fmt.Errorf("rule %s: by is set on a capability, for its implementations", r.ID)
+	}
+	return nil
 }
 
 // validateCombine accepts combine only on a capability (and so on the

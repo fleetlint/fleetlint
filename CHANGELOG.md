@@ -5,6 +5,20 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+Engine level 5: catalog 0.3.0 or newer. Catalogs for levels 1 to 4 still run.
+
+### Added
+
+- **Artifacts are catalog data.** `artifacts/<id>.yaml` in a catalog says what a release publishes (files on a forge release, a container image, an npm package, ...) and how it is detected: a CEL expression returning the workflows that publish it, evaluated once per repository. The result is the fact `artifacts` (`fleetlint facts`, the JSON, `repo.artifacts` and `artifact_workflows(kind)` in CEL); `facts: {artifacts: [...]}` pins it when detection misses a publish step (a reusable workflow, say), and an empty list says nothing is published.
+- **Capabilities keyed by artifact.** A capability with `by: artifact` has one implementation per artifact kind (`rules/<family>/<name>/<artifact>.yaml`) and is checked for every kind the release publishes; each must pass, so "binaries signed, npm package not" is a finding on the npm implementation. A kind without an implementation is reported as a gap, a repository that publishes nothing detectable gets a not-applicable note on the capability instead of a silent pass, and `fleetlint docs` writes an artifact matrix. There is no `any` implementation for such a capability.
+- **`fleetlint hierarchy`** prints the catalogs of the run in the order they applied: how each was referenced, its label, name and version, the digest or artifact that pins it, what it builds on and what it contributed (`--format table|json|markdown`). The same list is in the check JSON (`catalogs`, format 3), the table and agent output, the Markdown comment, the SARIF driver properties, and per repository in `fleet.json` (format 4) with a Catalogs section in the fleet report.
+- **Fleet files include fleet files** (`include: [teams/platform/fleet.yaml]`): the included file's defaults and groups settle its own repositories first, the including file's defaults fill the rest. Groups nest: `--discover` records the full directory path (`example/tooling`), settings apply from the group up through its parents to the defaults, and the group summary rolls every level up.
+
+### Changed
+
+- **Catalogs apply in written order.** The fixed layers (preset, org, team, repo) are gone: catalogs apply in the order `includes` and `extends` list them, the sources file's baseline first, nothing reordered. Policy only tightens, so an earlier catalog binds the later ones; a team catalog that includes the organisation's always comes after it. The repository's own file still comes last. `metadata.layer` is now `metadata.label`, a free name (`org`, `team/mobile`, `security-team`) for attribution in reports and for `--require`; the old key is read with a deprecation. Sources-file names are free too (`compliance/pci`). Every `layer` field in outputs is `label`. Two versions of a catalog with the same name in one run are a load error.
+- `release/signing`, `release/sbom`, `release/provenance` and `release/trusted-publishing` of the fleetlint catalog are keyed by artifact; the stack-keyed ids are aliases.
+
 ## [0.5.1] - 2026-10-15
 
 ### Fixed

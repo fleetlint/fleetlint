@@ -210,7 +210,7 @@ overrides:
 		}
 		return r
 	}
-	if r := get("release/sbom/kotlin"); !r.Locked || r.Severity != model.SeverityError {
+	if r := get("release/sbom/maven"); !r.Locked || r.Severity != model.SeverityError {
 		t.Errorf("release/* locked and error stays error: %+v", r)
 	}
 	if r := get("repo/editorconfig"); r.Severity != model.SeverityError {

@@ -333,7 +333,7 @@ rules:
 	}
 }
 
-const relWorkflow = "on:\n  push:\n    tags: ['v*']\njobs:\n  rel:\n    steps:\n      - uses: actions/checkout@v4\n"
+const relWorkflow = "on:\n  push:\n    tags: ['v*']\njobs:\n  rel:\n    steps:\n      - uses: actions/checkout@v4\n      - run: goreleaser release --clean\n"
 
 func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	t.Parallel()
@@ -370,16 +370,20 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 		t.Fatalf("no release pipeline: n/a, got %+v", s)
 	}
 	cliffOnly := run(t, map[string]string{"go.mod": "module x\n", "cliff.toml": "[changelog]\n"}, cfg)
-	if s := capStatus(t, cliffOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
-		t.Fatalf("a changelog generator is not a release pipeline: n/a, got %+v", s)
+	if s := status(t, cliffOnly, "release/sbom"); s.Status != model.StatusNotApplicable || !strings.Contains(s.Evidence, "no published artifact detected") {
+		t.Fatalf("a changelog generator publishes nothing: n/a with the note, got %+v", s)
 	}
-	registryOnly := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish --provenance\n"}, cfg)
+	npmWorkflow := "on:\n  push:\n    tags: ['v*']\njobs:\n  rel:\n    steps:\n      - uses: actions/checkout@v4\n"
+	registryOnly := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": npmWorkflow + "      - run: npm publish --provenance\n"}, cfg)
 	if s := capStatus(t, registryOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("a release that only publishes to a registry: n/a, got %+v", s)
 	}
-	withAssets := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": relWorkflow + "      - run: npm publish\n      - run: gh release upload v1 dist/app.tgz\n"}, cfg)
-	if s := capStatus(t, withAssets, "release/sbom"); s.Status != model.StatusFail {
-		t.Fatalf("a registry release that also uploads artifacts is checked, got %+v", s)
+	if s := status(t, registryOnly, "release/sbom/npm"); s.Status != model.StatusNotApplicable || !strings.Contains(s.Evidence, "does not apply to a npm") {
+		t.Fatalf("the npm implementation says why: %s %q", s.Status, s.Evidence)
+	}
+	withAssets := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": npmWorkflow + "      - run: npm publish\n      - run: gh release upload v1 dist/app.tgz\n"}, cfg)
+	if s := capStatus(t, withAssets, "release/sbom"); s.Status != model.StatusFail || s.Rule.ID != "release/sbom/release-files" {
+		t.Fatalf("a registry release that also uploads files is checked for the files, got %+v", s)
 	}
 }
 
@@ -565,44 +569,77 @@ func TestStacksPerDirectory(t *testing.T) {
 	}
 }
 
-// Without a stack the stack-neutral implementation still runs, so a release
-// of only a container image is checked; capabilities about dependencies or
-// code opt out with their own `when`.
-func TestNeutralImplementationRunsWithoutAStack(t *testing.T) {
+// An artifact is checked by the implementation for its kind, whatever the
+// stacks: an image pushed from a workflow without a stack is checked by
+// release/signing/image, and signing by tag is a partial.
+func TestArtifactImplementationsRunByKind(t *testing.T) {
 	t.Parallel()
 	image := "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: docker push ghcr.io/x/y:${GITHUB_REF_NAME}\n"
 	unsigned := run(t, map[string]string{".github/workflows/release.yml": image}, tier1Public)
-	if s := status(t, unsigned, "release/signing/any"); s.Status != model.StatusFail {
-		t.Errorf("an unsigned image release without a stack must fail: %s %q", s.Status, s.Evidence)
+	if got := unsigned.Facts.ArtifactKinds(); len(got) != 1 || got[0] != "image" {
+		t.Fatalf("artifacts: %v", unsigned.Facts.Artifacts)
+	}
+	if s := status(t, unsigned, "release/signing/image"); s.Status != model.StatusFail {
+		t.Errorf("an unsigned image must fail: %s %q", s.Status, s.Evidence)
+	}
+	if s := status(t, unsigned, "release/signing/release-files"); s.Status != model.StatusNotApplicable {
+		t.Errorf("no release files are published: %s %q", s.Status, s.Evidence)
 	}
 	if s := status(t, unsigned, "deps/vulnerability-scan/any"); s.Status != model.StatusNotApplicable {
 		t.Errorf("no stack, no dependencies to scan: %s %q", s.Status, s.Evidence)
 	}
+	byTag := run(t, map[string]string{".github/workflows/release.yml": image + "      - run: cosign sign --yes ghcr.io/x/y:${GITHUB_REF_NAME}\n"}, tier1Public)
+	if s := status(t, byTag, "release/signing/image"); s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "cosign-by-tag" {
+		t.Errorf("signing by tag is a warning partial: %s %s %+v", s.Status, s.Severity, s.Findings)
+	}
 	signed := run(t, map[string]string{".github/workflows/release.yml": image + "      - run: cosign sign --yes ghcr.io/x/y@${DIGEST}\n"}, tier1Public)
-	if s := status(t, signed, "release/signing/any"); s.Status != model.StatusPass {
-		t.Errorf("a signed image release without a stack must pass: %s %q", s.Status, s.Evidence)
+	if s := status(t, signed, "release/signing/image"); s.Status != model.StatusPass || s.Evidence != "satisfied by cosign-by-digest" {
+		t.Errorf("a digest-signed image passes: %s %q", s.Status, s.Evidence)
+	}
+	// Images pushed on every push to main count too: :latest deserves a signature.
+	onMain := run(t, map[string]string{".github/workflows/publish.yml": "on:\n  push:\n    branches: [main]\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n"}, tier1Public)
+	if s := status(t, onMain, "release/signing/image"); s.Status != model.StatusFail {
+		t.Errorf("an image pushed from main is published: %s %q", s.Status, s.Evidence)
+	}
+	// Pinned facts replace detection, an empty list says nothing is published.
+	pinned := run(t, map[string]string{".github/workflows/release.yml": image}, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [npm]}\n")
+	if got := pinned.Facts.ArtifactKinds(); len(got) != 1 || got[0] != "npm" || pinned.Facts.Sources["artifacts"] != "configured" {
+		t.Errorf("pinned artifacts: %v %v", pinned.Facts.Artifacts, pinned.Facts.Sources["artifacts"])
+	}
+	if s := status(t, pinned, "release/signing/image"); s.Status != model.StatusNotApplicable {
+		t.Errorf("a pinned list replaces detection: %s", s.Status)
+	}
+	none := run(t, map[string]string{".github/workflows/release.yml": image}, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: []}\n")
+	if s := status(t, none, "release/signing"); s.Status != model.StatusNotApplicable || !strings.Contains(s.Evidence, "no published artifact detected") {
+		t.Errorf("nothing published: the capability says so: %+v", s)
 	}
 }
 
-// combine: any settles a release capability by the stack that publishes:
-// a Go CLI shipped as an npm package with provenance passes for Go too.
-func TestCombineAnyCarriesTheOtherStacks(t *testing.T) {
+// A repository that publishes two kinds must satisfy each: a Go CLI shipped
+// as release files and as an npm package needs provenance on both, and the
+// report names the one that lacks it.
+func TestEachPublishedArtifactIsChecked(t *testing.T) {
 	t.Parallel()
 	files := map[string]string{
 		"go.mod":                        "module x\n",
 		"package.json":                  "{\"name\": \"x\"}\n",
-		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --provenance --access public\n",
+		".goreleaser.yaml":              "builds: [{main: .}]\n",
+		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release --clean\n      - run: npm publish --provenance --access public\n",
 	}
 	out := run(t, files, tier1Public)
-	if s := status(t, out, "release/provenance/node"); s.Status != model.StatusPass {
-		t.Fatalf("npm provenance: %s %q", s.Status, s.Evidence)
+	if got := out.Facts.ArtifactKinds(); len(got) != 2 || got[0] != "npm" || got[1] != "release-files" {
+		t.Fatalf("artifacts: %v", out.Facts.Artifacts)
 	}
-	s := status(t, out, "release/provenance/any")
-	if s.Status != model.StatusPass || s.Evidence != "satisfied by release/provenance/node (combine: any)" {
-		t.Errorf("the Go side is carried by the npm provenance: %s %q", s.Status, s.Evidence)
+	if s := status(t, out, "release/provenance/npm"); s.Status != model.StatusPass {
+		t.Errorf("npm provenance: %s %q", s.Status, s.Evidence)
 	}
-	// combine: all (the default) is untouched: each stack still needs its own linter.
+	if s := status(t, out, "release/provenance/release-files"); s.Status != model.StatusFail {
+		t.Errorf("the release files have no attestation and npm's does not carry them: %s %q", s.Status, s.Evidence)
+	}
+	if s := capStatus(t, out, "release/provenance"); s.Rule.ID != "release/provenance/release-files" {
+		t.Errorf("the capability sums up to the failing kind: %s", s.Rule.ID)
+	}
 	if s := status(t, out, "lint/configured/go"); s.Status != model.StatusFail {
-		t.Errorf("lint/configured/go must not be carried by another stack: %s", s.Status)
+		t.Errorf("stack capabilities are untouched: %s", s.Status)
 	}
 }

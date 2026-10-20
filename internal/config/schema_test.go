@@ -45,7 +45,7 @@ func refusedHere(at, name string) bool {
 	case strings.HasSuffix(at, "overrides.*"):
 		return refused[name]
 	case at == ".rules[]":
-		return name == "locked" || name == "min_severity" || name == "exceptions" || name == "combine"
+		return name == "locked" || name == "min_severity" || name == "exceptions" || name == "combine" || name == "by"
 	}
 	return false
 }

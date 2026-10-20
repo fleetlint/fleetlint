@@ -102,8 +102,8 @@ func summarize(repos []RepoReport, now time.Time, key func(RepoReport) string) [
 }
 
 // summarizeGroups is summarize over groups with every parent group rolled
-// up: a repository in `incyde/tooling` counts for `incyde/tooling` and for
-// `incyde`.
+// up: a repository in `example/tooling` counts for `example/tooling` and for
+// `example`.
 func summarizeGroups(repos []RepoReport, now time.Time) []TeamSummary {
 	var expanded []RepoReport
 	for _, r := range repos {

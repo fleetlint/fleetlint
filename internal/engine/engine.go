@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/artifacts"
 	"github.com/fleetlint/fleetlint/internal/baseline"
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/celenv"
@@ -72,6 +73,9 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 	ov.DetectedVisibility = opts.Visibility
 	ov.FleetTier = opts.Tier
 	root := facts.Discover(r, ov)
+	if err := detectArtifacts(ctx, r, &root, eff, ov.Artifacts); err != nil {
+		return nil, err
+	}
 	run := &Run{Facts: root, Config: eff}
 
 	sub := resolveScopes(root, eff)
@@ -100,6 +104,29 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 		return nil, err
 	}
 	return run, nil
+}
+
+// detectArtifacts fills the root's published artifacts from the catalog's
+// definitions, or from the pinned list. Detection needs the rule environment
+// (workflows, steps), so it runs after the other facts.
+func detectArtifacts(ctx context.Context, r *repo.Repo, root *facts.Facts, eff *config.Effective, pinned *[]string) error {
+	if len(eff.Artifacts) == 0 && pinned == nil {
+		return nil
+	}
+	env, err := celenv.New(ctx, r, *root)
+	if err != nil {
+		return err
+	}
+	found, err := artifacts.Detect(env, eff.Artifacts, pinned)
+	if err != nil {
+		return err
+	}
+	root.Artifacts = found
+	root.Sources["artifacts"] = facts.SourceDetected
+	if pinned != nil {
+		root.Sources["artifacts"] = facts.SourceConfigured
+	}
+	return nil
 }
 
 func applyBaseline(run *Run, r *repo.Repo, eff *config.Effective) error {
@@ -139,7 +166,9 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 	ov := eff.ScopeFacts(sc)
 	ov.DetectedVisibility = opts.Visibility
 	ov.FleetTier = opts.Tier
-	return sr, facts.Discover(sr, ov), sc, nil
+	f := facts.Discover(sr, ov)
+	f.Artifacts = root.Artifacts // what the repository publishes is decided at the root
+	return sr, f, sc, nil
 }
 
 func now(opts Options) time.Time {
@@ -305,6 +334,9 @@ func notApplicable(env *celenv.Env, f facts.Facts, rule model.Rule, caps capabil
 	}
 	if !rule.AppliesToStacks(f.Stacks) {
 		return true, fmt.Sprintf("stacks %v not in %v", f.Stacks, rule.Stacks), nil
+	}
+	if !rule.AppliesToArtifacts(f.ArtifactKinds()) {
+		return true, fmt.Sprintf("no %s is published (artifacts: %s)", rule.Artifact, orNone(f.ArtifactKinds())), nil
 	}
 	if why := implementationScope(f, rule, caps); why != "" {
 		return true, why, nil
@@ -543,15 +575,24 @@ func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) stri
 		return "every stack here has its own implementation"
 	case rule.Stack != "" && rule.When == "false":
 		return "the capability does not apply to " + rule.Stack + " (see the requirement)"
+	case rule.Artifact != "" && rule.When == "false":
+		return "the capability does not apply to a " + rule.Artifact + " (see the requirement)"
 	}
 	return ""
 }
 
-// capabilityGap is a capability's own result: shown only where a present
-// stack has no implementation, so the gap in the catalog is visible.
+// capabilityGap is a capability's own result: shown where a present stack
+// (or published artifact kind) has no implementation, so the gap in the
+// catalog is visible, and for an artifact-keyed capability where nothing
+// is published, so a release the detection missed is not a silent pass.
 func capabilityGap(env *celenv.Env, rule model.Rule, f facts.Facts, caps capabilities) (model.Result, bool) {
-	gaps := caps.gaps(rule.ID, f.Stacks)
-	if len(gaps) == 0 || !rule.AppliesToTier(f.Tier) {
+	present := f.Stacks
+	if rule.By == model.ByArtifact {
+		present = f.ArtifactKinds()
+	}
+	gaps := caps.gaps(rule.ID, present)
+	nothingPublished := rule.By == model.ByArtifact && len(present) == 0
+	if (len(gaps) == 0 && !nothingPublished) || !rule.AppliesToTier(f.Tier) {
 		return model.Result{}, false
 	}
 	if rule.When != "" {
@@ -559,53 +600,69 @@ func capabilityGap(env *celenv.Env, rule model.Rule, f facts.Facts, caps capabil
 			return model.Result{}, false // where the capability does not apply, no gap either
 		}
 	}
-	return model.Result{
-		Rule: rule, Severity: rule.Severity, Status: model.StatusNotApplicable,
-		Evidence: fmt.Sprintf("no implementation for %s (add rules/%s/<stack>.yaml)", strings.Join(gaps, ", "), rule.ID),
-	}, true
+	res := model.Result{Rule: rule, Severity: rule.Severity, Status: model.StatusNotApplicable}
+	switch {
+	case nothingPublished:
+		res.Evidence = "no published artifact detected: nothing to check (pin facts.artifacts if the release publishes something detection misses)"
+	case rule.By == model.ByArtifact:
+		res.Evidence = fmt.Sprintf("no implementation for %s (add rules/%s/<artifact>.yaml)", strings.Join(gaps, ", "), rule.ID)
+	default:
+		res.Evidence = fmt.Sprintf("no implementation for %s (add rules/%s/<stack>.yaml)", strings.Join(gaps, ", "), rule.ID)
+	}
+	return res, true
 }
 
 // capabilities indexes the implementations among a scope's rules: which
-// stacks each capability covers, and its stack-neutral implementation.
+// stacks (or artifact kinds) each capability covers, and its stack-neutral
+// implementation.
 type capabilities struct {
-	stacks  map[string]map[string]bool
+	targets map[string]map[string]bool
 	neutral map[string]model.Rule
 }
 
 func capabilitiesOf(rules []model.Rule) capabilities {
-	c := capabilities{stacks: map[string]map[string]bool{}, neutral: map[string]model.Rule{}}
+	c := capabilities{targets: map[string]map[string]bool{}, neutral: map[string]model.Rule{}}
 	for _, r := range rules {
 		switch {
 		case r.Capability == "":
 		case r.Stack == stacks.Any:
 			c.neutral[r.Capability] = r
 		default:
-			if c.stacks[r.Capability] == nil {
-				c.stacks[r.Capability] = map[string]bool{}
+			if c.targets[r.Capability] == nil {
+				c.targets[r.Capability] = map[string]bool{}
 			}
-			c.stacks[r.Capability][r.Stack] = true
+			c.targets[r.Capability][r.Target()] = true
 		}
 	}
 	return c
 }
 
-// uncovered are the present stacks without their own implementation.
+// uncovered are the present stacks (or artifact kinds) without their own
+// implementation.
 func (c capabilities) uncovered(capability string, present []string) []string {
 	var out []string
 	for _, s := range present {
-		if !c.stacks[capability][s] {
+		if !c.targets[capability][s] {
 			out = append(out, s)
 		}
 	}
 	return out
 }
 
-// gaps are the present stacks nothing checks the capability for.
+// gaps are the present stacks or artifact kinds nothing checks the
+// capability for.
 func (c capabilities) gaps(capability string, present []string) []string {
 	if _, ok := c.neutral[capability]; ok {
 		return nil
 	}
 	return c.uncovered(capability, present)
+}
+
+func orNone(list []string) string {
+	if len(list) == 0 {
+		return "none"
+	}
+	return strings.Join(list, ", ")
 }
 
 // fallback returns the stack-neutral implementation whose satisfiers also

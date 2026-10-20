@@ -90,8 +90,8 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 	if looked != "" {
 		fmt.Fprintf(&b, "  visibility: %s   # as the forge reported it at init; update it if the repository changes hands\n", looked)
 	}
-	fmt.Fprintf(&b, "# discovered: stacks=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
-		strings.Join(f.Stacks, ","), f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
+	fmt.Fprintf(&b, "# discovered: stacks=[%s] artifacts=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
+		strings.Join(f.Stacks, ","), strings.Join(f.ArtifactKinds(), ","), f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
 	if len(runners) > 1 {
 		fmt.Fprintf(&b, "# task runners found: %s. %s is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
 	}
@@ -116,6 +116,7 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"layout", f.Layout, string(f.Sources["layout"])},
 		{"ci", orNone(strings.Join(f.CI, ", ")), "detected"},
 		{"release", releaseText(f), "detected"},
+		{"artifacts", artifactsText(f), string(f.Sources["artifacts"])},
 		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), string(f.Sources["taskrunner"])},
 		{"hooks", orNone(strings.Join(f.Hooks, ", ")), "detected"},
 	}...)
@@ -132,6 +133,21 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		}
 	}
 	return nil
+}
+
+func artifactsText(f facts.Facts) string {
+	if len(f.Artifacts) == 0 {
+		return "none detected"
+	}
+	parts := make([]string, 0, len(f.Artifacts))
+	for _, a := range f.Artifacts {
+		p := a.Kind
+		if len(a.Workflows) > 0 {
+			p += " (" + strings.Join(a.Workflows, ", ") + ")"
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, ", ")
 }
 
 func releaseText(f facts.Facts) string {

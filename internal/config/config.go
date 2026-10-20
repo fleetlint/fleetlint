@@ -20,6 +20,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
+	"github.com/fleetlint/fleetlint/internal/artifacts"
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/facts"
@@ -70,7 +71,11 @@ type FactOverrides struct {
 	Tier       int      `yaml:"tier,omitempty"`
 	Visibility string   `yaml:"visibility,omitempty"`
 	Stacks     []string `yaml:"stacks,omitempty"`
-	Forge      string   `yaml:"forge,omitempty"`
+	// Artifacts pins what the release publishes (artifact kinds from the
+	// catalog's artifacts/), when detection misses one: a publish step in a
+	// reusable workflow, say. An empty list says nothing is published.
+	Artifacts *[]string `yaml:"artifacts,omitempty"`
+	Forge     string    `yaml:"forge,omitempty"`
 	// Container says where the task runner's targets run: none, devcontainer,
 	// docker or podman; unset follows detection.
 	Container string `yaml:"container,omitempty"`
@@ -140,8 +145,10 @@ type Effective struct {
 	// Deprecations name configuration forms that still work but will go;
 	// the CLI prints them as warnings.
 	Deprecations []string
-	// Stacks are the stack definitions of the catalog source.
-	Stacks []stacks.Def
+	// Stacks are the stack definitions of the catalog source; Artifacts its
+	// artifact definitions (none for a catalog before engine level 5).
+	Stacks    []stacks.Def
+	Artifacts []artifacts.Def
 	// aliases are the catalog's renamed rule ids and their replacements.
 	aliases map[string][]string
 	raw     []byte
@@ -241,6 +248,41 @@ func (e *Effective) loadStacks() error {
 	return nil
 }
 
+// loadArtifacts reads the source's artifact definitions and checks that
+// every pinned kind and every artifact-keyed implementation names one.
+func (e *Effective) loadArtifacts() error {
+	src := e.Source
+	if src == nil {
+		src = catalog.Builtin()
+	}
+	defs, err := src.ArtifactDefs()
+	if err != nil {
+		return fmt.Errorf("catalog %s: %w", src.Version, err)
+	}
+	e.Artifacts = defs
+	known := func(id string) bool { _, ok := artifacts.Find(defs, id); return ok }
+	if e.File.Facts.Artifacts != nil {
+		for _, id := range *e.File.Facts.Artifacts {
+			if !known(id) {
+				return fmt.Errorf("%s: facts.artifacts: %q is not an artifact the catalog defines (catalog %s has: %s)", FileName, id, src.Version, orNoneList(artifacts.IDs(defs)))
+			}
+		}
+	}
+	for _, r := range e.Rules {
+		if r.Artifact != "" && !known(r.Artifact) {
+			return fmt.Errorf("rule %s (%s): artifact %q is not defined (catalog %s has: %s)", r.ID, r.Source, r.Artifact, src.Version, orNoneList(artifacts.IDs(defs)))
+		}
+	}
+	return nil
+}
+
+func orNoneList(ids []string) string {
+	if len(ids) == 0 {
+		return "none"
+	}
+	return strings.Join(ids, ", ")
+}
+
 // checkStacks refuses a stack the catalog does not define; anyOK says
 // whether "any" may stand for every stack.
 func checkStacks(scopes []Scope, defs []stacks.Def, anyOK func(string) bool) error {
@@ -317,6 +359,9 @@ func Load(root string, opts Options) (*Effective, error) {
 		return nil, err
 	}
 	if err := eff.loadStacks(); err != nil {
+		return nil, err
+	}
+	if err := eff.loadArtifacts(); err != nil {
 		return nil, err
 	}
 	if err := celenv.ValidateRules(eff.Rules); err != nil {
@@ -619,6 +664,7 @@ func (e *Effective) ScopeFacts(sc Scope) facts.Overrides {
 func (f FactOverrides) ToFacts() facts.Overrides {
 	return facts.Overrides{
 		Stacks:     f.Stacks,
+		Artifacts:  f.Artifacts,
 		Visibility: facts.Visibility(f.Visibility),
 		Tier:       f.Tier,
 		Forge:      f.Forge,

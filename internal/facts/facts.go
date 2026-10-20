@@ -56,15 +56,47 @@ type Facts struct {
 	TierReason string `json:"tier_reason,omitempty"`
 	Layout     string `json:"layout"`
 	// Members are workspace member directories (repo-relative), when Layout is "workspace".
-	Members    []string   `json:"members,omitempty"`
-	CI         []string   `json:"ci"`
-	Release    Release    `json:"release"`
+	Members []string `json:"members,omitempty"`
+	CI      []string `json:"ci"`
+	Release Release  `json:"release"`
+	// Artifacts are what the release publishes, by kind, with the workflows
+	// that publish each; detected from the catalog's artifacts/ definitions
+	// or pinned under facts.artifacts. Root-level: a member scope carries
+	// the root's.
+	Artifacts  []Artifact `json:"artifacts,omitempty"`
 	TaskRunner TaskRunner `json:"taskrunner"`
 	Hooks      []string   `json:"hooks"`
 	HasGit     bool       `json:"has_git"`
 
 	// Sources records provenance per top-level fact name.
 	Sources map[string]Source `json:"sources"`
+}
+
+// Artifact is one published artifact kind (`image`, `npm`, ...) and the CI
+// files that publish it; a pinned artifact names no workflows.
+type Artifact struct {
+	Kind      string   `json:"kind"`
+	Workflows []string `json:"workflows,omitempty"`
+}
+
+// ArtifactKinds lists the published artifact kinds in order.
+func (f Facts) ArtifactKinds() []string {
+	out := make([]string, 0, len(f.Artifacts))
+	for _, a := range f.Artifacts {
+		out = append(out, a.Kind)
+	}
+	return out
+}
+
+// ArtifactWorkflows are the CI files that publish the kind; nil when the
+// kind is not published or was pinned.
+func (f Facts) ArtifactWorkflows(kind string) []string {
+	for _, a := range f.Artifacts {
+		if a.Kind == kind {
+			return a.Workflows
+		}
+	}
+	return nil
 }
 
 // Release describes the release mechanism in use.
@@ -113,6 +145,10 @@ type Overrides struct {
 	FleetTier int
 	// StackDefs are the catalog's stack definitions; nil means the legacy set.
 	StackDefs []stacks.Def
+	// Artifacts pins the published artifact kinds; nil detects, an empty
+	// list says nothing is published. The engine applies it, since
+	// detection needs the rule environment.
+	Artifacts *[]string
 }
 
 // Discover computes facts for a repository, applying overrides last.

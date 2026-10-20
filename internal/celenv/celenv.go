@@ -46,6 +46,7 @@ var Accessors = []Accessor{
 	{"workflows() -> list<string>", "Paths of the repository's CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes. CI lives at the repository root, so in a member scope these are the root's files as `../` paths."},
 	{"ci_kind(path: string) -> string", "The CI system of a file from `workflows()`: `github`, `gitea`, `forgejo` or `gitlab`."},
 	{"tagged_workflows() -> list<string>", "CI files a tag push starts (`on.push.tags`; GitLab rules on `$CI_COMMIT_TAG` or `only: tags`), i.e. release pipelines."},
+	{"artifact_workflows(kind: string) -> list<string>", "CI files that publish an artifact of the kind (`image`, `npm`, `release-files`, ...), as the catalog's `artifacts/<kind>.yaml` detected them; empty when the kind is not published or was pinned under `facts.artifacts`."},
 	{"steps(path: string) -> list<map>", "Every step of every job in a CI file, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields. A GitLab job is one step whose `run` is its before_script, script and after_script."},
 	{"jobs(path: string) -> list<map>", "Every job of a CI file as `{name, timeout_minutes, permissions, runs_on, uses, image, interruptible}`; `timeout_minutes` is 0 when unset (GitLab `timeout:` durations are converted); `interruptible` is GitLab's."},
 	{"triggers(path: string) -> list<string>", "Event names a CI file reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape; a GitLab pipeline reads as `push`, plus `pull_request` for merge request pipelines and `schedule`."},
@@ -61,7 +62,7 @@ var Accessors = []Accessor{
 
 // Variables documents the variables exposed to CEL.
 var Variables = []Accessor{
-	{"repo", "Facts: `name`, `stacks`, `forge`, `visibility`, `public`, `container` (`none`, `devcontainer`, `docker`, `podman`), `tier`, `layout`, `ci`, `hooks`, `has_git`, `scope`."},
+	{"repo", "Facts: `name`, `stacks`, `artifacts` (the published artifact kinds: `release-files`, `image`, `npm`, ...), `forge`, `visibility`, `public`, `container` (`none`, `devcontainer`, `docker`, `podman`), `tier`, `layout`, `ci`, `hooks`, `has_git`, `scope`."},
 	{"release", "`{exists, mechanisms, tag_patterns, latest_tag}`."},
 	{"taskrunner", "`{kind, targets, file, cmd, deps, recipes}`: the task runner whatever its kind (`make`, `just`, `task`, `npm-scripts`, `gradle`, `none`). `cmd` is how a target is invoked (`make`, `just`, `task`, `npm run`, `./gradlew`); `deps` and `recipes` map each target to what it depends on and the commands it runs."},
 	{"params", "The rule's `params` map from the catalog or the repo override."},
@@ -121,6 +122,21 @@ func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
 	}
 	e.env = env
 	return e, nil
+}
+
+// SetFacts replaces the facts the environment exposes, once artifacts have
+// been detected with the environment itself.
+func (e *Env) SetFacts(f facts.Facts) { e.facts = f }
+
+// CheckList type-checks an expression that must yield a list, without a
+// repository: for catalog definitions at load time.
+func CheckList(expr string) error {
+	c, err := checker()
+	if err != nil {
+		return err
+	}
+	_, err = c.CompileList(expr)
+	return err
 }
 
 // Compile type-checks a predicate and reports errors with CEL's positions.
@@ -323,6 +339,7 @@ func (e *Env) activation(params map[string]any, item any) map[string]any {
 		"repo": map[string]any{
 			"name":       f.Name,
 			"stacks":     toAnyList(f.Stacks),
+			"artifacts":  toAnyList(f.ArtifactKinds()),
 			"forge":      f.Forge,
 			"forge_host": f.ForgeHost,
 			"visibility": string(f.Visibility),
@@ -391,6 +408,7 @@ func (e *Env) functions() []cel.EnvOption {
 			cel.FunctionBinding(func(...ref.Val) ref.Val { return strs(e.workflowPaths()) }))),
 		cel.Function("tagged_workflows", cel.Overload("tagged_workflows_void", nil, strList,
 			cel.FunctionBinding(func(...ref.Val) ref.Val { return strs(e.taggedWorkflows()) }))),
+		unaryStr("artifact_workflows", strList, func(kind string) ref.Val { return strs(e.facts.ArtifactWorkflows(kind)) }),
 		unaryStr("steps", cel.ListType(cel.MapType(cel.StringType, cel.DynType)), func(s string) ref.Val {
 			return types.DefaultTypeAdapter.NativeToValue(e.steps(s))
 		}),

@@ -168,21 +168,47 @@ type Rule struct {
 	// PolicyBy is the catalog that locked the rule or set its floor when that
 	// is not the catalog that defined it.
 	PolicyBy string `yaml:"-" json:"policy_by,omitempty"`
-	// Capability and Stack are set on an implementation (an id of three
-	// segments, family/name/stack): the capability it implements and the
-	// stack it does so for, or "any" for every stack without its own.
+	// By, on a capability, says what its implementations are keyed by: a
+	// stack (the default) or a published artifact kind. Implementations
+	// inherit it.
+	By By `yaml:"by,omitempty" json:"by,omitempty"`
+	// Capability, Stack and Artifact are set on an implementation (an id of
+	// three segments, family/name/<target>): the capability it implements
+	// and the stack it does so for ("any" for every stack without its own),
+	// or the artifact kind when the capability is keyed by artifact.
 	Capability string `yaml:"-" json:"capability,omitempty"`
 	Stack      string `yaml:"-" json:"stack,omitempty"`
+	Artifact   string `yaml:"-" json:"artifact,omitempty"`
 	// Gate is the capability's `when`; it is evaluated before the
 	// implementation's own.
 	Gate string `yaml:"-" json:"gate,omitempty"`
-	// Implementations lists, on a capability, the stacks it has an
-	// implementation for.
+	// Implementations lists, on a capability, the stacks (or artifact
+	// kinds) it has an implementation for.
 	Implementations []string `yaml:"-" json:"implementations,omitempty"`
 	// Combine, on a capability, says how its implementations add up in a
 	// scope: every one must pass (all, the default) or one passing is
 	// enough (any). Implementations inherit it.
 	Combine Combine `yaml:"combine,omitempty" json:"combine,omitempty"`
+}
+
+// By is what a capability's implementations are keyed by.
+type By string
+
+const (
+	// ByStack keys implementations by stack (rules/<family>/<name>/<stack>.yaml).
+	ByStack By = "stack"
+	// ByArtifact keys implementations by published artifact kind
+	// (rules/release/<name>/<artifact>.yaml); each kind the release
+	// publishes is checked.
+	ByArtifact By = "artifact"
+)
+
+// Target is the stack or artifact kind an implementation is for.
+func (r Rule) Target() string {
+	if r.Artifact != "" {
+		return r.Artifact
+	}
+	return r.Stack
 }
 
 // Combine is how a capability's implementations add up in a scope.
@@ -345,6 +371,15 @@ func (r Rule) AppliesToStacks(stacks []string) bool {
 		}
 	}
 	return false
+}
+
+// AppliesToArtifacts reports whether an artifact-keyed implementation is in
+// scope: its kind is among the published ones. Other rules always apply.
+func (r Rule) AppliesToArtifacts(kinds []string) bool {
+	if r.Artifact == "" {
+		return true
+	}
+	return slices.Contains(kinds, r.Artifact)
 }
 
 // Status is the outcome of evaluating one rule against one scope.

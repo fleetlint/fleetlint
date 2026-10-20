@@ -17,7 +17,8 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 | 0.5 | fleet mode: matrix report, history, per-repo agent tasks; `init --pr`; forge discovery with `--from` | done (`--from` is tested against a local server; against the real GitHub API only as far as listing a public owner and starting the clones, and not yet against Gitea or a private organization) |
 | 0.6 | `command` rules, baseline ratchet, nested configs | done |
 | 0.6.1 | 20 further rules towards the 1.0 catalog (`docs/rules-1.0.md`): repo, lint, quality, docs, deps, ci, release (producer detection), public families; accessors `jobs`, `triggers`, `tags`, `commits`, `grep`, `filesize`, `globmatch`; CEL string/list extensions | done |
-| 0.5.1 | public demo at demo.fleetlint.org: `fleetlint fleet` over the four `fleetlint/*` repositories published to Pages nightly (`deploy/demo/`); the report directory already contains `index.html` and HTML action lists | files ready, Pages deployment open |
+| 0.5.1 | public demo at demo.fleetlint.org: `fleetlint fleet` over the four `fleetlint/*` repositories published to Pages nightly (`deploy/demo/`); the report directory already contains `index.html` and HTML action lists | files ready, Pages deployment open; `deploy/demo/` is no longer in the tree and the docs still link the demo: wire it or drop it |
+| 0.6 (next) | catalogs in import order with free labels, `fleetlint hierarchy`, artifacts as catalog data and the release capabilities keyed by artifact (engine level 5), fleet file includes and nested groups | implemented on the `hierarchy-and-artifacts` branch, release open. The version labels of the rows above are milestones, not tags: OCI catalogs shipped in 0.4.0, the team layer in 0.4 too |
 | 0.7 | organization layer: locked rules, severity floors, `exceptions: false`, `--require` | done |
 | 0.7.1 | git catalog sources (`git+<url>//<path>@<tag or commit>`) | done |
 | 0.7.2 | OCI catalog sources with signature verification, private templates shipped with catalogs | needs registry access to test |
@@ -36,22 +37,10 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 
 - SARIF beyond the subset written since 0.4 (OASIS SARIF 2.1.0, `internal/report/sarif.go`). Findings without a path get no location, and GitHub code scanning drops locationless results, so most "file is missing" findings never show up there: anchor them to the expected path or to `.fleetlint.yaml`. Missing: `helpUri` to the rule's page on fleetlint.org; `partialFingerprints`, so alerts keep their identity across runs; `security-severity` and family tags on security rules; `automationDetails.id` per scope, for monorepos that upload several runs; excepted findings as `suppressions` with their reason and expiry instead of being left out; rule errors as `invocations[].toolExecutionNotifications` instead of results; the rule's sources (see above) in its properties; optional `fixes` from the fix templates. Validate the output against the official OASIS schema in the tests. Fleet mode writes no SARIF yet.
 
-## To think about: a more flexible hierarchy
+## Decided on 2026-10-20: hierarchy and artifacts
 
-The layers are fixed at four (preset, org, team, repo) since 2026-10-07. Real organisations may need more or different levels: business unit, department, product line, platform group, several org-wide catalogs owned by different teams (security, platform, compliance), or a team nested under a team. Open questions before changing it:
-
-- Arbitrary named layers with a declared order (in the sources file), or a tree where a catalog names its parent?
-- How a repository belongs to several branches at once (a team catalog plus a compliance catalog that is not "above" it).
-- Whether policy should bind by layer rank or by explicit precedence between catalogs.
-- What stays fixed for reproducibility: one catalog version per run and a deterministic order must survive any redesign.
-
-Nothing in code or docs promises the four layers beyond `metadata.layer: org|team` and the `org` / `team/<name>` alias names; a change there is a format change to settle before 1.0.
-
-Fleet nesting belongs to the same decision. A fleet is flat today: `defaults:`, one level of `groups:` (from the fleet file or the top directory under `--discover`), and entries. Open questions:
-
-- Fleet files that include other fleet files (a team's fleet inside the organisation's), and which one's `defaults:` wins.
-- Nested groups: `--discover` takes only the top directory (`incyde/cra-tooling-neu/vuln-ui` is in group `incyde`); settings and report summaries per level, rolled up.
-- Whether a fleet group is the same thing as a catalog layer (a group selects the team catalog) or stays a reporting and settings unit only.
+- **Catalog order and labels** ([ADR 0006](adr/0006-catalog-order-by-import.md)): the fixed layers are gone; catalogs apply in the order includes and extends list them, labels are free, `fleetlint hierarchy` and every report list the catalogs with their pins, fleet files include fleet files and groups nest by path. Open: nothing before 1.0.
+- **Release checks per artifact** ([ADR 0007](adr/0007-artifacts-as-catalog-data.md)): artifacts are catalog data (`artifacts/<id>.yaml`), the four release capabilities are keyed by artifact (`by: artifact`), engine level 5. Open: instances of one kind (two images), step-level `if` guards and reusable workflows (answered by `facts.artifacts` for now), and whether `combine: any` stays in the format at 1.0 now that nothing in the catalog uses it.
 
 ## Backlog: what large organisations will ask for
 
@@ -118,24 +107,3 @@ Architecture
 - `Repo` keeps the context it was opened with; test seams `requireSCT` and `loadBundle` are package variables.
 - GitLab is missing from the forge client (`--from gitlab:`, visibility, `init --pr`).
 - Catalog fix: what the top-level `catalog` field of the check JSON and of `fleet.json` means differs (the run's pinned version vs the built-in one); per-repository pins are now in `fleet.json`.
-
-## Release checks per artifact
-
-`release/signing`, `release/sbom` and `release/provenance` are capabilities with one implementation per stack and `combine: any` since 2026-10-15: the stack that publishes decides, and one recognised producer anywhere passes the repository. That cannot tell "binaries signed, npm package not" apart from "everything signed". The precise model checks each artifact a tag-triggered workflow publishes, recognised by its publish step, against what fits that artifact. One item per artifact:
-
-- **Files on a forge release** (binaries, archives, an APK or IPA uploaded as assets; `gh release create|upload`, `tea releases create`, the Gitea/GitLab release API, action-gh-release, GoReleaser): `checksums.txt` or `SHA256SUMS` signed (cosign keyless on GitHub/GitLab, key-based on Gitea, gpg), one SPDX or CycloneDX SBOM per artifact uploaded next to it, provenance per artifact (attest action, `cosign attest-blob`, SLSA generator).
-- **Container images** (`docker push`, build-push-action, `podman push`, ko, Jib): `cosign sign <image>@<digest>`, SBOM and provenance attached to the digest (BuildKit `sbom: true` / `provenance`, `cosign attest`), never by tag.
-- **npm packages** (`npm|pnpm|yarn|bun publish`): provenance through trusted publishing; the registry's provenance is the signature. SBOM: `npm sbom` only when the package bundles dependencies.
-- **PyPI distributions** (pypi-publish, twine, uv, poetry, flit, hatch, pdm): PEP 740 attestations through trusted publishing; wheels that vendor native libraries need an SBOM.
-- **crates.io crates** (`cargo publish`): trusted publishing; crates.io has no signatures yet, so a crate is checked for trusted publishing only, and its binaries as forge release files (cargo-auditable embeds the dependency list).
-- **RubyGems** (`gem push`, release-gem): Sigstore attestations through trusted publishing; signed gems (`signing_key`/`cert_chain`) as the alternative.
-- **Maven Central artifacts** (JARs, AARs, POMs; Gradle `publish*`, `mvn deploy`, the vanniktech plugin): PGP signatures (required by Central), the CycloneDX BOM published as an extra artifact with the `cyclonedx` classifier, provenance with `cosign attest-blob` until Central accepts attestations. No trusted publishing yet.
-- **Android apps** (APK/AAB as release files, `fastlane supply`, gradle-play-publisher): the APK signature verified with `apksigner verify` (`jarsigner -verify` for an AAB) against the pinned release certificate digest, an SBOM of the release runtime classpath (lockfile or CycloneDX Gradle), provenance with `cosign attest-blob`. Play App Signing re-signs: record which key a check expects.
-- **Apple apps and binaries** (IPA, `.app`/`.pkg`/`.dmg`; `xcodebuild -exportArchive`, fastlane, `notarytool`): code signing with a Developer ID or distribution identity, notarization and stapling for macOS downloads, provenance with `cosign attest-blob`.
-- **NuGet packages** (`dotnet nuget push`): `dotnet nuget sign` or nuget.org's repository signature, trusted publishing (nuget.org OIDC), an SBOM (CycloneDX .NET or Microsoft sbom-tool) inside or next to the package.
-- **pub.dev packages** (`dart|flutter pub publish`): automated publishing with GitHub OIDC; pub.dev has no package signatures.
-- **Helm charts** (`helm push` to an OCI registry, chart-releaser): `cosign sign` on the chart digest or `helm package --sign` (`.prov`), checked like a container image when pushed to OCI.
-- **Go modules**: nothing is uploaded; the checksum database (sum.golang.org) is the integrity record, so only binaries built from the module are artifacts (forge release files).
-- **Package-manager manifests that point at release files** (Homebrew tap, Scoop bucket, Nix flake, AUR, winget): they reference the release files' checksums; checked through the signed checksums file of the forge release, not separately.
-
-Open questions: whether each artifact becomes its own rule (`release/artifact-signed` with `foreach` over publish steps) or a capability keyed by artifact kind instead of stack; how a repository declares an artifact the publish-step detection misses; and how this interacts with `combine: any`, which the per-artifact rules would replace for these three capabilities.

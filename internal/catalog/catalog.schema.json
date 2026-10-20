@@ -327,6 +327,10 @@
             "type": "string",
             "description": "The catalog version that added the rule."
           },
+          "by": {
+            "enum": ["stack", "artifact"],
+            "description": "On a capability: what its implementations are keyed by. `stack` (the default): rules/<family>/<name>/<stack>.yaml, one per detected stack. `artifact`: rules/<family>/<name>/<artifact>.yaml, one per published artifact kind from the catalog's artifacts/, checked for every kind the release publishes."
+          },
           "combine": {
             "enum": ["all", "any"],
             "description": "On a capability: whether every implementation that runs in a scope must pass (all, the default) or one passing is enough (any, for what belongs to the repository rather than to each stack, such as a release)."

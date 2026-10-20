@@ -14,6 +14,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/fleetlint/fleetlint/internal/model"
+	"github.com/fleetlint/fleetlint/internal/stacks"
 )
 
 // The rule library is the catalog's rules/ directory: one rule per file at
@@ -172,7 +173,7 @@ func (l *Library) link() {
 		r.Implementations = nil
 		for _, other := range l.ids {
 			if impl := l.rules[other]; impl.Capability == id {
-				r.Implementations = append(r.Implementations, impl.Stack)
+				r.Implementations = append(r.Implementations, impl.Target())
 			}
 		}
 		l.rules[id] = r
@@ -220,6 +221,9 @@ func inherit(capRule model.Rule, b []byte, p string) (model.Rule, error) {
 	if err := checkImplementation(impl, set, p); err != nil {
 		return impl, err
 	}
+	if _, target, _ := model.SplitImplementation(impl.ID); capRule.By == model.ByArtifact && target == stacks.Any {
+		return impl, fmt.Errorf("%s: a capability keyed by artifact has no `any` implementation: what counts as signed, attested or described differs per artifact kind", p)
+	}
 	out := capRule.Clone()
 	out.ID, out.Kind, out.When = impl.ID, impl.Kind, impl.When
 	out.Gate = capRule.When
@@ -259,9 +263,9 @@ func checkImplementation(impl model.Rule, set map[string]any, p string) error {
 			return fmt.Errorf("%s: partials[%d]: severity is required", p, i)
 		}
 	}
-	for _, key := range []string{"use", "stacks", "combine"} {
+	for _, key := range []string{"use", "stacks", "combine", "by"} {
 		if _, ok := set[key]; ok {
-			return fmt.Errorf("%s: an implementation takes no %s: (the path names its stack; combine comes from the capability)", p, key)
+			return fmt.Errorf("%s: an implementation takes no %s: (the path names its stack or artifact; combine and by come from the capability)", p, key)
 		}
 	}
 	return nil

@@ -915,85 +915,6 @@
    }
   }
  ],
- "release/provenance": [
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make dist\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   },
-   "message": "no build provenance",
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/attest-build-provenance@v2\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          provenance: false\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v3\n        with:\n          push: true\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
-   "fail": {
-    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  variables:\n    RUNNER_GENERATE_ARTIFACTS_METADATA: \"true\"\n  script: [goreleaser release]\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --access public\n",
-    "go.mod": "module x\n",
-    "package.json": "{\"name\": \"x\"}"
-   }
-  }
- ],
- "release/signing": [
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\nsigns: [{cmd: cosign}]\n",
-    "go.mod": "module x\n"
-   }
-  },
-  {
-   "fail": {
-    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  image: cgr.dev/chainguard/cosign\n  id_tokens:\n    SIGSTORE_ID_TOKEN:\n      aud: sigstore\n  script:\n    - cosign sign-blob --yes --bundle c.sigstore.json checksums.txt\n",
-    ".goreleaser.yaml": "builds: [{main: .}]\n",
-    "go.mod": "module x\n"
-   }
-  }
- ],
  "release/tag-triggered": [
   {
    "fail": {
@@ -1016,64 +937,6 @@
     ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
     ".goreleaser.yaml": "builds: [{main: .}]\n",
     "go.mod": "module x\n"
-   }
-  }
- ],
- "release/trusted-publishing": [
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          password: ${{ secrets.PYPI_API_TOKEN }}\n",
-    "go.mod": "module x\n",
-    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
-   },
-   "message": "long-lived registry token",
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
-    "go.mod": "module x\n",
-    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
-   }
-  },
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
-    "go.mod": "module x\n",
-    "package.json": "{\"name\": \"x\"}"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance\n",
-    "go.mod": "module x\n",
-    "package.json": "{\"name\": \"x\"}"
-   }
-  },
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  crates:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: cargo publish --token ${{ secrets.CRATES_TOKEN }}\n",
-    "Cargo.toml": "[package]\nname = \"x\"\n",
-    "go.mod": "module x\n"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  gpr:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n      packages: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
-    "go.mod": "module x\n",
-    "package.json": "{\"name\": \"x\"}"
-   }
-  },
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    steps:\n      - run: uv publish\n",
-    "go.mod": "module x\n",
-    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
-   }
-  },
-  {
-   "fail": {
-    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [twine upload dist/*]\n",
-    "go.mod": "module x\n",
-    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
-   },
-   "pass": {
-    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  id_tokens:\n    PYPI_ID_TOKEN:\n      aud: pypi\n  script: [uv publish --trusted-publishing always]\n",
-    "go.mod": "module x\n",
-    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
    }
   }
  ],
@@ -1107,6 +970,153 @@
    "pass": {
     "go.mod": "module x\n",
     "justfile": "lint:\n    go vet ./...\ntest:\n    go test ./...\ngate: lint test\ncheck: gate\n"
+   }
+  }
+ ],
+ "release/signing/release-files": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: goreleaser release\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\nsigns: [{cmd: cosign}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  image: cgr.dev/chainguard/cosign\n  id_tokens:\n    SIGSTORE_ID_TOKEN:\n      aud: sigstore\n  script:\n    - goreleaser release\n    - cosign sign-blob --yes --bundle c.sigstore.json checksums.txt\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/provenance/release-files": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make dist\n      - run: gh release create \"$GITHUB_REF_NAME\" dist/*.tar.gz\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "message": "no build provenance",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: make dist\n      - uses: actions/attest-build-provenance@v2\n      - run: gh release create \"$GITHUB_REF_NAME\" dist/*.tar.gz\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "release:\n  rules:\n    - if: $CI_COMMIT_TAG\n  variables:\n    RUNNER_GENERATE_ARTIFACTS_METADATA: \"true\"\n  script: [goreleaser release]\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/provenance/image": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          provenance: false\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v3\n        with:\n          push: true\n",
+    ".goreleaser.yaml": "builds: [{main: .}]\n",
+    "go.mod": "module x\n"
+   }
+  }
+ ],
+ "release/provenance/npm": [
+  {
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\npermissions:\n  id-token: write\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish --access public\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  }
+ ],
+ "release/trusted-publishing/pypi": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n        with:\n          password: ${{ secrets.PYPI_API_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   },
+   "message": "long-lived registry token",
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - uses: pypa/gh-action-pypi-publish@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  pypi:\n    runs-on: ubuntu-latest\n    steps:\n      - run: uv publish\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  script: [twine upload dist/*]\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   },
+   "pass": {
+    ".gitlab-ci.yml": "publish:\n  rules:\n    - if: $CI_COMMIT_TAG\n  id_tokens:\n    PYPI_ID_TOKEN:\n      aud: pypi\n  script: [uv publish --trusted-publishing always]\n",
+    "go.mod": "module x\n",
+    "pyproject.toml": "[project]\nname = \"x\"\nversion = \"0.1.0\"\n"
+   }
+  }
+ ],
+ "release/trusted-publishing/npm": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  npm:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: npm publish --provenance\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  },
+  {
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  gpr:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n      packages: write\n    steps:\n      - run: npm publish\n        env:\n          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n",
+    "go.mod": "module x\n",
+    "package.json": "{\"name\": \"x\"}"
+   }
+  }
+ ],
+ "release/trusted-publishing/crate": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  crates:\n    runs-on: ubuntu-latest\n    permissions:\n      id-token: write\n    steps:\n      - run: cargo publish --token ${{ secrets.CRATES_TOKEN }}\n",
+    "Cargo.toml": "[package]\nname = \"x\"\n",
+    "go.mod": "module x\n"
    }
   }
  ]
