@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-21
+
 ### Added
 
 - Catalog 0.3.1: the artifact kind `oci-artifact` (a policy bundle, a catalog, a WASM module pushed with `oras push`, `flux push artifact`, `cosign upload blob` or `regctl artifact put`, in the step or in a script it runs) with signing, SBOM and provenance implementations; the `image` kind sees GoReleaser `dockers_v2:` and `kos:`; `release/checksums` accepts a registry-bound release.
