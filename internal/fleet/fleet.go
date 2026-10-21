@@ -284,6 +284,8 @@ type RepoReport struct {
 	// Catalogs are the repository's catalogs in the order they applied.
 	Catalogs []config.CatalogInfo `json:"catalogs,omitempty"`
 	Err      string               `json:"error,omitempty"`
+	// Root is the local checkout the results refer to, for the SARIF file.
+	Root string `json:"-"`
 }
 
 // Compliance is the share of applicable rules that pass or are excepted.
@@ -403,6 +405,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		return rr
 	}
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
+	rr.Root = r.Root
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
 	rr.Disabled, rr.Weakened, rr.Deprecations, rr.Catalogs = eff.Disabled, eff.Weakened, eff.Deprecations, eff.Hierarchy()
 	if eff.Source != nil && eff.Source.Pinned {

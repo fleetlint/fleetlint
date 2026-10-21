@@ -63,9 +63,19 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 		t.Fatal(err)
 	}
 	testutil.Golden(t, "testdata/fleet-json.keys", testutil.JSONKeys(t, doc, ".definitions", ".repos[].facts.sources"))
-	for _, f := range []string{"fleet.md", "fleet.html", "fleet.json", "fleet.csv", "index.html", "actions/clean.md", "actions/messy.md", "actions/messy.html", "actions/missing.md", "history/2026-10-04T120000Z.json"} {
+	for _, f := range []string{"fleet.md", "fleet.html", "fleet.json", "fleet.csv", "index.html", "actions/clean.md", "actions/messy.md", "actions/messy.html", "actions/missing.md", "sarif/clean.sarif", "sarif/messy.sarif", "history/2026-10-04T120000Z.json"} {
 		if _, err := os.Stat(filepath.Join(out, f)); err != nil {
 			t.Errorf("missing output %s", f)
+		}
+	}
+	// An unchecked repository has no results to upload.
+	if _, err := os.Stat(filepath.Join(out, "sarif/missing.sarif")); err == nil {
+		t.Error("no sarif for a repository that could not be checked")
+	}
+	sarifOut, _ := os.ReadFile(filepath.Join(out, "sarif/messy.sarif"))
+	for _, want := range []string{`"id": "fleetlint/messy"`, `"ruleId": "repo/no-tracked-junk"`, `"uri": ".DS_Store"`} {
+		if !strings.Contains(string(sarifOut), want) {
+			t.Errorf("sarif lacks %s:\n%s", want, sarifOut)
 		}
 	}
 	md, _ := os.ReadFile(filepath.Join(out, "fleet.md"))
