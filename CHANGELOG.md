@@ -14,6 +14,7 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 - **`locate` on a rule** says where a finding that names no path belongs: a scope-relative path or a CEL expression yielding one. The engine puts it on such findings, so the table, the agent output and SARIF point at the file that is missing or wrong instead of the configuration file. A catalog test keeps the list of rules without it from growing (`internal/catalog/testdata/rules_without_locate.txt`). A finding that gains a path changes its SARIF fingerprint once.
 - SARIF: one run per scope, keyed `fleetlint/<repository>` for the root and `fleetlint/<repository>/<scope>` for a scope, so a monorepo's scopes keep their own alert sets in code scanning; an exception's expiry is on its suppression (`properties.until`, and in the justification).
 - `scripts/install.sh` verifies the build provenance with `gh attestation verify` when cosign is absent and gh is present.
+- A `catalogs:` entry in the sources file may be `{ref, signers, min_version}` instead of the bare reference: `signers` verify that `oci://` catalog alone, in place of the top-level signers; `min_version` is a semantic-version floor on the catalog's `metadata.version`, so a tag moved back to an older release fails the run naming the alias, the loaded version and the floor. `fleetlint schema sources` describes both forms.
 
 ### Changed
 

@@ -799,27 +799,38 @@ func (e *Effective) choosePin(src *catalog.Sources, l *catalog.Loader) error {
 	return nil
 }
 
-// loadEntries loads every extends entry with its includes, labels each
-// catalog and checks that it builds on the run's catalog version.
+// loadEntries loads every extends entry with its includes, each with the
+// signers of its alias, and settles every catalog that came in.
 func (e *Effective) loadEntries(l catalog.Loader, entries []extendsEntry) ([]*catalog.Catalog, error) {
 	var out []*catalog.Catalog
 	for _, en := range entries {
-		cats, err := l.Load(en.ref)
+		cats, err := l.ForEntry(en.Entry).Load(en.Ref)
 		if err != nil {
 			return nil, err
 		}
 		for _, c := range cats {
-			settleLabel(c, en)
-			if c.Metadata.Layer != "" && c.Metadata.Label == c.Metadata.Layer {
-				e.Deprecations = append(e.Deprecations, fmt.Sprintf("catalog %s: metadata.layer is deprecated: write it as metadata.label", c.Ref))
-			}
-			if err := e.checkBuildsOn(c); err != nil {
+			if err := e.settleCatalog(c, en); err != nil {
 				return nil, err
 			}
 			out = append(out, c)
 		}
 	}
 	return out, nil
+}
+
+// settleCatalog labels a loaded catalog and holds it to its alias's
+// version floor and to the run's catalog version.
+func (e *Effective) settleCatalog(c *catalog.Catalog, en extendsEntry) error {
+	settleLabel(c, en)
+	if c.Ref == en.Ref {
+		if err := en.CheckVersion(en.alias, c); err != nil {
+			return err
+		}
+	}
+	if c.Metadata.Layer != "" && c.Metadata.Label == c.Metadata.Layer {
+		e.Deprecations = append(e.Deprecations, fmt.Sprintf("catalog %s: metadata.layer is deprecated: write it as metadata.label", c.Ref))
+	}
+	return e.checkBuildsOn(c)
 }
 
 // notFromRepository reports a built-in preset or a catalog fetched by
@@ -833,11 +844,11 @@ func notFromRepository(c *catalog.Catalog) bool {
 // sources-file name it is loaded under, else its own name. The label
 // identifies the catalog in reports; it grants nothing.
 func settleLabel(c *catalog.Catalog, en extendsEntry) {
-	c.Via = firstNonEmpty(en.alias, en.ref)
+	c.Via = firstNonEmpty(en.alias, en.Ref)
 	switch {
 	case catalog.RefLabel(c.Ref) == catalog.LabelPreset:
 		c.Label = catalog.LabelPreset
-	case c.Ref != en.ref:
+	case c.Ref != en.Ref:
 		// An include of the entry: labelled by itself.
 		c.Label = firstNonEmpty(c.Metadata.Label, c.Metadata.Name)
 	default:
@@ -885,9 +896,11 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// extendsEntry is one `extends` item with its alias resolved.
+// extendsEntry is one `extends` item with its alias resolved: the entry
+// it names in the sources file, with that entry's signers and floor.
 type extendsEntry struct {
-	ref, alias string
+	catalog.Entry
+	alias string
 }
 
 // extendsEntries lists what the run extends: the sources file's extends
@@ -914,19 +927,20 @@ func (e *Effective) extendsEntries(l *catalog.Loader) ([]extendsEntry, *catalog.
 			continue
 		}
 		seen[ref] = true
-		target, known := "", false
+		var entry catalog.Entry
+		known := false
 		if src != nil {
-			target, known = src.Catalogs[ref]
+			entry, known = src.Catalogs[ref]
 		}
 		switch {
 		case known:
-			entries = append(entries, extendsEntry{ref: target, alias: ref})
+			entries = append(entries, extendsEntry{Entry: entry, alias: ref})
 		case catalog.LooksLikeAlias(ref) && src == nil:
 			return nil, nil, fmt.Errorf("%s: extends: %q is a sources-file name but no sources file is set", FileName, ref)
 		case catalog.LooksLikeAlias(ref):
 			return nil, nil, fmt.Errorf("%s: extends: %q is not in the sources file (it has: %s)", FileName, ref, strings.Join(src.Aliases(), ", "))
 		default:
-			entries = append(entries, extendsEntry{ref: ref})
+			entries = append(entries, extendsEntry{Entry: catalog.Entry{Ref: ref}})
 		}
 	}
 	return entries, src, nil
