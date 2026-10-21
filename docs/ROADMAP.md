@@ -22,7 +22,8 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 | 0.7.1 | git catalog sources (`git+<url>//<path>@<tag or commit>`) | done |
 | 0.7.2 | OCI catalog sources with signature verification, private templates shipped with catalogs | done (verified weekly against the signed `ghcr.io/fleetlint/catalog` tag from go.mod, `TestOCIIntegration`) |
 | 0.8 | team layer: sources file with aliases, layered resolution, per-layer attribution in reports | done (`signers` in the sources file waits for OCI sources, 0.7.2; the fleet report has a team summary with expiring exceptions and a CSV export) |
-| 1.0 | formats frozen, compatibility promise | |
+| 0.8 | the format leftovers, adoption and review lows decided on 2026-10-21 (below) | next |
+| 1.0 | formats frozen, compatibility promise, conformance tests | after 0.8 |
 
 ## Also outstanding
 
@@ -30,12 +31,20 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 
 - Sources for every rule: done in 0.7.0 with catalog 0.4.0. `refs` entries are typed (`{url, kind, section}`, engine level 6), every rule names a spec, guidance, style guide, standard or linter check, or says it is a convention (92 rules, 62 of them with no other source: the slop folklore, the task-runner contract, the not-applicable stack implementations). `TestEveryRuleNamesItsSource` keeps it that way. Open: a periodic link check over the 303 source URLs.
 
-- SARIF (OASIS SARIF 2.1.0, `internal/report/sarif.go`): done in 0.7.0 for locations on every result (pathless findings anchored to the scope's `.fleetlint.yaml` or `README.md`), `helpUri`, `partialFingerprints`, family and `security` tags with `security-severity`, `refs`, `automationDetails.id` per repository, excepted and baselined findings as `suppressions`, rule errors as `invocations[].toolExecutionNotifications`, schema validation in the tests and `sarif/<repository>.sarif` in the fleet report. Open: anchoring a missing file to its expected path instead of the configuration file; `automationDetails.id` per scope for monorepos that upload several runs; the expiry of an exception on its suppression; optional `fixes` from the fix templates.
+- SARIF (OASIS SARIF 2.1.0, `internal/report/sarif.go`): done in 0.7.0 for locations on every result (pathless findings anchored to the scope's `.fleetlint.yaml` or `README.md`), `helpUri`, `partialFingerprints`, family and `security` tags with `security-severity`, `refs`, `automationDetails.id` per repository, excepted and baselined findings as `suppressions`, rule errors as `invocations[].toolExecutionNotifications`, schema validation in the tests and `sarif/<repository>.sarif` in the fleet report. Open for 0.8 (decided 2026-10-21): anchoring a missing file to its expected path, one run per scope, the expiry on the suppression. Optional `fixes` from the fix templates stay open.
+
+## Decided on 2026-10-21: the road to 1.0
+
+Interview after 0.7.0. The next minor clears everything that still touches a frozen format, then 1.0 freezes.
+
+1. **0.8: format leftovers, then freeze.** `combine: any` is removed from the rule format (engine level 7 refuses it; a third-party catalog expresses the choice as a capability with implementations). Artifacts become instances with names: detection returns kind plus name (an image reference, a chart path), the release rules check each instance and the report names the one that fails, `facts.artifacts` takes names too. SARIF: one run per scope with `automationDetails.id` `fleetlint/<repository>/<scope>` (the root stays `fleetlint/<repository>`); a missing file is anchored to its expected path; an exception's expiry goes on its suppression. The top-level `catalog` field means the same in the check JSON and `fleet.json` (the run's pinned version). 1.0 follows with the compatibility promise and conformance tests.
+2. **Adoption in 0.8:** `install.sh` served from fleetlint.org (checksum and cosign verification, pinnable by version) and a `.pre-commit-hooks.yaml` in this repository. The action stays as it is, unreleased, docs keep pinning a commit SHA. AUR, Winget and aqua stay out.
+3. **Review lows fixed before 1.0:** fetch bounds (timeout on the sigstore TUF fetch, limits on OCI referrers, bundle layers and git clone size) and exact `localhost` matching; signers per sources alias and a minimum catalog version against a replayed signed tag; fleet clone and write safety (http(s) clone URLs only, collision-free cache paths, cleaned discovered names, `--deep` on clones and `--fix --apply` on dirty checkouts only with a flag); install script and workflow hardening (`curl --proto '=https' --tlsv1.2`, validated version argument, `grep -F` for checksums, no token in the global git config, an environment on the catalog publish workflow, the deprecated `action/` directory deleted). The remaining lows (fix-template provenance in the plan, exception pattern validation, baseline duplicates, history compaction, the worker pool, scope tier inference, GitLab in the forge client) stay open after 1.0.
 
 ## Decided on 2026-10-20: hierarchy and artifacts
 
 - **Catalog order and labels** ([ADR 0006](adr/0006-catalog-order-by-import.md)): the fixed layers are gone; catalogs apply in the order includes and extends list them, labels are free, `fleetlint hierarchy` and every report list the catalogs with their pins, fleet files include fleet files and groups nest by path. Open: nothing before 1.0.
-- **Release checks per artifact** ([ADR 0007](adr/0007-artifacts-as-catalog-data.md)): artifacts are catalog data (`artifacts/<id>.yaml`), the four release capabilities are keyed by artifact (`by: artifact`), engine level 5. Open: instances of one kind (two images), step-level `if` guards and reusable workflows (answered by `facts.artifacts` for now), and whether `combine: any` stays in the format at 1.0 now that nothing in the catalog uses it.
+- **Release checks per artifact** ([ADR 0007](adr/0007-artifacts-as-catalog-data.md)): artifacts are catalog data (`artifacts/<id>.yaml`), the four release capabilities are keyed by artifact (`by: artifact`), engine level 5. Open: step-level `if` guards and reusable workflows (answered by `facts.artifacts` for now). Instances of one kind and the removal of `combine: any` are decided for 0.8 (2026-10-21).
 
 ## Backlog: what large organisations will ask for
 
