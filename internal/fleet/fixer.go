@@ -23,7 +23,8 @@ type Fixer struct {
 }
 
 // Fix plans and lists the repository's changes and, with Apply, writes
-// them; it returns how many it wrote, or ErrDirty when it refused to.
+// them; it returns how many it wrote, or ErrNotApplied with the reason
+// when it refused to.
 func (f *Fixer) Fix(name string, r *repo.Repo, run *engine.Run) (int, error) {
 	// A rule that cannot be planned here is left to a person; the others go ahead.
 	var skipped []string
@@ -40,10 +41,13 @@ func (f *Fixer) Fix(name string, r *repo.Repo, run *engine.Run) (int, error) {
 		fmt.Fprintf(&b, "  %-7s %s\n", c.Kind, c.Path)
 	}
 	b.WriteString(strings.Join(skipped, ""))
-	dirty := f.Apply && !f.AllowDirty && len(changes) > 0 && ModifiedCount(r) > 0
-	if dirty {
+	var refused error
+	if f.Apply && !f.AllowDirty && len(changes) > 0 {
+		refused = fix.CheckClean(r)
+	}
+	if refused != nil {
 		f.refused++
-		fmt.Fprintf(&b, "  not applied: %v\n", ErrDirty)
+		fmt.Fprintf(&b, "  not applied: %v\n", refused)
 	} else if len(changes) > 0 {
 		f.repos++
 		f.changes += len(changes)
@@ -51,8 +55,8 @@ func (f *Fixer) Fix(name string, r *repo.Repo, run *engine.Run) (int, error) {
 	if _, err := io.WriteString(f.W, b.String()); err != nil {
 		return 0, err
 	}
-	if dirty {
-		return 0, ErrDirty
+	if refused != nil {
+		return 0, fmt.Errorf("%w: %w", ErrNotApplied, refused)
 	}
 	if !f.Apply {
 		return 0, nil
@@ -68,7 +72,7 @@ func (f *Fixer) Summary() error {
 	var err error
 	switch {
 	case f.refused > 0:
-		_, err = fmt.Fprintf(f.W, "\napplied %d change(s) in %d repositories; %d repositories with uncommitted changes were left alone (--allow-dirty writes into them too). Nothing is committed.\n", f.changes, f.repos, f.refused)
+		_, err = fmt.Fprintf(f.W, "\napplied %d change(s) in %d repositories; %d repositories with uncommitted changes (or a state git could not read) were left alone (--allow-dirty writes into them too). Nothing is committed.\n", f.changes, f.repos, f.refused)
 	case f.changes == 0:
 		_, err = fmt.Fprintln(f.W, "nothing to fix")
 	case f.Apply:

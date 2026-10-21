@@ -6,7 +6,9 @@ package fleet
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -421,9 +423,10 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
-// ErrDirty is what an Options.Fix returns when it refused to write into a
-// checkout with uncommitted changes; the repository is reported unfixed.
-var ErrDirty = errors.New("the working tree has uncommitted changes to tracked files; commit or stash them, or pass --allow-dirty")
+// ErrNotApplied is what an Options.Fix wraps when it refused to write, such
+// as into a checkout with uncommitted changes; the repository is reported
+// unfixed, with the reason.
+var ErrNotApplied = errors.New("fixes not applied")
 
 // evaluate checks the repository and, with opts.Fix, fixes it and checks
 // the fixed repository again. The notes say what it left out.
@@ -449,8 +452,8 @@ func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *conf
 		return r, run, notes, err
 	}
 	applied, err := opts.Fix(e.Name, r, run)
-	if errors.Is(err, ErrDirty) {
-		return r, run, append(notes, "fixes not applied: "+err.Error()), nil
+	if errors.Is(err, ErrNotApplied) {
+		return r, run, append(notes, err.Error()), nil
 	}
 	if err != nil || applied == 0 {
 		return r, run, notes, err
@@ -507,13 +510,16 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 	return dest, nil
 }
 
-// cacheDir is cache/<host>/<path segments> for a clone URL, each segment
-// sanitised on its own, so a/b_c and a_b/c never share a clone.
+// cacheDir is cache/<host>/<path segments>-<hash> for a clone URL, each
+// segment sanitised on its own, so a/b_c and a_b/c never share a clone;
+// the hash of the unsanitised host and path keeps apart what sanitising or
+// a case-insensitive filesystem would merge (we%20ird and we_20ird).
 func cacheDir(cache, raw string) (string, error) {
 	host, path := splitCloneURL(raw)
 	segments := append([]string{host}, strings.Split(strings.Trim(path, "/"), "/")...)
 	last := len(segments) - 1
 	segments[last] = strings.TrimSuffix(segments[last], ".git")
+	sum := sha256.Sum256([]byte(strings.ToLower(host) + "/" + strings.Join(segments[1:], "/")))
 	for i, seg := range segments {
 		seg = unsafeName.ReplaceAllString(seg, "_")
 		if seg == "" || seg == "." || seg == ".." {
@@ -525,6 +531,7 @@ func cacheDir(cache, raw string) (string, error) {
 		}
 		segments[i] = seg
 	}
+	segments[last] += "-" + hex.EncodeToString(sum[:4])
 	return filepath.Join(append([]string{cache}, segments...)...), nil
 }
 

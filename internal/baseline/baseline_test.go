@@ -17,6 +17,22 @@ func results(paths ...string) []model.Result {
 	return []model.Result{r}
 }
 
+// The fingerprint is pinned: existing baseline files must keep matching.
+// It is the first 16 characters of Key, which SARIF uses whole.
+func TestFingerprintIsAPrefixOfKey(t *testing.T) {
+	t.Parallel()
+	key := baseline.Key("repo/no-tracked-junk", "", "a.log", "junk is tracked")
+	if key != "d05606907047180b8318d69b3a6344d4184b882065762f64d6eb74b497d8f3ac" {
+		t.Fatalf("key %s", key)
+	}
+	if fp := baseline.Fingerprint("repo/no-tracked-junk", "", model.Finding{Path: "a.log", Message: "junk is tracked"}); fp != "d05606907047180b" {
+		t.Fatalf("fingerprint %s", fp)
+	}
+	if baseline.Key("r", "api", "p", "m") != "7748ef15c37c07bca5e4a1df3634b5f1d031f1f7cb0d064752c33e73c8958c58" {
+		t.Fatal("the scope is part of the key")
+	}
+}
+
 func TestBaselineOnlyShrinks(t *testing.T) {
 	t.Parallel()
 	r, path := testutil.Fixture(t, map[string]string{}), "b.json"

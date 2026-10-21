@@ -1,7 +1,6 @@
 package cli_test
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,21 +18,10 @@ const onboardingBranch = "fleetlint/onboarding"
 func onboardingRepo(t *testing.T) (dir, remote string) {
 	t.Helper()
 	remote = t.TempDir()
-	gitIn(t, remote, "init", "-q", "--bare")
+	testutil.Git(t, remote, "init", "-q", "--bare")
 	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", "README.md": "# x\n"},
 		"remote.origin.url", remote, "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 	return r.Root, remote
-}
-
-func gitIn(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = testutil.GitEnv()
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-	return strings.TrimSpace(string(out))
 }
 
 // toolbox puts only git and the given fake forge CLIs on PATH and isolates git
@@ -80,16 +68,16 @@ func TestInitPROpensAPullRequest(t *testing.T) { // not parallel: toolbox sets t
 			t.Errorf("gh was not called with %q:\n%s", want, args)
 		}
 	}
-	if gitIn(t, remote, "rev-parse", "--verify", "refs/heads/"+onboardingBranch) == "" {
+	if testutil.Git(t, remote, "rev-parse", "--verify", "refs/heads/"+onboardingBranch) == "" {
 		t.Error("the branch must be pushed to origin")
 	}
-	if got := gitIn(t, dir, "branch", "--show-current"); got != onboardingBranch {
+	if got := testutil.Git(t, dir, "branch", "--show-current"); got != onboardingBranch {
 		t.Errorf("current branch %q, want %s", got, onboardingBranch)
 	}
-	if subject := gitIn(t, dir, "log", "-1", "--format=%s%n%an"); subject != "chore: add fleetlint configuration\nt" {
+	if subject := testutil.Git(t, dir, "log", "-1", "--format=%s%n%an"); subject != "chore: add fleetlint configuration\nt" {
 		t.Errorf("commit subject and author: %q", subject)
 	}
-	if gitIn(t, dir, "ls-files", ".fleetlint.yaml") != ".fleetlint.yaml" {
+	if testutil.Git(t, dir, "ls-files", ".fleetlint.yaml") != ".fleetlint.yaml" {
 		t.Error("the configuration must be committed")
 	}
 }
@@ -112,7 +100,7 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 			if code != cli.ExitOK || !strings.Contains(out, c.want) {
 				t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 			}
-			if gitIn(t, remote, "rev-parse", "--verify", "refs/heads/"+onboardingBranch) == "" {
+			if testutil.Git(t, remote, "rev-parse", "--verify", "refs/heads/"+onboardingBranch) == "" {
 				t.Error("the branch is pushed before the PR is attempted")
 			}
 			if _, ok := c.fakes["tea"]; ok {
@@ -162,7 +150,7 @@ func TestInitPRRefusesUnsafeStates(t *testing.T) {
 	t.Run("branch exists", func(t *testing.T) {
 		t.Parallel()
 		dir, _ := onboardingRepo(t)
-		gitIn(t, dir, "branch", onboardingBranch)
+		testutil.Git(t, dir, "branch", onboardingBranch)
 		if code, _, errOut := runCLI(t, dir, "init", "--pr"); code != cli.ExitConfig || !strings.Contains(errOut, "already exists") {
 			t.Fatalf("exit %d: %s", code, errOut)
 		}

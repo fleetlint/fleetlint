@@ -1,6 +1,7 @@
 package fleet_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -52,5 +53,57 @@ func TestDiscoverRootRepository(t *testing.T) {
 	}
 	if len(found.Repos) != 1 || found.Repos[0].Path != r.Root || found.Repos[0].Group != "" {
 		t.Fatalf("a root without nested repositories is the repository: %+v", found.Repos)
+	}
+}
+
+// A discovered or positional repository whose directory name is unsafe in
+// a file name gets one safe name, the same in actions/ and sarif/.
+func TestAssembledNamesAreSafeFileNames(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir := filepath.Join(root, "we#ird? name")
+	testutil.WriteFiles(t, dir, map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"})
+	testutil.Git(t, dir, "init", "-q", "-b", "main")
+	testutil.Git(t, dir, "add", "-A")
+	testutil.Git(t, dir, "commit", "-q", "-m", "chore: fixture", "--no-verify")
+	for name, src := range map[string]fleet.Sources{"discover": {Discover: []string{root}}, "path": {Paths: []string{dir}}} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			spec, err := fleet.Assemble(context.Background(), src)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(spec.Repos) != 1 || spec.Repos[0].Name != "we-ird-name" {
+				t.Fatalf("entries %+v, want one named we-ird-name", spec.Repos)
+			}
+			rep, err := fleet.Run(context.Background(), spec, fleet.Options{})
+			if err != nil || rep.Repos[0].Err != "" {
+				t.Fatalf("run: %v %+v", err, rep.Repos)
+			}
+			out := t.TempDir()
+			if err := fleet.Write(out, rep); err != nil {
+				t.Fatal(err)
+			}
+			for _, f := range []string{"actions/we-ird-name.md", "actions/we-ird-name.html", "sarif/we-ird-name.sarif"} {
+				if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(f))); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+}
+
+// reportFile names the per-repository files of a report built from
+// entries that were never normalised the same safe way.
+func TestWriteMakesUnnormalisedNamesSafe(t *testing.T) {
+	t.Parallel()
+	out := t.TempDir()
+	if err := fleet.Write(out, &fleet.Report{Repos: []fleet.RepoReport{{Name: "a/b c"}}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"actions/a-b-c.md", "actions/a-b-c.html", "sarif/a-b-c.sarif"} {
+		if _, err := os.Stat(filepath.Join(out, filepath.FromSlash(f))); err != nil {
+			t.Error(err)
+		}
 	}
 }
