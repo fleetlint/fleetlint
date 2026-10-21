@@ -18,6 +18,9 @@ func TestMatchGlob(t *testing.T) {
 		{"./src/*.go", "src/a.go", true},
 		{"src/[", "src/x", false}, // malformed never matches
 		{"[", "x", false},
+		{"a/b", "a", false}, // the pattern is longer than the path
+		{"a/*/c", "a/b", false},
+		{"a/**/z", "a/x/y", false}, // no suffix matches after the double star
 	}
 	for _, c := range cases {
 		if got := MatchGlob(c.pattern, c.name); got != c.want {
