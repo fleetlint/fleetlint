@@ -1,12 +1,7 @@
-changelog/generator-configured
-changelog/present
-ci/check-workflow
 ci/sast/any
 ci/sast/php
 ci/sast/ruby
 ci/workflow-lint
-containers/dockerignore
-deps/install-scripts-disabled
 deps/license-check/any
 deps/license-check/dotnet
 deps/license-check/go
@@ -35,8 +30,6 @@ deps/unused-check/node
 deps/unused-check/php
 deps/unused-check/python
 deps/unused-check/rust
-deps/update-automation
-deps/update-cooldown
 deps/vulnerability-scan/any
 deps/vulnerability-scan/cpp
 deps/vulnerability-scan/dotnet
@@ -48,8 +41,6 @@ deps/vulnerability-scan/php
 deps/vulnerability-scan/python
 deps/vulnerability-scan/ruby
 deps/vulnerability-scan/rust
-docs/adr-directory
-docs/architecture
 format/configured/cpp
 format/configured/dotnet
 format/configured/flutter
@@ -61,11 +52,6 @@ format/configured/php
 format/configured/python
 format/configured/ruby
 format/configured/rust
-hooks/config-present
-hooks/conventional-commits
-hooks/pre-push-check
-hooks/secret-scan
-hooks/shared-hygiene
 lint/configured/cpp
 lint/configured/dotnet
 lint/configured/flutter
@@ -78,14 +64,9 @@ lint/configured/php
 lint/configured/python
 lint/configured/ruby
 lint/configured/rust
-lint/shell
 lint/strict/cpp
 lint/strict/java
 lint/strict/ruby
-public/code-of-conduct
-public/contributing
-public/issue-templates
-public/license
 public/manifest-license/cpp
 public/manifest-license/dotnet
 public/manifest-license/java
@@ -95,7 +76,6 @@ public/manifest-license/php
 public/manifest-license/python
 public/manifest-license/ruby
 public/manifest-license/rust
-public/security-policy
 quality/check-passes
 quality/coverage-threshold/any
 quality/coverage-threshold/cpp
@@ -125,7 +105,6 @@ quality/mutation-gate/php
 quality/mutation-gate/python
 quality/mutation-gate/ruby
 quality/mutation-gate/rust
-quality/policy-enforced
 release/api-compatibility/dotnet
 release/api-compatibility/flutter
 release/api-compatibility/go
@@ -134,8 +113,6 @@ release/api-compatibility/kotlin
 release/api-compatibility/node
 release/api-compatibility/python
 release/api-compatibility/rust
-release/changelog-in-release
-release/checksums
 release/provenance/android-app
 release/provenance/apple-app
 release/provenance/gem
@@ -170,12 +147,6 @@ release/signing/nuget
 release/signing/oci-artifact
 release/signing/pypi
 release/signing/release-files
-release/tag-triggered
-repo/codeowners
-repo/dev-environment
-repo/editorconfig
-repo/gitattributes
-repo/gitignore-present
 repo/lockfile-committed/cpp
 repo/lockfile-committed/dotnet
 repo/lockfile-committed/flutter
@@ -187,7 +158,6 @@ repo/lockfile-committed/php
 repo/lockfile-committed/python
 repo/lockfile-committed/ruby
 repo/lockfile-committed/rust
-repo/readme-present
 repo/toolchain-pinned/cpp
 repo/toolchain-pinned/dotnet
 repo/toolchain-pinned/flutter
@@ -200,7 +170,5 @@ repo/toolchain-pinned/php
 repo/toolchain-pinned/python
 repo/toolchain-pinned/ruby
 repo/toolchain-pinned/rust
-taskrunner/check-composition
-taskrunner/container
 types/strict/php
 types/strict/python

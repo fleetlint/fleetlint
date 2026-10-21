@@ -35,11 +35,39 @@ func gitState(r *repo.Repo) *GitState {
 	if b, err := r.Git("rev-parse", "--abbrev-ref", "HEAD"); err == nil && b != "HEAD" {
 		g.Branch = b
 	}
-	if st, err := r.Git("status", "--porcelain"); err == nil && st != "" {
-		g.Dirty = len(strings.Split(st, "\n"))
-	}
+	g.Dirty = DirtyCount(r)
 	if ts, err := r.Git("log", "-1", "--format=%cI"); err == nil {
 		g.LastCommit, _ = time.Parse(time.RFC3339, ts)
 	}
 	return g
+}
+
+// DirtyCount is the number of uncommitted changes in the working tree,
+// untracked files included; a repository without git has none.
+func DirtyCount(r *repo.Repo) int {
+	return len(porcelain(r))
+}
+
+// ModifiedCount is the number of tracked files with uncommitted changes:
+// what a fix could overwrite. An untracked file, such as the configuration
+// `init` just wrote, is not in danger.
+func ModifiedCount(r *repo.Repo) int {
+	n := 0
+	for _, line := range porcelain(r) {
+		if !strings.HasPrefix(line, "??") {
+			n++
+		}
+	}
+	return n
+}
+
+// porcelain is git status, one line per change; empty without git.
+func porcelain(r *repo.Repo) []string {
+	if !r.HasGit() {
+		return nil
+	}
+	if st, err := r.Git("status", "--porcelain"); err == nil && st != "" {
+		return strings.Split(st, "\n")
+	}
+	return nil
 }

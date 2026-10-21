@@ -65,6 +65,8 @@ func TestFleetSpecErrors(t *testing.T) {
 		{"discover a missing directory", []string{"--discover", filepath.Join(work, "missing")}, "no such file"},
 		{"apply without fix", []string{"--apply", work}, "--apply and --rule need --fix"},
 		{"rule without fix", []string{"--rule", "repo/gitattributes", work}, "--apply and --rule need --fix"},
+		{"allow-dirty without apply", []string{"--fix", "--allow-dirty", work}, "--allow-dirty needs --fix --apply"},
+		{"deep-clones without deep", []string{"--deep-clones", work}, "--deep-clones needs --deep"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -148,6 +150,54 @@ func TestFleetFix(t *testing.T) {
 	}
 	if got := junk(); got != "pass" {
 		t.Fatalf("the report shows the state after the fix: %s", got)
+	}
+}
+
+// fleet --fix --apply leaves a dirty working tree alone and records that
+// in the report; --allow-dirty writes anyway. fix --apply refuses outright.
+func TestFixApplyNeedsACleanTree(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{"go.mod": "module x\n", ".DS_Store": "x", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"}
+	dirty := testutil.GitFixture(t, files).Root
+	testutil.WriteFiles(t, dirty, map[string]string{"go.mod": "module x\n\ngo 1.26\n"})
+	work := t.TempDir()
+	out := filepath.Join(work, "report")
+	notes := func() string {
+		b, err := os.ReadFile(filepath.Join(out, "fleet.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rep struct {
+			Repos []struct {
+				Notes []string `json:"notes"`
+			} `json:"repos"`
+		}
+		if err := json.Unmarshal(b, &rep); err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(rep.Repos[0].Notes, "\n")
+	}
+	code, stdout, stderr := runCLI(t, work, "fleet", "--fix", "--apply", "--rule", "repo/no-tracked-junk", "--out", out, dirty)
+	if code != cli.ExitOK || !strings.Contains(stdout, "not applied: the working tree has uncommitted changes to tracked files") || !strings.Contains(stdout, "0 could not be checked") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if n := notes(); !strings.Contains(n, "--allow-dirty") {
+		t.Fatalf("the report records the refusal: %q", n)
+	}
+	code, stdout, stderr = runCLI(t, work, "fleet", "--fix", "--apply", "--allow-dirty", "--rule", "repo/no-tracked-junk", "--out", out, dirty)
+	if code != cli.ExitOK || !strings.Contains(stdout, "applied 2 change(s) in 1 repositories") || notes() != "" {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+
+	dirty = testutil.GitFixture(t, files).Root
+	testutil.WriteFiles(t, dirty, map[string]string{"go.mod": "module x\n\ngo 1.26\n"})
+	code, stdout, stderr = runCLI(t, dirty, "fix", "--apply", "repo/no-tracked-junk")
+	if code != cli.ExitConfig || !strings.Contains(stderr, "the working tree has uncommitted changes to tracked files; commit or stash them, or pass --allow-dirty") || strings.Contains(stdout, "applied") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	code, stdout, stderr = runCLI(t, dirty, "fix", "--apply", "--allow-dirty", "repo/no-tracked-junk")
+	if code != cli.ExitOK || !strings.Contains(stdout, "applied 2 change(s)") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
 	}
 }
 

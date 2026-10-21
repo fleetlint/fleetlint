@@ -8,6 +8,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 Engine level 7: a catalog that names artifact instances needs this version, and one written for level 7 may not use `combine:`. Catalogs for levels 1 to 6 still run, `combine: any` included.
 
 ### Added
+- `fleetlint fleet --deep-clones`: with `--deep`, also run the rules that execute repository code in cloned repositories (url entries, `--from`).
+- `--allow-dirty` on `fleetlint fix --apply` and `fleetlint fleet --fix --apply`: write into a working tree that has uncommitted changes.
 
 - **Published artifacts are instances with names.** An artifact definition's `instances:` expression names what tells one artifact of a kind from another (an image reference, a chart path, a registry reference), evaluated per publishing workflow with `item` bound to it. An implementation keyed by artifact runs once per published artifact with `artifact` bound (`{kind, name, workflows}`): its own `when` is asked per artifact, a finding names the artifact that fails (`ghcr.io/x/b: the image is not signed`), the evidence the ones that pass. `facts.artifacts` takes `{kind, name, workflows}` entries next to bare kinds, so a pinned artifact can name the workflows the rules read. `fleetlint facts` and the check JSON (format 5) and `fleet.json` (format 6) carry the name.
 - CEL `find(text, regex)` and `findall(text, regex)`: the first capture group of the first or of every match.
@@ -23,6 +25,10 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 - `combine:` is gone from the rule format at engine level 7: a catalog written for level 7 is refused with it, inline or from its library. A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
 
 ### Security
+- `fleet --deep` no longer executes code from cloned repositories: url entries and discovered repositories are checked without their deep rules unless `--deep-clones` is given, and the report notes it per repository (`notes` in `fleet.json`, a Notes column in the report).
+- `fix --apply` refuses a working tree with uncommitted changes to tracked files (exit 2) unless `--allow-dirty` is given (untracked files, such as the configuration `init` just wrote, are in no danger and do not count); `fleet --fix --apply` leaves such a repository unfixed, still checks it and records the refusal in its notes. A repository without git is never dirty.
+- Clone cache directories follow the URL's host and path (`<cache>/<host>/<owner>/<repo>`), each segment sanitised on its own, so two URLs can no longer share a clone (`a/b_c` and `a_b/c` did). Existing clones at the old flat path are not reused; the next run clones afresh, and the old directories can be deleted.
+- Repositories discovered with `--from` are cloned only from `https://`, `ssh://` or `git@` URLs on the forge's own host (for GitHub Enterprise, also the host of `GITHUB_API_URL`); a clone URL elsewhere, a local path among them, fails the run naming the repository. Discovered names were already sanitised like fleet-file names; a test now pins that.
 
 - The sigstore TUF root fetch runs under the run's context with a two-minute limit instead of unbounded.
 - An OCI signature referrer yields at most 8 bundle layers; more is an error, as more than 32 referrers already was.

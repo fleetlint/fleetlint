@@ -145,19 +145,28 @@ func addDiscovered(ctx context.Context, spec *Spec, from []string) error {
 	return nil
 }
 
-// sameHost reports whether a clone URL the forge returned points at the
-// forge itself (for GitHub Enterprise, the host of GITHUB_API_URL), so its
-// token never goes to a host the forge merely named.
-func sameHost(cloneURL string, src forge.Source) bool {
-	u, err := url.Parse(cloneURL)
-	if err != nil || u.Scheme != "https" {
+// onSource reports whether a clone URL the forge returned (https, ssh or
+// git@host:path) points at the forge itself (for GitHub Enterprise, the
+// host of GITHUB_API_URL): nothing is cloned from, and no token sent to, a
+// host the forge merely named.
+func onSource(cloneURL string, src forge.Source) bool {
+	if filepath.IsAbs(cloneURL) || !validCloneURL(cloneURL) {
 		return false
 	}
-	if strings.EqualFold(u.Hostname(), src.Host) {
-		return true
+	host, _ := splitCloneURL(cloneURL)
+	if host = hostname(host); host == "" || strings.EqualFold(host, hostname(src.Host)) {
+		return host != ""
 	}
 	api, err := url.Parse(os.Getenv("GITHUB_API_URL"))
-	return src.Kind == "github" && err == nil && api.Hostname() != "" && strings.EqualFold(u.Hostname(), api.Hostname())
+	return src.Kind == "github" && err == nil && api.Hostname() != "" && strings.EqualFold(host, api.Hostname())
+}
+
+// hostname is the host without its port.
+func hostname(host string) string {
+	if u, err := url.Parse("//" + host); err == nil {
+		return u.Hostname()
+	}
+	return host
 }
 
 // discover lists one forge source as fleet entries, without archived
@@ -177,8 +186,11 @@ func discover(ctx context.Context, source string) ([]Entry, error) {
 		if fr.Archived || fr.Fork {
 			continue
 		}
+		if !onSource(fr.CloneURL, src) {
+			return nil, fmt.Errorf("%s: repository %s: clone URL %q is not on %s", source, fr.Name, fr.CloneURL, src.Host)
+		}
 		e := Entry{Name: fr.Name, URL: fr.CloneURL, Visibility: string(facts.VisibilityPublic)}
-		if sameHost(fr.CloneURL, src) {
+		if strings.HasPrefix(fr.CloneURL, "https://") {
 			e.Token = client.Token(src)
 		}
 		if fr.Private {

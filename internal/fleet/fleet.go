@@ -243,6 +243,9 @@ func (e *Entry) normalize(base string) error {
 // Options control a fleet run.
 type Options struct {
 	Deep bool
+	// DeepClones lets Deep reach url entries too: that runs code from the
+	// cache, which the user may not control, so it is off unless asked for.
+	DeepClones bool
 	// Require lists catalogs every repository must extend; a repository that
 	// does not is reported as an error, not silently checked without them.
 	Require []string
@@ -283,7 +286,9 @@ type RepoReport struct {
 	Deprecations []string `json:"deprecations,omitempty"`
 	// Catalogs are the repository's catalogs in the order they applied.
 	Catalogs []config.CatalogInfo `json:"catalogs,omitempty"`
-	Err      string               `json:"error,omitempty"`
+	// Notes say what the run left out for this repository, and why.
+	Notes []string `json:"notes,omitempty"`
+	Err   string   `json:"error,omitempty"`
 	// Root is the local checkout the results refer to, for the SARIF file.
 	Root string `json:"-"`
 }
@@ -399,11 +404,12 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 		rr.Err = err.Error()
 		return rr
 	}
-	r, run, err := evaluate(ctx, e, path, r, eff, opts)
+	r, run, notes, err := evaluate(ctx, e, path, r, eff, opts)
 	if err != nil {
 		rr.Err = err.Error()
 		return rr
 	}
+	rr.Notes = notes
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Root = r.Root
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
@@ -415,15 +421,24 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
+// ErrDirty is what an Options.Fix returns when it refused to write into a
+// checkout with uncommitted changes; the repository is reported unfixed.
+var ErrDirty = errors.New("the working tree has uncommitted changes to tracked files; commit or stash them, or pass --allow-dirty")
+
 // evaluate checks the repository and, with opts.Fix, fixes it and checks
-// the fixed repository again.
-func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *config.Effective, opts Options) (*repo.Repo, *engine.Run, error) {
+// the fixed repository again. The notes say what it left out.
+func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *config.Effective, opts Options) (*repo.Repo, *engine.Run, []string, error) {
+	var notes []string
 	vis := facts.Visibility(e.Visibility)
 	if vis == "" && opts.Visibility != nil {
 		vis = opts.Visibility(ctx, r, facts.Discover(r, eff.ScopeFacts(config.Scope{})))
 	}
+	deep := opts.Deep && (e.URL == "" || opts.DeepClones)
+	if opts.Deep && !deep {
+		notes = append(notes, "rules that execute repository code were skipped: the repository is a clone (--deep-clones runs them)")
+	}
 	once := func(r *repo.Repo) (*engine.Run, error) {
-		run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: opts.Deep, Visibility: vis, Tier: e.Tier})
+		run, err := engine.EvaluateWith(ctx, r, eff, engine.Options{Deep: deep, Visibility: vis, Tier: e.Tier})
 		if err == nil && opts.MarkFixable != nil {
 			opts.MarkFixable(r, run)
 		}
@@ -431,18 +446,21 @@ func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *conf
 	}
 	run, err := once(r)
 	if err != nil || opts.Fix == nil || e.Path == "" {
-		return r, run, err
+		return r, run, notes, err
 	}
 	applied, err := opts.Fix(e.Name, r, run)
+	if errors.Is(err, ErrDirty) {
+		return r, run, append(notes, "fixes not applied: "+err.Error()), nil
+	}
 	if err != nil || applied == 0 {
-		return r, run, err
+		return r, run, notes, err
 	}
 	// The repository caches what it read; the fixed one is read afresh.
 	if r, err = repo.Open(ctx, path); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	run, err = once(r)
-	return r, run, err
+	return r, run, notes, err
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
@@ -468,10 +486,12 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 	if !validCloneURL(e.URL) || hasCredentials(e.URL) {
 		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path), without credentials", redact(e.URL))
 	}
-	cache = expandHome(cache)
-	dest := filepath.Join(cache, unsafeName.ReplaceAllString(strings.TrimPrefix(strings.TrimPrefix(e.URL, "https://"), "git@"), "_"))
+	dest, err := cacheDir(expandHome(cache), e.URL)
+	if err != nil {
+		return "", err
+	}
 	if _, err := os.Stat(filepath.Join(dest, ".git")); err != nil {
-		if err := os.MkdirAll(cache, 0o750); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 			return "", err
 		}
 		if err := gitRun(ctx, "", cloneAuth(e), "clone", "--quiet", "--depth=50", "--", e.URL, dest); err != nil {
@@ -485,6 +505,44 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		}
 	}
 	return dest, nil
+}
+
+// cacheDir is cache/<host>/<path segments> for a clone URL, each segment
+// sanitised on its own, so a/b_c and a_b/c never share a clone.
+func cacheDir(cache, raw string) (string, error) {
+	host, path := splitCloneURL(raw)
+	segments := append([]string{host}, strings.Split(strings.Trim(path, "/"), "/")...)
+	last := len(segments) - 1
+	segments[last] = strings.TrimSuffix(segments[last], ".git")
+	for i, seg := range segments {
+		seg = unsafeName.ReplaceAllString(seg, "_")
+		if seg == "" || seg == "." || seg == ".." {
+			what := "path segment"
+			if i == 0 {
+				what = "host"
+			}
+			return "", fmt.Errorf("clone URL %q has no usable %s for the cache directory", redact(raw), what)
+		}
+		segments[i] = seg
+	}
+	return filepath.Join(append([]string{cache}, segments...)...), nil
+}
+
+// splitCloneURL is the host and path of an https or ssh URL or of the
+// scp-like git@host:path; an absolute path is under the host "local".
+func splitCloneURL(raw string) (host, path string) {
+	if filepath.IsAbs(raw) {
+		return "local", filepath.ToSlash(raw)
+	}
+	if rest, ok := strings.CutPrefix(raw, "git@"); ok && !strings.Contains(rest, "://") {
+		host, path, _ = strings.Cut(rest, ":")
+		return host, path
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", ""
+	}
+	return u.Host, u.EscapedPath() // encoded, so %2F stays one segment
 }
 
 // cloneAuth is the git configuration that sends the entry's token with

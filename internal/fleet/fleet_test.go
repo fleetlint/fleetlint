@@ -3,6 +3,7 @@ package fleet_test
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -301,5 +302,149 @@ func TestFleetFileSettingsFillWhatRepositoriesLeaveOpen(t *testing.T) {
 		if _, err := fleet.LoadSpec(p); err == nil {
 			t.Errorf("%s must be refused", bad)
 		}
+	}
+}
+
+// gitIn runs git in a fixture with the fixture identity.
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = testutil.GitEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func resultOf(t *testing.T, rr fleet.RepoReport, id string) model.Result {
+	t.Helper()
+	for _, res := range rr.Results {
+		if res.Rule.ID == id {
+			return res
+		}
+	}
+	t.Fatalf("%s: no result for %s in %+v", rr.Name, id, rr)
+	return model.Result{}
+}
+
+// --deep runs a repository's own command rules in local repositories; a
+// clone runs them only with DeepClones, and says so in its notes.
+func TestDeepSkipsClonesUnlessAsked(t *testing.T) {
+	t.Parallel()
+	cfg := "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\nrules:\n  - id: repo/custom\n    kind: command\n    severity: warning\n    run: ./scripts/check\n    message: x\n    fix: {human: h}\n"
+	origin := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", "scripts/check": "#!/bin/sh\nexit 0\n", ".fleetlint.yaml": cfg})
+	if err := os.Chmod(filepath.Join(origin.Root, "scripts", "check"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, origin.Root, "add", "-A")
+	gitIn(t, origin.Root, "commit", "-q", "-m", "chore: executable", "--no-verify")
+	cases := []struct {
+		name  string
+		entry fleet.Entry
+		opts  fleet.Options
+		ran   bool
+	}{
+		{"local", fleet.Entry{Path: origin.Root, Name: "r"}, fleet.Options{Deep: true}, true},
+		{"clone", fleet.Entry{URL: origin.Root, Name: "r"}, fleet.Options{Deep: true}, false},
+		{"clone asked", fleet.Entry{URL: origin.Root, Name: "r"}, fleet.Options{Deep: true, DeepClones: true}, true},
+		{"clone without deep", fleet.Entry{URL: origin.Root, Name: "r"}, fleet.Options{}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			c.opts.Cache = t.TempDir()
+			rep, err := fleet.Run(context.Background(), &fleet.Spec{Version: 1, Repos: []fleet.Entry{c.entry}}, c.opts)
+			if err != nil || rep.Repos[0].Err != "" {
+				t.Fatalf("run: %v %+v", err, rep.Repos[0])
+			}
+			res := resultOf(t, rep.Repos[0], "repo/custom")
+			if ran := res.Status == model.StatusPass; ran != c.ran {
+				t.Fatalf("command rule ran: %v, want %v (%+v)", ran, c.ran, res)
+			}
+			notes := strings.Join(rep.Repos[0].Notes, "\n")
+			if skipped := c.opts.Deep && !c.ran; skipped != strings.Contains(notes, "--deep-clones") {
+				t.Fatalf("notes %q; a clone skipped under --deep says so, nothing else does", notes)
+			}
+		})
+	}
+}
+
+// With Apply, the fixer leaves a working tree with uncommitted changes
+// alone unless AllowDirty is set; the repository is still checked and the
+// report says why it was not fixed.
+func TestFixApplyRefusesDirtyTree(t *testing.T) {
+	t.Parallel()
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".DS_Store": "x", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"})
+	testutil.WriteFiles(t, r.Root, map[string]string{"go.mod": "module x\n\ngo 1.26\n", "wip.txt": "x"})
+	if fleet.DirtyCount(r) != 2 || fleet.ModifiedCount(r) != 1 {
+		t.Fatalf("dirty %d modified %d, want 2 and 1 (the untracked file does not count as modified)", fleet.DirtyCount(r), fleet.ModifiedCount(r))
+	}
+	spec := &fleet.Spec{Version: 1, Repos: []fleet.Entry{{Path: r.Root, Name: "r"}}}
+	run := func(allow bool) (fleet.RepoReport, string) {
+		var out strings.Builder
+		fixer := &fleet.Fixer{W: &out, Apply: true, AllowDirty: allow, Rules: []string{"repo/no-tracked-junk"}}
+		rep, err := fleet.Run(context.Background(), spec, fleet.Options{Fix: fixer.Fix})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := fixer.Summary(); err != nil {
+			t.Fatal(err)
+		}
+		if err := fleet.Write(filepath.Join(t.TempDir(), "out"), rep); err != nil {
+			t.Fatal(err)
+		}
+		return rep.Repos[0], out.String()
+	}
+	rr, out := run(false)
+	if rr.Err != "" || resultOf(t, rr, "repo/no-tracked-junk").Status != model.StatusFail {
+		t.Fatalf("the repository is still checked, unfixed: %+v", rr)
+	}
+	if len(rr.Notes) != 1 || !strings.Contains(rr.Notes[0], "uncommitted changes") || !strings.Contains(rr.Notes[0], "--allow-dirty") {
+		t.Fatalf("notes %q", rr.Notes)
+	}
+	if !strings.Contains(out, "untrack .DS_Store") || !strings.Contains(out, "not applied: the working tree has uncommitted changes") || !strings.Contains(out, "1 repositories with uncommitted changes were left alone") {
+		t.Fatalf("listing:\n%s", out)
+	}
+	if tracked, _ := r.Git("ls-files"); !strings.Contains(tracked, ".DS_Store") {
+		t.Fatal("nothing may be written into a dirty tree")
+	}
+	rr, out = run(true)
+	if len(rr.Notes) != 0 || resultOf(t, rr, "repo/no-tracked-junk").Status != model.StatusPass || !strings.Contains(out, "applied 2 change(s) in 1 repositories") {
+		t.Fatalf("with AllowDirty the fix is applied: %+v\n%s", rr, out)
+	}
+}
+
+// A repository without git has no uncommitted changes.
+func TestDirtyCountWithoutGit(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	testutil.WriteFiles(t, dir, map[string]string{"go.mod": "module x\n"})
+	r, err := repo.Open(context.Background(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := fleet.DirtyCount(r); n != 0 {
+		t.Fatalf("dirty count %d, want 0", n)
+	}
+}
+
+// The notes reach the Markdown report and fleet.json.
+func TestNotesAreRendered(t *testing.T) {
+	t.Parallel()
+	rep := &fleet.Report{GeneratedAt: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC), Repos: []fleet.RepoReport{{Name: "r", Source: "/r", Notes: []string{"fixes not applied: dirty"}}}}
+	out := t.TempDir()
+	if err := fleet.Write(out, rep); err != nil {
+		t.Fatal(err)
+	}
+	md, _ := os.ReadFile(filepath.Join(out, "fleet.md"))
+	js, _ := os.ReadFile(filepath.Join(out, "fleet.json"))
+	htmlOut, _ := os.ReadFile(filepath.Join(out, "fleet.html"))
+	if !strings.Contains(string(md), "| Notes |") || !strings.Contains(string(md), "fixes not applied: dirty") {
+		t.Errorf("markdown lacks the note:\n%s", md)
+	}
+	if !strings.Contains(string(js), `"notes": [`) || !strings.Contains(string(js), `"fixes not applied: dirty"`) {
+		t.Errorf("json lacks the note:\n%s", js)
+	}
+	if !strings.Contains(string(htmlOut), "fixes not applied: dirty") {
+		t.Error("html lacks the note")
 	}
 }

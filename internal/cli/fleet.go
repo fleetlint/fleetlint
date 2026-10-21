@@ -18,6 +18,7 @@ type fleetFlags struct {
 	specPath, out, cache               string
 	from, discoverRoots, exclude, rule []string
 	update, fail, fix, apply           bool
+	deepClones, allowDirty             bool
 }
 
 func fleetCmd(g *globals, code *int) *cobra.Command {
@@ -34,8 +35,10 @@ same token; without one, public repositories only. --discover walks a
 directory for git repositories (groups follow the directory layout) and
 lists project directories that are in no repository of their own.
 --fix plans the mechanical fixes (fleetlint fix) in every local repository;
-with --apply it writes them and the report shows the state after them.
-Nothing is committed.`,
+with --apply it writes them, into clean working trees only unless --allow-dirty
+is given, and the report shows the state after them. Nothing is committed.
+--deep runs rules that execute repository code in the local repositories;
+clones (url entries, --from) run that code only with --deep-clones.`,
 		RunE: func(cmd *cobra.Command, args []string) error { return runFleet(cmd, g, code, f, args) },
 	}
 	cmd.Flags().StringVar(&f.specPath, "repos", "", "fleet file (version, cache, include, defaults, groups, repos: [{path|url, name, team, group, tier, visibility}])")
@@ -49,21 +52,23 @@ Nothing is committed.`,
 	cmd.Flags().BoolVar(&f.fix, "fix", false, "plan the mechanical fixes in every local repository (dry run)")
 	cmd.Flags().BoolVar(&f.apply, "apply", false, "with --fix: write the changes; nothing is committed")
 	cmd.Flags().StringArrayVar(&f.rule, "rule", nil, "with --fix: only fix this rule (repeatable)")
-	cmd.Flags().BoolVar(&g.deep, "deep", false, "also run rules that execute repository code")
+	cmd.Flags().BoolVar(&f.allowDirty, "allow-dirty", false, "with --fix --apply: write into working trees that have uncommitted changes")
+	cmd.Flags().BoolVar(&g.deep, "deep", false, "also run rules that execute repository code (local repositories only)")
+	cmd.Flags().BoolVar(&f.deepClones, "deep-clones", false, "with --deep: also execute the code of cloned repositories (url entries, --from), which you may not control")
 	return cmd
 }
 
 func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []string) error {
-	spec, err := fleetSpec(cmd.Context(), f, args)
+	spec, err := fleetSpec(cmd.Context(), g, f, args)
 	if err != nil {
 		return &configError{err}
 	}
 	asked := &fleet.ForgeLookup{}
 	opts := fleet.Options{
-		Deep: g.deep, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
+		Deep: g.deep, DeepClones: f.deepClones, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
 		MarkFixable: fixplan.MarkFixable, Visibility: asked.Lookup,
 	}
-	fixer := &fleet.Fixer{W: cmd.OutOrStdout(), Apply: f.apply, Rules: f.rule}
+	fixer := &fleet.Fixer{W: cmd.OutOrStdout(), Apply: f.apply, AllowDirty: f.allowDirty, Rules: f.rule}
 	if f.fix {
 		opts.Fix = fixer.Fix
 	}
@@ -98,9 +103,15 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 
 // fleetSpec assembles the repositories from the fleet file, the arguments,
 // --discover and --from.
-func fleetSpec(ctx context.Context, f fleetFlags, args []string) (*fleet.Spec, error) {
+func fleetSpec(ctx context.Context, g *globals, f fleetFlags, args []string) (*fleet.Spec, error) {
 	if !f.fix && (f.apply || len(f.rule) > 0) {
 		return nil, errors.New("--apply and --rule need --fix")
+	}
+	if f.allowDirty && !f.apply {
+		return nil, errors.New("--allow-dirty needs --fix --apply")
+	}
+	if f.deepClones && !g.deep {
+		return nil, errors.New("--deep-clones needs --deep")
 	}
 	return fleet.Assemble(ctx, fleet.Sources{SpecPath: f.specPath, Paths: args, Discover: f.discoverRoots, Exclude: f.exclude, From: f.from})
 }

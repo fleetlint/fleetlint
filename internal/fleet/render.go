@@ -362,6 +362,9 @@ func (v *view) repoColumns() []column {
 	if any(func(r RepoReport) bool { return len(r.Disabled) > 0 }) {
 		cols = append(cols, column{"Disabled", checked(func(r RepoReport) tcell { return num(len(r.Disabled)) })})
 	}
+	if any(func(r RepoReport) bool { return len(r.Notes) > 0 }) {
+		cols = append(cols, column{"Notes", checked(notesCell)})
+	}
 	return append(
 		cols,
 		column{"Checked", checked(func(r RepoReport) tcell { return checkedCell(r.Git) })},
@@ -408,6 +411,13 @@ func visibilityCell(vis facts.Visibility) tcell {
 		c.Text, c.Class = "unknown", "warn"
 	}
 	return c
+}
+
+func notesCell(r RepoReport) tcell {
+	if len(r.Notes) == 0 {
+		return txt("")
+	}
+	return tcell{Text: strings.Join(r.Notes, "; "), Class: "warn"}
 }
 
 func checkedCell(g *GitState) tcell {

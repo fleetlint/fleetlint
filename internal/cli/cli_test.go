@@ -516,7 +516,8 @@ func TestInitPicksUpTheSetup(t *testing.T) {
 		}
 	}
 	// fix then writes for what was detected: no Makefile next to the justfile,
-	// hooks that call just, a workflow that uses the dev container.
+	// hooks that call just, a workflow that uses the dev container. The
+	// config init wrote is untracked, which is no reason to refuse.
 	if code, out, errOut := runCLI(t, dir, "fix", "--apply"); code != cli.ExitOK {
 		t.Fatalf("fix: exit %d\n%s\n%s", code, out, errOut)
 	}
