@@ -5,6 +5,16 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Catalog 0.3.1: the artifact kind `oci-artifact` (a policy bundle, a catalog, a WASM module pushed with `oras push`, `flux push artifact`, `cosign upload blob` or `regctl artifact put`, in the step or in a script it runs) with signing, SBOM and provenance implementations; the `image` kind sees GoReleaser `dockers_v2:` and `kos:`; `release/checksums` accepts a registry-bound release.
+- `TestOCIIntegration` loads a signed catalog version from ghcr.io through the public sigstore root with SCT checking (opt-in with `FLEETLINT_OCI_TEST_REF`; weekly in CI against the catalog version in go.mod).
+
+### Fixed
+
+- A binary installed with `go install` reported its version as `dev`; it now reports the module version from the build info.
+- The not-applicable evidence of an artifact capability names the artifact kind ("the artifact kind npm") instead of guessing an article.
+
 ## [0.6.1] - 2026-10-21
 
 ### Security
