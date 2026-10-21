@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "fleetlint",
+          "version": "1.2.3",
+          "informationUri": "https://github.com/fleetlint/fleetlint",
+          "rules": [
+            {
+              "id": "repo/junk",
+              "name": "title repo/junk",
+              "shortDescription": {
+                "text": "title repo/junk"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/repo--junk/",
+              "properties": {
+                "label": "preset",
+                "security-severity": "8.0",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "repo",
+                  "security"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "ci/sast",
+              "name": "title ci/sast",
+              "shortDescription": {
+                "text": "title ci/sast"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/ci--sast/",
+              "properties": {
+                "label": "preset",
+                "refs": [
+                  {
+                    "url": "https://example.org/ssdf",
+                    "kind": "standard",
+                    "section": "PW.7"
+                  }
+                ],
+                "security-severity": "8.0",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "ci",
+                  "security"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "docs/readme",
+              "name": "title docs/readme",
+              "shortDescription": {
+                "text": "title docs/readme"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/docs--readme/",
+              "properties": {
+                "label": "preset",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "docs"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "docs/license",
+              "name": "title docs/license",
+              "shortDescription": {
+                "text": "title docs/license"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/docs--license/",
+              "properties": {
+                "label": "preset",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "docs"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            },
+            {
+              "id": "repo/exc",
+              "name": "title repo/exc",
+              "shortDescription": {
+                "text": "title repo/exc"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/repo--exc/",
+              "properties": {
+                "label": "preset",
+                "security-severity": "8.0",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "repo",
+                  "security"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            },
+            {
+              "id": "repo/base",
+              "name": "title repo/base",
+              "shortDescription": {
+                "text": "title repo/base"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/repo--base/",
+              "properties": {
+                "label": "preset",
+                "security-severity": "5.0",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "repo",
+                  "security"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
+              "id": "repo/err",
+              "name": "title repo/err",
+              "shortDescription": {
+                "text": "title repo/err"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/repo--err/",
+              "properties": {
+                "label": "preset",
+                "security-severity": "8.0",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "repo",
+                  "security"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              }
+            }
+          ],
+          "properties": {
+            "catalog": "v0.4.0",
+            "catalogs": []
+          }
+        }
+      },
+      "automationDetails": {
+        "id": "fleetlint/demo"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "rule could not run: boom"
+              },
+              "associatedRule": {
+                "id": "repo/err"
+              }
+            }
+          ]
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "repo/junk",
+          "level": "error",
+          "message": {
+            "text": "junk tracked"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "a.log"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "9600975643da487b20c6dc45848c813d2d31816ea9d1fe4d5960e9378805e435"
+          }
+        },
+        {
+          "ruleId": "ci/sast",
+          "level": "error",
+          "message": {
+            "text": "no SAST workflow"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "3ebec5e20b0de34e4c8aa3c3a6cd75dc7274e473ff79390b7c0489b645862df1"
+          }
+        },
+        {
+          "ruleId": "docs/readme",
+          "level": "warning",
+          "message": {
+            "text": "no README"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/.fleetlint.yaml"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "a466a95e67e29d311773e47ce26db45aab9495b69ac4b281eb91b31db61791b4"
+          }
+        },
+        {
+          "ruleId": "docs/license",
+          "level": "note",
+          "message": {
+            "text": "no LICENSE"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lib/.fleetlint.yaml"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "c7b06362fa3baebbe788d0aaa19a1457d17ea131654bcbdf609c04f1c81544de"
+          }
+        },
+        {
+          "ruleId": "repo/exc",
+          "level": "error",
+          "message": {
+            "text": "vendored"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "vendor/x.go"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "f633748fc2c5fdfbabf5c1872de14d4704be22e0d9609653a69361fca7852d48"
+          },
+          "suppressions": [
+            {
+              "kind": "external",
+              "status": "accepted",
+              "justification": "vendored on purpose"
+            }
+          ]
+        },
+        {
+          "ruleId": "repo/base",
+          "level": "warning",
+          "message": {
+            "text": "old debt"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "README.md"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "20b32a9d02448678c636e0c7ec153096dd6d1b2bb25cb501a8798c9a1ba1a518"
+          },
+          "suppressions": [
+            {
+              "kind": "external",
+              "status": "accepted",
+              "justification": "baselined: grandfathered by the baseline file"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

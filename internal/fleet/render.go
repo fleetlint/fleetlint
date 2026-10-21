@@ -18,15 +18,16 @@ import (
 )
 
 // Write renders the report into dir: fleet.md, fleet.html, fleet.json, fleet.csv,
-// actions/<repo>.{md,html} and history/<timestamp>.json; index.html duplicates
-// fleet.html so the directory publishes as a static site. The latest earlier
-// run in history/ is the baseline for what changed.
+// actions/<repo>.{md,html}, sarif/<repo>.sarif for every checked repository
+// and history/<timestamp>.json; index.html duplicates fleet.html so the
+// directory publishes as a static site. The latest earlier run in history/
+// is the baseline for what changed.
 func Write(dir string, rep *Report) error {
 	prev, err := loadPrevious(dir, rep.GeneratedAt)
 	if err != nil {
 		return err
 	}
-	for _, sub := range []string{"", "actions", "history"} {
+	for _, sub := range []string{"", "actions", "history", "sarif"} {
 		if err := os.MkdirAll(filepath.Join(dir, sub), 0o750); err != nil {
 			return err
 		}
@@ -51,6 +52,9 @@ func Write(dir string, rep *Report) error {
 		md := renderActions(r)
 		files[filepath.Join("actions", r.Name+".md")] = md
 		files[filepath.Join("actions", r.Name+".html")] = actionsHTML(r.Name, md)
+		if r.Err == "" {
+			files[filepath.Join("sarif", strings.ReplaceAll(r.Name, "/", "--")+".sarif")] = renderSARIF(rep, r)
+		}
 	}
 	for name, content := range files {
 		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil { //nolint:gosec // report files
@@ -672,6 +676,14 @@ func renderActions(r RepoReport) []byte {
 	}
 	var b bytes.Buffer
 	_ = report.WriteActions(&b, r.Name, r.Results) // a bytes.Buffer write cannot fail
+	return b.Bytes()
+}
+
+// renderSARIF is the repository's results for code scanning, keyed by its fleet name.
+func renderSARIF(rep *Report, r RepoReport) []byte {
+	var b bytes.Buffer
+	opts := report.Options{Version: rep.Tool, Catalog: firstNonEmpty(r.Catalog, rep.Catalog), Root: r.Root, Name: r.Name}
+	_ = report.WriteSARIF(&b, r.Results, r.Catalogs, opts) // a bytes.Buffer write cannot fail
 	return b.Bytes()
 }
 
