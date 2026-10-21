@@ -5,6 +5,12 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+The release of 0.8.0 did not run: its verify job failed twice on a flaky test, so 0.8.0 is a source tag without binaries or packages. 0.8.1 is 0.8.0 with that test fixed; nothing in fleetlint itself changed.
+
+### Fixed
+
+- Tests turn off git's automatic gc and maintenance in their repositories' own config. The code under test runs git with its own environment, so a push into a test's bare remote started a background gc that kept writing after the test ended and broke the cleanup on CI runners.
+
 ## [0.8.0] - 2026-10-21
 
 Engine level 7: a catalog that names artifact instances or sets `locate:` needs this version, and one written for level 7 may not use `combine:` or `artifact_workflows()`. Catalogs for levels 1 to 6 still run, with both.
