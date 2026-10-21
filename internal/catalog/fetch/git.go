@@ -20,6 +20,8 @@ const (
 	TemplatesDir = "templates/"
 	// MaxFiles bounds the files read from one catalog source.
 	MaxFiles = 512
+	// MaxTreeLen bounds the bytes read from one catalog directory with its templates/.
+	MaxTreeLen = 16 << 20
 )
 
 var (
@@ -94,6 +96,7 @@ func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 		return nil, fmt.Errorf("no directory %q: %w", dir, err)
 	}
 	files := map[string][]byte{}
+	total := 0
 	for _, name := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
 		if name == "" || (strings.Contains(name, "/") && !strings.HasPrefix(name, TemplatesDir)) {
 			continue
@@ -103,6 +106,9 @@ func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 		}
 		if files[name], err = readBlob(ctx, tmp, treeObject(path.Join(dir, name))); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		if total += len(files[name]); total > MaxTreeLen {
+			return nil, fmt.Errorf("the files under %q are larger than %d bytes", dir, MaxTreeLen)
 		}
 	}
 	return files, nil

@@ -5,6 +5,13 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Security
+
+- The sigstore TUF root fetch runs under the run's context with a two-minute limit instead of unbounded.
+- An OCI signature referrer yields at most 8 bundle layers; more is an error, as more than 32 referrers already was.
+- A git catalog directory with its templates/ is refused above 16 MiB in total, not only per file.
+- Plain http to a registry is decided by the exact host `localhost`, `127.0.0.1` or `::1` (with or without a port), no longer by the `localhost` prefix that `localhost.evil.tld` matched.
+
 ## [0.7.0] - 2026-10-21
 
 Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.

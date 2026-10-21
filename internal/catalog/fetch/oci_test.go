@@ -255,6 +255,12 @@ func TestOCIArtifactLimits(t *testing.T) {
 	for i := range maxReferrers + 1 {
 		reg.push("", bundleArtifactType, []ocispec.Descriptor{reg.blob([]byte(fmt.Sprint(i)), bundleArtifactType, nil)}, &crowded)
 	}
+	stacked := reg.push("stacked", "", []ocispec.Descriptor{reg.blob([]byte("stacked"), "application/yaml", titled("catalog.yaml"))}, nil)
+	layers := make([]ocispec.Descriptor, 0, maxBundleLayers+1)
+	for i := range maxBundleLayers + 1 {
+		layers = append(layers, reg.blob([]byte(fmt.Sprint("bundle", i)), bundleArtifactType, nil))
+	}
+	reg.push("", bundleArtifactType, layers, &stacked)
 	name := serve(t, reg)
 	fetch := OCIFetch(context.Background())
 	for tag, wantErr := range map[string]string{
@@ -264,9 +270,22 @@ func TestOCIArtifactLimits(t *testing.T) {
 		"broken":       "manifest",
 		"bad-referrer": "referrers of",
 		"crowded":      "more than 32 referrers",
+		"stacked":      "more than 8 bundle layers",
 	} {
 		if _, err := fetch(OCIRef{Repository: name, Tag: tag}); err == nil || !strings.Contains(err.Error(), wantErr) {
 			t.Errorf("%s: want %q, got %v", tag, wantErr, err)
+		}
+	}
+}
+
+func TestLoopbackHost(t *testing.T) {
+	t.Parallel()
+	for host, want := range map[string]bool{
+		"localhost": true, "localhost:5000": true, "127.0.0.1": true, "127.0.0.1:5000": true, "[::1]": true, "[::1]:5000": true,
+		"localhost.evil.tld": false, "localhost.evil.tld:5000": false, "localhost2": false, "127.0.0.10": false, "127.0.0.1.evil.tld": false, "ghcr.io": false, "": false,
+	} {
+		if got := isLoopbackHost(host); got != want {
+			t.Errorf("isLoopbackHost(%q) = %v", host, got)
 		}
 	}
 }
