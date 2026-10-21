@@ -10,7 +10,6 @@ import (
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
-	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
 )
 
@@ -44,8 +43,10 @@ func runFix(cmd *cobra.Command, g *globals, code *int, rules []string, apply, al
 	if err != nil {
 		return &configError{err}
 	}
-	if apply && len(changes) > 0 && !allowDirty && fleet.ModifiedCount(r) > 0 {
-		return &configError{fleet.ErrDirty}
+	if apply && len(changes) > 0 && !allowDirty {
+		if err := fix.CheckClean(r); err != nil {
+			return &configError{err}
+		}
 	}
 	out := cmd.OutOrStdout()
 	if err := printPlan(out, changes, manual, apply); err != nil {

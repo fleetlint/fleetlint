@@ -3,12 +3,12 @@ package fleet_test
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -305,16 +305,6 @@ func TestFleetFileSettingsFillWhatRepositoriesLeaveOpen(t *testing.T) {
 	}
 }
 
-// gitIn runs git in a fixture with the fixture identity.
-func gitIn(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = testutil.GitEnv()
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, out)
-	}
-}
-
 func resultOf(t *testing.T, rr fleet.RepoReport, id string) model.Result {
 	t.Helper()
 	for _, res := range rr.Results {
@@ -335,8 +325,8 @@ func TestDeepSkipsClonesUnlessAsked(t *testing.T) {
 	if err := os.Chmod(filepath.Join(origin.Root, "scripts", "check"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	gitIn(t, origin.Root, "add", "-A")
-	gitIn(t, origin.Root, "commit", "-q", "-m", "chore: executable", "--no-verify")
+	testutil.Git(t, origin.Root, "add", "-A")
+	testutil.Git(t, origin.Root, "commit", "-q", "-m", "chore: executable", "--no-verify")
 	cases := []struct {
 		name  string
 		entry fleet.Entry
@@ -375,9 +365,6 @@ func TestFixApplyRefusesDirtyTree(t *testing.T) {
 	t.Parallel()
 	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".DS_Store": "x", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"})
 	testutil.WriteFiles(t, r.Root, map[string]string{"go.mod": "module x\n\ngo 1.26\n", "wip.txt": "x"})
-	if fleet.DirtyCount(r) != 2 || fleet.ModifiedCount(r) != 1 {
-		t.Fatalf("dirty %d modified %d, want 2 and 1 (the untracked file does not count as modified)", fleet.DirtyCount(r), fleet.ModifiedCount(r))
-	}
 	spec := &fleet.Spec{Version: 1, Repos: []fleet.Entry{{Path: r.Root, Name: "r"}}}
 	run := func(allow bool) (fleet.RepoReport, string) {
 		var out strings.Builder
@@ -401,7 +388,7 @@ func TestFixApplyRefusesDirtyTree(t *testing.T) {
 	if len(rr.Notes) != 1 || !strings.Contains(rr.Notes[0], "uncommitted changes") || !strings.Contains(rr.Notes[0], "--allow-dirty") {
 		t.Fatalf("notes %q", rr.Notes)
 	}
-	if !strings.Contains(out, "untrack .DS_Store") || !strings.Contains(out, "not applied: the working tree has uncommitted changes") || !strings.Contains(out, "1 repositories with uncommitted changes were left alone") {
+	if !strings.Contains(out, "untrack .DS_Store") || !strings.Contains(out, "not applied: the working tree has uncommitted changes") || !strings.Contains(out, "1 repositories with uncommitted changes (or a state git could not read) were left alone") {
 		t.Fatalf("listing:\n%s", out)
 	}
 	if tracked, _ := r.Git("ls-files"); !strings.Contains(tracked, ".DS_Store") {
@@ -413,17 +400,30 @@ func TestFixApplyRefusesDirtyTree(t *testing.T) {
 	}
 }
 
-// A repository without git has no uncommitted changes.
-func TestDirtyCountWithoutGit(t *testing.T) {
+// When git cannot tell whether the tree is clean, the fixer writes nothing
+// and says why; the repository is still checked.
+func TestFixApplyRefusesUnreadableTree(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	testutil.WriteFiles(t, dir, map[string]string{"go.mod": "module x\n"})
-	r, err := repo.Open(context.Background(), dir)
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", ".DS_Store": "x", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"})
+	var out strings.Builder
+	fixer := &fleet.Fixer{W: &out, Apply: true, Rules: []string{"repo/no-tracked-junk"}}
+	// The check has read the index; corrupt it before the fixer asks git.
+	corrupt := func(*repo.Repo, *engine.Run) {
+		testutil.WriteFiles(t, r.Root, map[string]string{".git/index": "corrupt"})
+	}
+	rep, err := fleet.Run(context.Background(), &fleet.Spec{Version: 1, Repos: []fleet.Entry{{Path: r.Root, Name: "r"}}}, fleet.Options{Fix: fixer.Fix, MarkFixable: corrupt})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := fleet.DirtyCount(r); n != 0 {
-		t.Fatalf("dirty count %d, want 0", n)
+	rr := rep.Repos[0]
+	if rr.Err != "" || len(rr.Notes) != 1 || !strings.Contains(rr.Notes[0], "fixes not applied: cannot tell whether the working tree is clean") {
+		t.Fatalf("report %+v", rr)
+	}
+	if !strings.Contains(out.String(), "not applied: cannot tell") {
+		t.Fatalf("listing:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(r.Root, ".gitignore")); err == nil || !strings.Contains(out.String(), ".gitignore") {
+		t.Fatal("nothing may be written when git cannot tell")
 	}
 }
 

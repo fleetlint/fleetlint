@@ -421,9 +421,10 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
-// ErrDirty is what an Options.Fix returns when it refused to write into a
-// checkout with uncommitted changes; the repository is reported unfixed.
-var ErrDirty = errors.New("the working tree has uncommitted changes to tracked files; commit or stash them, or pass --allow-dirty")
+// ErrNotApplied is what an Options.Fix wraps when it refused to write, such
+// as into a checkout with uncommitted changes; the repository is reported
+// unfixed, with the reason.
+var ErrNotApplied = errors.New("fixes not applied")
 
 // evaluate checks the repository and, with opts.Fix, fixes it and checks
 // the fixed repository again. The notes say what it left out.
@@ -449,8 +450,8 @@ func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *conf
 		return r, run, notes, err
 	}
 	applied, err := opts.Fix(e.Name, r, run)
-	if errors.Is(err, ErrDirty) {
-		return r, run, append(notes, "fixes not applied: "+err.Error()), nil
+	if errors.Is(err, ErrNotApplied) {
+		return r, run, append(notes, err.Error()), nil
 	}
 	if err != nil || applied == 0 {
 		return r, run, notes, err

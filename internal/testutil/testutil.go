@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/fleetlint/fleetlint/internal/repo"
@@ -31,25 +32,32 @@ func GitFixture(t *testing.T, files map[string]string, gitConfig ...string) *rep
 	t.Helper()
 	dir := t.TempDir()
 	WriteFiles(t, dir, files)
-	run := func(args ...string) {
-		t.Helper()
-		cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test fixture; args are literals
-		cmd.Env = GitEnv()
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	run("init", "-q", "-b", "main")
+	Git(t, dir, "init", "-q", "-b", "main")
 	for i := 0; i+1 < len(gitConfig); i += 2 {
-		run("config", gitConfig[i], gitConfig[i+1])
+		Git(t, dir, "config", gitConfig[i], gitConfig[i+1])
 	}
-	run("add", "-A")
-	run("commit", "-q", "-m", "chore: fixture", "--no-verify")
+	Git(t, dir, "add", "-A")
+	Git(t, dir, "commit", "-q", "-m", "chore: fixture", "--no-verify")
 	r, err := repo.Open(context.Background(), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return r
+}
+
+// Git runs git in dir with GitEnv and returns its trimmed stdout; an error
+// fails the test.
+func Git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...) //nolint:gosec // test helper; the test names the arguments
+	cmd.Env = GitEnv()
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, stderr.String())
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // GitEnv is the environment for fixture git commands: a fixed identity, no

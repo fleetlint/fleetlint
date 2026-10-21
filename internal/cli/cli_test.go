@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -220,7 +219,7 @@ func TestBaselineCommandRatchets(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "fresh.log"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gitAdd(t, dir, "fresh.log")
+	testutil.Git(t, dir, "add", "fresh.log")
 	code, out, _ = runCLI(t, dir, "check", "--fail-on", "error")
 	if code != cli.ExitFindings || !strings.Contains(out, "fresh.log") {
 		t.Fatalf("new finding must fail: %d\n%s", code, out)
@@ -228,14 +227,6 @@ func TestBaselineCommandRatchets(t *testing.T) {
 	_, out, _ = runCLI(t, dir, "baseline")
 	if !strings.Contains(out, "0 added") {
 		t.Fatalf("re-baselining must not add the new finding: %s", out)
-	}
-}
-
-func gitAdd(t *testing.T, dir, file string) {
-	t.Helper()
-	cmd := exec.CommandContext(context.Background(), "git", "-C", dir, "add", file)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("git add: %v %s", err, out)
 	}
 }
 
@@ -279,9 +270,7 @@ func TestBaselineDoesNotRegrowAtZero(t *testing.T) {
 	}
 	// re-introduce the junk: a baseline at zero entries must refuse it without --reset
 	testutil.WriteFiles(t, dir, map[string]string{"again.log": "x"})
-	if _, err := repoGit(dir, "add", "again.log"); err != nil {
-		t.Fatal(err)
-	}
+	testutil.Git(t, dir, "add", "again.log")
 	_, out, _ := runCLI(t, dir, "baseline")
 	if strings.Contains(out, "1 added") {
 		t.Fatalf("an empty baseline must not grow again:\n%s", out)
@@ -290,12 +279,6 @@ func TestBaselineDoesNotRegrowAtZero(t *testing.T) {
 	if code != cli.ExitFindings {
 		t.Fatal("the new finding must fail the check")
 	}
-}
-
-func repoGit(dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", dir}, args...)...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
 }
 
 func TestRequireFlag(t *testing.T) {

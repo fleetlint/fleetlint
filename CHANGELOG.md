@@ -34,6 +34,7 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 - An OCI signature referrer yields at most 8 bundle layers; more is an error, as more than 32 referrers already was.
 - A git catalog directory with its templates/ is refused above 16 MiB in total, not only per file.
 - Plain http to a registry is decided by the exact host `localhost`, `127.0.0.1` or `::1` (with or without a port), no longer by the `localhost` prefix that `localhost.evil.tld` matched.
+- The uncommitted-changes guard of `fix --apply` and `fleet --fix --apply` fails closed: when `git status` fails (a corrupt or unreadable index), nothing is written and the message names the git error (`--allow-dirty` writes anyway).
 
 ## [0.7.0] - 2026-10-21
 
