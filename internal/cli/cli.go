@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -31,8 +32,18 @@ const (
 	ExitInternal = 3
 )
 
-// Version is set by the build (ldflags); "dev" otherwise.
+// Version is set by the build (ldflags). A `go install` binary has no ldflags,
+// so it falls back to the module version Go recorded; "dev" for a source checkout.
 var Version = "dev"
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+	if bi, ok := debug.ReadBuildInfo(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		Version = bi.Main.Version
+	}
+}
 
 type globals struct {
 	path    string

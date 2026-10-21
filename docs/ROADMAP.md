@@ -4,7 +4,7 @@ This file tracks what is next and what is blocked. User documentation is at [fle
 
 ## Verified on a real runner
 
-v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: six archives, `checksums.txt`, a keyless cosign bundle and one SPDX SBOM per archive, plus a build-provenance attestation that `gh attestation verify` accepts. `templates/check/` and `templates/go/release.yml` in the catalog repository match what ran. Still unverified: the other stacks' `release.yml` templates (same shape, different toolchain step), Pages deployment of `deploy/demo/pages.yml`, and every Gitea branch (key-based cosign, the Gitea release API) since no Gitea mirror is planned.
+v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: six archives, `checksums.txt`, a keyless cosign bundle and one SPDX SBOM per archive, plus a build-provenance attestation that `gh attestation verify` accepts. `templates/check/` and `templates/go/release.yml` in the catalog repository match what ran. Still unverified: the other stacks' `release.yml` templates (same shape, different toolchain step) and every Gitea branch (key-based cosign, the Gitea release API) since no Gitea mirror is planned.
 
 ## Next, in order
 
@@ -17,8 +17,7 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 | 0.5 | fleet mode: matrix report, history, per-repo agent tasks; `init --pr`; forge discovery with `--from` | done (`--from` is tested against a local server; against the real GitHub API only as far as listing a public owner and starting the clones, and not yet against Gitea or a private organization) |
 | 0.6 | `command` rules, baseline ratchet, nested configs | done |
 | 0.6.1 | 20 further rules towards the 1.0 catalog (`docs/rules-1.0.md`): repo, lint, quality, docs, deps, ci, release (producer detection), public families; accessors `jobs`, `triggers`, `tags`, `commits`, `grep`, `filesize`, `globmatch`; CEL string/list extensions | done |
-| 0.5.1 | public demo at demo.fleetlint.org: `fleetlint fleet` over the four `fleetlint/*` repositories published to Pages nightly (`deploy/demo/`); the report directory already contains `index.html` and HTML action lists | files ready, Pages deployment open; `deploy/demo/` is no longer in the tree and the docs still link the demo: wire it or drop it |
-| 0.6 (next) | catalogs in import order with free labels, `fleetlint hierarchy`, artifacts as catalog data and the release capabilities keyed by artifact (engine level 5), fleet file includes and nested groups | implemented on the `hierarchy-and-artifacts` branch, release open. The version labels of the rows above are milestones, not tags: OCI catalogs shipped in 0.4.0, the team layer in 0.4 too |
+| 0.6.0 / 0.6.1 | catalogs in import order with free labels, `fleetlint hierarchy`, artifacts as catalog data and the release capabilities keyed by artifact (engine level 5), fleet file includes and nested groups | done (2026-10-21, catalog v0.3.0). The version labels of the rows above are milestones, not tags: OCI catalogs shipped in 0.4.0, the team layer in 0.4 too |
 | 0.7 | organization layer: locked rules, severity floors, `exceptions: false`, `--require` | done |
 | 0.7.1 | git catalog sources (`git+<url>//<path>@<tag or commit>`) | done |
 | 0.7.2 | OCI catalog sources with signature verification, private templates shipped with catalogs | needs registry access to test |
@@ -27,7 +26,7 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 
 ## Also outstanding
 
-- Once the catalog repository has a tag and `publish.yml` has signed `ghcr.io/fleetlint/catalog:<tag>`: an opt-in integration test of the `oci://` source against that real artifact (public sigstore root, SCT check, the JSON bundle path) — [fleetlint#1](https://github.com/fleetlint/fleetlint/issues/1).
+- An opt-in integration test of the `oci://` source against the real signed `ghcr.io/fleetlint/catalog:v0.3.0` (public sigstore root, SCT check, the JSON bundle path) — [fleetlint#1](https://github.com/fleetlint/fleetlint/issues/1).
 - The per-stack release templates (`templates/*/release.yml` in the catalog repository) other than Go have not run on a runner; the Rust one assumes a `.goreleaser.yaml` with the Rust builder. Folding the four `make dist` variants into one template with a per-stack toolchain step is open.
 - Baseline practices without a rule yet: detekt rule strictness for Kotlin, duplication and mutation gates, API-compatibility checks for libraries, signed tags, documented forks.
 
