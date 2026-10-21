@@ -27,7 +27,6 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 ## Also outstanding
 
 - The per-stack release templates (`templates/*/release.yml` in the catalog repository) other than Go have not run on a runner; the Rust one assumes a `.goreleaser.yaml` with the Rust builder. Folding the four `make dist` variants into one template with a per-stack toolchain step is open.
-- Statement coverage is 71% overall; the gaps are `internal/catalog/fetch` (6%), `internal/repo` (53%), `internal/celenv` (59%) and `internal/rootfs` (63%).
 
 - Sources for every rule. `refs` entries are typed (`{url, kind, section}`, engine level 6) and `TestEveryRuleNamesItsSource` keeps the list of rules citing only fleetlint.org from growing; what is left is the content: name the spec, guidance, style guide, standard or linter check behind each rule still on that list, strongest source first, and mark the rest `convention`. Slogans and blog posts are not a source on their own.
 
