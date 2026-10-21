@@ -156,7 +156,9 @@ func TestURLEntryIsClonedIntoCache(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected one cached clone, got %d", len(entries))
 	}
-	// second run with update reuses the clone
+	// second run with update reuses the clone; its pull must start no
+	// background git in the test's directory
+	testutil.NoBackgroundGit(t, rep.Repos[0].Root)
 	rep2, err := fleet.Run(context.Background(), spec, fleet.Options{Cache: cache, Update: true})
 	if err != nil || rep2.Repos[0].Err != "" {
 		t.Fatalf("update run: %v %+v", err, rep2.Repos[0])
