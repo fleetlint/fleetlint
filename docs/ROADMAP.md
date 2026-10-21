@@ -20,13 +20,12 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 | 0.6.0 / 0.6.1 | catalogs in import order with free labels, `fleetlint hierarchy`, artifacts as catalog data and the release capabilities keyed by artifact (engine level 5), fleet file includes and nested groups | done (2026-10-21, catalog v0.3.0). The version labels of the rows above are milestones, not tags: OCI catalogs shipped in 0.4.0, the team layer in 0.4 too |
 | 0.7 | organization layer: locked rules, severity floors, `exceptions: false`, `--require` | done |
 | 0.7.1 | git catalog sources (`git+<url>//<path>@<tag or commit>`) | done |
-| 0.7.2 | OCI catalog sources with signature verification, private templates shipped with catalogs | needs registry access to test |
+| 0.7.2 | OCI catalog sources with signature verification, private templates shipped with catalogs | done (verified weekly against the signed `ghcr.io/fleetlint/catalog` tag from go.mod, `TestOCIIntegration`) |
 | 0.8 | team layer: sources file with aliases, layered resolution, per-layer attribution in reports | done (`signers` in the sources file waits for OCI sources, 0.7.2; the fleet report has a team summary with expiring exceptions and a CSV export) |
 | 1.0 | formats frozen, compatibility promise | |
 
 ## Also outstanding
 
-- An opt-in integration test of the `oci://` source against the real signed `ghcr.io/fleetlint/catalog:v0.3.0` (public sigstore root, SCT check, the JSON bundle path) — [fleetlint#1](https://github.com/fleetlint/fleetlint/issues/1).
 - The per-stack release templates (`templates/*/release.yml` in the catalog repository) other than Go have not run on a runner; the Rust one assumes a `.goreleaser.yaml` with the Rust builder. Folding the four `make dist` variants into one template with a per-stack toolchain step is open.
 - Baseline practices without a rule yet: detekt rule strictness for Kotlin, duplication and mutation gates, API-compatibility checks for libraries, signed tags, documented forks.
 
