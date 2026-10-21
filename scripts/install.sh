@@ -1,10 +1,9 @@
 #!/bin/sh
-# Installs a fleetlint release: curl -fsSL https://fleetlint.org/install.sh | sh
-#   sh install.sh [version] [directory]   version: v0.2.0 or latest (default),
+# Installs a fleetlint release: curl --proto '=https' --tlsv1.2 -fsSL https://fleetlint.org/install.sh | sh
+#   sh install.sh [version] [directory]   version: v0.2.0, 0.2.0 or latest (default),
 #                                          directory: default ~/.local/bin
-# The archive is checked against checksums.txt; when cosign is installed, the
-# signature of checksums.txt is verified first. FLEETLINT_VERIFY=cosign makes
-# the signature check required.
+# Verification: cosign checks the signature of checksums.txt, else an authenticated gh
+# the build provenance, else only the checksum is checked; FLEETLINT_VERIFY=cosign requires cosign.
 set -eu
 
 repo=https://github.com/fleetlint/fleetlint
@@ -28,11 +27,11 @@ fi
 case $version in
   v[0-9]*.[0-9]*.[0-9]*) ;;
   [0-9]*.[0-9]*.[0-9]*) ;;
-  *) fail "version must be vX.Y.Z or latest (got '$version')" ;;
+  *) fail "version must be vX.Y.Z, X.Y.Z or latest (got '$version')" ;;
 esac
 v=${version#v}
 case $v in
-  *[!0-9.]*) fail "version must be vX.Y.Z or latest (got '$version')" ;;
+  *[!0-9.]*) fail "version must be vX.Y.Z, X.Y.Z or latest (got '$version')" ;;
 esac
 
 case $(uname -s) in
@@ -64,13 +63,17 @@ if command -v cosign >/dev/null 2>&1; then
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     checksums.txt >/dev/null 2>&1 || fail "the signature of checksums.txt does not verify"
   echo "signature of checksums.txt verified"
-elif command -v gh >/dev/null 2>&1; then
+elif command -v gh >/dev/null 2>&1 && { [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ] || gh auth status >/dev/null 2>&1; }; then
   # Without cosign, gh checks the build provenance GitHub attested for the archive.
   gh attestation verify "$archive" --repo fleetlint/fleetlint >/dev/null 2>&1 || fail "the build provenance of $archive does not verify"
   echo "build provenance of $archive verified"
+else
+  echo "neither cosign nor an authenticated gh: only the checksum is checked"
 fi
 
-grep -F -- " $archive" checksums.txt | grep -F -- "$archive" >sum || fail "$archive is not in checksums.txt"
+# The exact file name: checksums.txt also lists $archive.spdx.json.
+awk -v a="$archive" '$2 == a' checksums.txt >sum
+[ -s sum ] || fail "$archive is not in checksums.txt"
 [ "$(wc -l <sum)" -eq 1 ] || fail "$archive is listed more than once in checksums.txt"
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum -c sum >/dev/null || fail "checksum mismatch for $archive"

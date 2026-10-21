@@ -15,13 +15,13 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 - CEL `find(text, regex)` and `findall(text, regex)`: the first capture group of the first or of every match.
 - **`locate` on a rule** says where a finding that names no path belongs: a scope-relative path or a CEL expression yielding one. The engine puts it on such findings, so the table, the agent output and SARIF point at the file that is missing or wrong instead of the configuration file. A catalog test keeps the list of rules without it from growing (`internal/catalog/testdata/rules_without_locate.txt`). A finding that gains a path changes its SARIF fingerprint once.
 - SARIF: one run per scope, keyed `fleetlint/<repository>` for the root and `fleetlint/<repository>/<scope>` for a scope, so a monorepo's scopes keep their own alert sets in code scanning; an exception's expiry is on its suppression (`properties.until`, and in the justification).
-- `scripts/install.sh` verifies the build provenance with `gh attestation verify` when cosign is absent and gh is present.
+- `scripts/install.sh` verifies the build provenance with `gh attestation verify` when cosign is absent and gh is present and authenticated (`gh auth status` succeeds, or `GH_TOKEN`/`GITHUB_TOKEN` is set); with neither it says that only the checksum is checked.
 - A `catalogs:` entry in the sources file may be `{ref, signers, min_version}` instead of the bare reference: `signers` verify that `oci://` catalog alone, in place of the top-level signers; `min_version` is a semantic-version floor on the catalog's `metadata.version`, so a tag moved back to an older release fails the run naming the alias, the loaded version and the floor. `fleetlint schema sources` describes both forms.
 
 ### Changed
 
 - The deprecated `action/` directory is gone; the action is `fleetlint/action`.
-- `scripts/install.sh` speaks https with TLS 1.2 or later only, accepts only `vX.Y.Z` or `latest` as the version, and matches the checksum line literally.
+- `scripts/install.sh` speaks https with TLS 1.2 or later only, accepts only `vX.Y.Z`, `X.Y.Z` or `latest` as the version, and takes the checksum line whose file name is exactly the archive's (`checksums.txt` also lists the archive's `.spdx.json`); the GitLab CI job fetches it with `--tlsv1.2` too.
 - `combine:` is gone from the rule format at engine level 7: a catalog written for level 7 is refused with it, inline or from its library. A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
 
 ### Security
