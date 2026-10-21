@@ -21,6 +21,13 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 - `scripts/install.sh` speaks https with TLS 1.2 or later only, accepts only `vX.Y.Z` or `latest` as the version, and matches the checksum line literally.
 - `combine:` is gone from the rule format at engine level 7: a catalog written for level 7 is refused with it, inline or from its library. A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
 
+### Security
+
+- The sigstore TUF root fetch runs under the run's context with a two-minute limit instead of unbounded.
+- An OCI signature referrer yields at most 8 bundle layers; more is an error, as more than 32 referrers already was.
+- A git catalog directory with its templates/ is refused above 16 MiB in total, not only per file.
+- Plain http to a registry is decided by the exact host `localhost`, `127.0.0.1` or `::1` (with or without a port), no longer by the `localhost` prefix that `localhost.evil.tld` matched.
+
 ## [0.7.0] - 2026-10-21
 
 Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.

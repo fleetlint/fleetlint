@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,8 @@ const (
 	bundleArtifactTypeV1  = "application/vnd.dev.sigstore.bundle.v0.4+json"
 	// maxReferrers bounds the referrer manifests read for one artifact.
 	maxReferrers = 32
+	// maxBundleLayers bounds the bundle blobs read from one referrer.
+	maxBundleLayers = 8
 )
 
 // OCIRef is a parsed `oci://<registry>/<repository>[:<tag>][@sha256:<digest>]`
@@ -68,14 +71,24 @@ func OCIFetch(ctx context.Context) func(OCIRef) (*OCIArtifact, error) {
 		if err != nil {
 			return nil, err
 		}
-		host := repo.Reference.Registry
-		repo.PlainHTTP = strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1")
+		repo.PlainHTTP = isLoopbackHost(repo.Reference.Registry)
 		store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 		if err == nil {
 			repo.Client = &auth.Client{Client: retry.DefaultClient, Cache: auth.NewCache(), Credential: credentials.Credential(store)}
 		}
 		return Artifact(ctx, repo, o)
 	}
+}
+
+// isLoopbackHost reports a registry on this machine by exact host, with or
+// without a port: localhost.evil.tld is not local.
+func isLoopbackHost(registry string) bool {
+	host := registry
+	if h, _, err := net.SplitHostPort(registry); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 // Artifact reads the manifest, its titled layers and the signature
@@ -177,6 +190,9 @@ func bundleLayers(ctx context.Context, repo *remote.Repository, ref ocispec.Desc
 	for _, layer := range m.Layers {
 		if layer.Size > ociMaxFile || !isBundleType(layer.MediaType) {
 			continue
+		}
+		if len(out) >= maxBundleLayers {
+			return nil, fmt.Errorf("more than %d bundle layers", maxBundleLayers)
 		}
 		b, err := content.FetchAll(ctx, repo.Blobs(), layer)
 		if err != nil {

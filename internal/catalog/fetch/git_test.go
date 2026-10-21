@@ -167,6 +167,20 @@ func TestTooManyFiles(t *testing.T) {
 	})
 }
 
+// Each file stays under the per-file limit; together they pass the tree limit.
+func TestTreeTooLarge(t *testing.T) {
+	t.Parallel()
+	files := map[string]string{"catalog.yaml": "apiVersion: fleetlint.org/v1\n"}
+	for i := range MaxTreeLen/MaxCatalogLen + 1 {
+		files[fmt.Sprintf("templates/big%d.bin", i)] = strings.Repeat(string(rune('a'+i)), MaxCatalogLen)
+	}
+	dir, _ := gitRepo(t, files)
+	want := fmt.Sprintf("larger than %d bytes", MaxTreeLen)
+	if _, err := GitTreeFetch(context.Background())(dir, "v1.0.0", ""); err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("want %q, got %v", want, err)
+	}
+}
+
 func keys(files map[string][]byte) string {
 	names := make([]string, 0, len(files))
 	for n := range files {
