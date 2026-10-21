@@ -151,6 +151,34 @@ func CheckList(expr string) error {
 	return err
 }
 
+// CheckString type-checks an expression that must yield a string, without
+// a repository: for a rule's `locate` at load time.
+func CheckString(expr string) error {
+	c, err := checker()
+	if err != nil {
+		return err
+	}
+	_, err = c.check(cel.StringType.String()+"\x00"+expr, expr, cel.StringType)
+	return err
+}
+
+// EvalString compiles and evaluates an expression that yields a string.
+func (e *Env) EvalString(expr string, params map[string]any) (string, error) {
+	prg, err := e.compile(expr, cel.StringType)
+	if err != nil {
+		return "", err
+	}
+	out, _, err := prg.ContextEval(e.ctx, e.activation(params, nil))
+	if err != nil {
+		return "", fmt.Errorf("evaluate: %w", err)
+	}
+	s, ok := out.Value().(string)
+	if !ok {
+		return "", fmt.Errorf("evaluate: result is %T, want string", out.Value())
+	}
+	return s, nil
+}
+
 // Compile type-checks a predicate and reports errors with CEL's positions.
 // The result must be a bool.
 func (e *Env) Compile(expr string) (cel.Program, error) {

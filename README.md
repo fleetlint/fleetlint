@@ -14,7 +14,7 @@ scoop bucket add fleetlint https://github.com/fleetlint/scoop-bucket
 scoop install fleetlint/fleetlint                        # Windows
 nix profile install github:fleetlint/nur#fleetlint      # Nix
 mise use github:fleetlint/fleetlint                      # mise
-curl -fsSL https://raw.githubusercontent.com/fleetlint/fleetlint/main/scripts/install.sh | sh   # ~/.local/bin
+curl --proto '=https' --tlsv1.2 -fsSL https://fleetlint.org/install.sh | sh   # ~/.local/bin
 docker run --rm -v "$PWD:/repo" ghcr.io/fleetlint/fleetlint check
 go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
 ```

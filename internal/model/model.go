@@ -139,9 +139,13 @@ type Rule struct {
 	Satisfiers []Satisfier `yaml:"satisfiers,omitempty" json:"satisfiers,omitempty"`
 	// Accept are satisfiers a repository or later catalog added with
 	// `accept:`; they are tried after the rule's own.
-	Accept      []Satisfier    `yaml:"-" json:"accept,omitempty"`
-	Partials    []Partial      `yaml:"partials,omitempty" json:"partials,omitempty"`
-	Run         string         `yaml:"run,omitempty" json:"run,omitempty"`
+	Accept   []Satisfier `yaml:"-" json:"accept,omitempty"`
+	Partials []Partial   `yaml:"partials,omitempty" json:"partials,omitempty"`
+	Run      string      `yaml:"run,omitempty" json:"run,omitempty"`
+	// Locate is where a finding of the rule that names no path belongs: a
+	// scope-relative path (`README.md`), or a CEL expression yielding one,
+	// so a report points at the file that is missing or wrong.
+	Locate      string         `yaml:"locate,omitempty" json:"locate,omitempty"`
 	Message     string         `yaml:"message,omitempty" json:"message,omitempty"`
 	Requirement string         `yaml:"requirement,omitempty" json:"requirement,omitempty"`
 	Rationale   string         `yaml:"rationale,omitempty" json:"rationale,omitempty"`

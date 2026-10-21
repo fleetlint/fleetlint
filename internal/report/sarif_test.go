@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -71,6 +73,25 @@ func renderSARIF(t *testing.T, run *engine.Run, opts report.Options) (string, ma
 	return b.String(), doc["runs"].([]any)[0].(map[string]any)
 }
 
+// sarifRuns returns the log's runs keyed by automation id, and every result
+// and rule across them.
+func sarifRuns(t *testing.T, out string) (map[string]map[string]any, []any, []any) {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatal(err)
+	}
+	runs := map[string]map[string]any{}
+	var results, rules []any
+	for _, r := range doc["runs"].([]any) {
+		run := r.(map[string]any)
+		runs[run["automationDetails"].(map[string]any)["id"].(string)] = run
+		results = append(results, run["results"].([]any)...)
+		rules = append(rules, run["tool"].(map[string]any)["driver"].(map[string]any)["rules"].([]any)...)
+	}
+	return runs, results, rules
+}
+
 func TestSARIFValidatesAgainstSchema(t *testing.T) {
 	t.Parallel()
 	run, root := sarifRun(t)
@@ -96,12 +117,18 @@ func TestSARIFShape(t *testing.T) {
 	out, sr := renderSARIF(t, run, report.Options{Version: "1.2.3", Catalog: "v0.4.0", Name: "demo", Root: root})
 	testutil.Golden(t, "testdata/sarif.golden.json", out)
 
-	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/demo" {
-		t.Errorf("automationDetails.id = %v", id)
+	runs, results, rules := sarifRuns(t, out)
+	if len(runs) != 3 || runs["fleetlint/demo"] == nil || runs["fleetlint/demo/web"] == nil || runs["fleetlint/demo/lib"] == nil {
+		t.Errorf("one run per scope, keyed by repository and scope: %v", slices.Sorted(maps.Keys(runs)))
 	}
-	results := sr["results"].([]any)
+	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/demo" {
+		t.Errorf("the first run is the root: %v", id)
+	}
 	if len(results) != 6 {
 		t.Fatalf("want 6 results (passes, n/a and rule errors are none), got %d", len(results))
+	}
+	if n := len(runs["fleetlint/demo/web"]["results"].([]any)); n != 1 {
+		t.Errorf("the web scope's run has its one result, got %d", n)
 	}
 	// Every result has a location; pathless findings are anchored per scope.
 	anchors := map[string]string{"repo/junk": "a.log", "ci/sast": "README.md", "docs/readme": "web/.fleetlint.yaml", "docs/license": "lib/.fleetlint.yaml", "repo/exc": "vendor/x.go", "repo/base": "README.md"}
@@ -127,7 +154,7 @@ func TestSARIFShape(t *testing.T) {
 		t.Errorf("anchoring keeps the message: %v", msg)
 	}
 	checkSARIFSuppressions(t, results)
-	checkSARIFRules(t, sr)
+	checkSARIFRules(t, rules)
 	inv := sr["invocations"].([]any)[0].(map[string]any)
 	notes := inv["toolExecutionNotifications"].([]any)
 	if inv["executionSuccessful"] != false || len(notes) != 1 {
@@ -141,7 +168,7 @@ func TestSARIFShape(t *testing.T) {
 
 func checkSARIFSuppressions(t *testing.T, results []any) {
 	t.Helper()
-	want := map[string]string{"repo/exc": "vendored on purpose", "repo/base": "baselined: grandfathered by the baseline file"}
+	want := map[string]string{"repo/exc": "vendored on purpose (until 2027-01-01)", "repo/base": "baselined: grandfathered by the baseline file"}
 	for _, r := range results {
 		res := r.(map[string]any)
 		id := res["ruleId"].(string)
@@ -160,12 +187,14 @@ func checkSARIFSuppressions(t *testing.T, results []any) {
 		if s["kind"] != "external" || s["status"] != "accepted" || s["justification"] != want[id] {
 			t.Errorf("%s: suppression %v", id, s)
 		}
+		if props, _ := s["properties"].(map[string]any); (id == "repo/exc") != (props["until"] == "2027-01-01") {
+			t.Errorf("%s: an exception's expiry is a suppression property: %v", id, s)
+		}
 	}
 }
 
-func checkSARIFRules(t *testing.T, sr map[string]any) {
+func checkSARIFRules(t *testing.T, rules []any) {
 	t.Helper()
-	rules := sr["tool"].(map[string]any)["driver"].(map[string]any)["rules"].([]any)
 	byID := map[string]map[string]any{}
 	for _, r := range rules {
 		rule := r.(map[string]any)

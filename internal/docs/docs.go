@@ -312,6 +312,9 @@ func rulePage(r model.Rule) []byte {
 		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
 	}
 	if len(r.Refs) > 0 {
+		if r.Locate != "" {
+			fmt.Fprintf(&b, "A finding of this rule points at `%s`.\n\n", r.Locate)
+		}
 		fmt.Fprintf(&b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
 	}
 	// Exactly one trailing newline, whichever section came last.

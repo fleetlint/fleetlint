@@ -300,11 +300,36 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		res.Status, res.Evidence = model.StatusNotApplicable, skipped
 		return res
 	}
+	if err := locateFindings(env, rule, findings); err != nil {
+		res.Status, res.Err = model.StatusError, err.Error()
+		return res
+	}
 	res.Findings, res.Evidence, res.Severity = findings, evidence, severity
 	if len(findings) > 0 {
 		res.Status = model.StatusFail
 	}
 	return res
+}
+
+// locateFindings puts the rule's `locate` path on every finding that names
+// none, so a report points at the file that is missing or wrong.
+func locateFindings(env *celenv.Env, rule model.Rule, findings []model.Finding) error {
+	if rule.Locate == "" || len(findings) == 0 {
+		return nil
+	}
+	loc := rule.Locate
+	if catalog.IsLocateExpr(loc) {
+		var err error
+		if loc, err = env.EvalString(rule.Locate, rule.Params); err != nil {
+			return fmt.Errorf("locate: %w", err)
+		}
+	}
+	for i := range findings {
+		if findings[i].Path == "" && loc != "" {
+			findings[i].Path = loc
+		}
+	}
+	return nil
 }
 
 // perArtifact says whether the rule runs once per published artifact: an

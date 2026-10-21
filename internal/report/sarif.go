@@ -91,11 +91,13 @@ type sarifResult struct {
 	Suppressions        []sarifSuppression `json:"suppressions,omitempty"`
 }
 
-// sarifSuppression marks a finding an exception or the baseline accepted.
+// sarifSuppression marks a finding an exception or the baseline accepted;
+// an exception's expiry is in the properties.
 type sarifSuppression struct {
-	Kind          string `json:"kind"`
-	Status        string `json:"status"`
-	Justification string `json:"justification"`
+	Kind          string         `json:"kind"`
+	Status        string         `json:"status"`
+	Justification string         `json:"justification"`
+	Properties    map[string]any `json:"properties,omitempty"`
 }
 
 type sarifLocation struct {
@@ -129,16 +131,44 @@ func writeSARIF(w io.Writer, run *engine.Run, opts Options) error {
 	return WriteSARIF(w, run.Results, run.Config.Hierarchy(), opts)
 }
 
-// WriteSARIF renders results as one SARIF run. Failing, excepted and
-// baselined findings are results (the latter two suppressed), rule errors
-// are invocation notifications, passes and n/a are left out. Every result
-// has a location: a finding without a path is anchored to its scope's
-// configuration file (or README.md), looked up under opts.Root.
+// WriteSARIF renders results as one SARIF run per scope, keyed
+// `fleetlint/<repository>` for the root and `fleetlint/<repository>/<scope>`
+// for a scope, so a monorepo's scopes keep their own alert sets. Failing,
+// excepted and baselined findings are results (the latter two suppressed),
+// rule errors are invocation notifications, passes and n/a are left out.
+// Every result has a location: a finding without a path is anchored to its
+// scope's configuration file (or README.md), looked up under opts.Root.
 func WriteSARIF(w io.Writer, results []model.Result, catalogs []config.CatalogInfo, opts Options) error {
-	driver := sarifDriver{Name: "fleetlint", Version: opts.Version, InformationURI: "https://github.com/fleetlint/fleetlint", Properties: map[string]any{"catalog": orUnknown(opts.Catalog), "catalogs": catalogs}}
+	anchors := &anchorCache{root: opts.Root, found: map[string]string{}}
+	var scopes []string
+	byScope := map[string][]model.Result{}
+	for _, r := range results {
+		if _, ok := byScope[r.Scope]; !ok {
+			scopes = append(scopes, r.Scope)
+		}
+		byScope[r.Scope] = append(byScope[r.Scope], r)
+	}
+	if len(scopes) == 0 {
+		scopes = []string{""}
+	}
+	name := runName(opts)
+	runs := make([]sarifRun, 0, len(scopes))
+	for _, scope := range scopes {
+		run := sarifRunFor(byScope[scope], catalogs, opts, anchors)
+		run.AutomationDetails = sarifAutomation{ID: path.Join("fleetlint", name, scope)}
+		runs = append(runs, run)
+	}
+	log := sarifLog{Schema: "https://json.schemastore.org/sarif-2.1.0.json", Version: "2.1.0", Runs: runs}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(log)
+}
+
+// sarifRunFor is one scope's run: its rules, results and notifications.
+func sarifRunFor(results []model.Result, catalogs []config.CatalogInfo, opts Options, anchors *anchorCache) sarifRun {
+	driver := sarifDriver{Name: "fleetlint", Version: opts.Version, InformationURI: "https://github.com/fleetlint/fleetlint", Properties: map[string]any{"catalog": orUnknown(opts.Catalog), "catalogs": catalogs}, Rules: []sarifRule{}}
 	inv := sarifInvocation{ExecutionSuccessful: true}
 	seen := map[string]bool{}
-	anchors := &anchorCache{root: opts.Root, found: map[string]string{}}
 	sarifResults := []sarifResult{}
 	for _, r := range results {
 		switch r.Status {
@@ -157,15 +187,7 @@ func WriteSARIF(w io.Writer, results []model.Result, catalogs []config.CatalogIn
 		}
 		sarifResults = append(sarifResults, toSarifResults(r, anchors)...)
 	}
-	if driver.Rules == nil {
-		driver.Rules = []sarifRule{}
-	}
-	log := sarifLog{Schema: "https://json.schemastore.org/sarif-2.1.0.json", Version: "2.1.0", Runs: []sarifRun{{
-		Tool: sarifTool{Driver: driver}, AutomationDetails: sarifAutomation{ID: "fleetlint/" + runName(opts)}, Invocations: []sarifInvocation{inv}, Results: sarifResults,
-	}}}
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	return enc.Encode(log)
+	return sarifRun{Tool: sarifTool{Driver: driver}, Invocations: []sarifInvocation{inv}, Results: sarifResults}
 }
 
 // runName is the repository name: as given, else the root directory's.
@@ -243,7 +265,12 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 		res.Locations = []sarifLocation{loc}
 		switch {
 		case f.Exception != nil:
-			res.Suppressions = []sarifSuppression{{Kind: "external", Status: "accepted", Justification: orText(f.Exception.Reason, "excepted")}}
+			sup := sarifSuppression{Kind: "external", Status: "accepted", Justification: orText(f.Exception.Reason, "excepted")}
+			if f.Exception.Until != "" {
+				sup.Justification += " (until " + f.Exception.Until + ")"
+				sup.Properties = map[string]any{"until": f.Exception.Until}
+			}
+			res.Suppressions = []sarifSuppression{sup}
 		case f.Baselined:
 			res.Suppressions = []sarifSuppression{{Kind: "external", Status: "accepted", Justification: "baselined: grandfathered by the baseline file"}}
 		}

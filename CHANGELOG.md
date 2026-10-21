@@ -11,9 +11,14 @@ Engine level 7: a catalog that names artifact instances needs this version, and 
 
 - **Published artifacts are instances with names.** An artifact definition's `instances:` expression names what tells one artifact of a kind from another (an image reference, a chart path, a registry reference), evaluated per publishing workflow with `item` bound to it. An implementation keyed by artifact runs once per published artifact with `artifact` bound (`{kind, name, workflows}`): its own `when` is asked per artifact, a finding names the artifact that fails (`ghcr.io/x/b: the image is not signed`), the evidence the ones that pass. `facts.artifacts` takes `{kind, name, workflows}` entries next to bare kinds, so a pinned artifact can name the workflows the rules read. `fleetlint facts` and the check JSON (format 5) and `fleet.json` (format 6) carry the name.
 - CEL `find(text, regex)` and `findall(text, regex)`: the first capture group of the first or of every match.
+- **`locate` on a rule** says where a finding that names no path belongs: a scope-relative path or a CEL expression yielding one. The engine puts it on such findings, so the table, the agent output and SARIF point at the file that is missing or wrong instead of the configuration file. A catalog test keeps the list of rules without it from growing (`internal/catalog/testdata/rules_without_locate.txt`). A finding that gains a path changes its SARIF fingerprint once.
+- SARIF: one run per scope, keyed `fleetlint/<repository>` for the root and `fleetlint/<repository>/<scope>` for a scope, so a monorepo's scopes keep their own alert sets in code scanning; an exception's expiry is on its suppression (`properties.until`, and in the justification).
+- `scripts/install.sh` verifies the build provenance with `gh attestation verify` when cosign is absent and gh is present.
 
 ### Changed
 
+- The deprecated `action/` directory is gone; the action is `fleetlint/action`.
+- `scripts/install.sh` speaks https with TLS 1.2 or later only, accepts only `vX.Y.Z` or `latest` as the version, and matches the checksum line literally.
 - `combine:` is gone from the rule format at engine level 7: a catalog written for level 7 is refused with it, inline or from its library. A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
 
 ## [0.7.0] - 2026-10-21

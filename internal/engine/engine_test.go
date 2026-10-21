@@ -662,3 +662,28 @@ func TestImplementationWhenIsAskedPerArtifact(t *testing.T) {
 		t.Errorf("no artifact applies: not applicable with the when: %s %q", s.Status, s.Evidence)
 	}
 }
+
+// A rule's locate puts a path on findings that name none: a literal path,
+// or a CEL expression yielding one.
+func TestLocatePutsAPathOnPathlessFindings(t *testing.T) {
+	t.Parallel()
+	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n" +
+		"  - {id: x/readme, title: t, kind: expr, expr: 'file(\"README.md\")', severity: info, requirement: r, fix: {human: h}, locate: README.md}\n" +
+		"  - {id: x/runner, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}, locate: 'taskrunner.file != \"\" ? taskrunner.file : \"Makefile\"'}\n" +
+		"  - {id: x/bare, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}}\n"
+	out := run(t, map[string]string{"go.mod": "module x\n", "Makefile": "check:\n\ttrue\n"}, cfg)
+	if s := status(t, out, "x/readme"); s.Status != model.StatusFail || s.Findings[0].Path != "README.md" {
+		t.Errorf("a literal locate is the finding's path: %s %+v", s.Status, s.Findings)
+	}
+	if s := status(t, out, "x/runner"); s.Findings[0].Path != "Makefile" {
+		t.Errorf("an expression locate is evaluated in the scope: %+v", s.Findings)
+	}
+	if s := status(t, out, "x/bare"); s.Findings[0].Path != "" {
+		t.Errorf("without locate the finding stays pathless: %+v", s.Findings)
+	}
+	bad := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - {id: x/abs, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}, locate: /etc/passwd}\n"
+	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", config.FileName: bad})
+	if _, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "locate must be a scope-relative path") {
+		t.Errorf("an absolute locate is refused: %v", err)
+	}
+}

@@ -348,6 +348,10 @@
             "type": "string",
             "description": "The catalog version that added the rule."
           },
+          "locate": {
+            "type": "string",
+            "description": "Where a finding that names no path belongs: a scope-relative path (README.md) or a CEL expression yielding one. Reports and SARIF point at that file."
+          },
           "by": {
             "enum": ["stack", "artifact"],
             "description": "On a capability: what its implementations are keyed by. `stack` (the default): rules/<family>/<name>/<stack>.yaml, one per detected stack. `artifact`: rules/<family>/<name>/<artifact>.yaml, one per published artifact kind from the catalog's artifacts/, checked for every kind the release publishes."

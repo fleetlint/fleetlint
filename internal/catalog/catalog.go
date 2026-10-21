@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/fleetlint/fleetlint/internal/artifacts"
+	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
 	data "github.com/fleetlint/catalog"
@@ -952,6 +953,9 @@ func validateRule(r *model.Rule, engine int) error {
 	if err := validateRefs(r); err != nil {
 		return err
 	}
+	if err := validateLocate(r); err != nil {
+		return err
+	}
 	if _, err := fix.Decode(r.Fix.Actions); err != nil {
 		return fmt.Errorf("rule %s: fix.%w", r.ID, err)
 	}
@@ -967,6 +971,24 @@ func validateRule(r *model.Rule, engine int) error {
 	}
 	return validateCombine(r, engine)
 }
+
+// validateLocate accepts a scope-relative path or a CEL expression that
+// yields one. A path that happens to be a CEL expression is read as the
+// expression; quote it to mean the path.
+func validateLocate(r *model.Rule) error {
+	loc := r.Locate
+	if loc == "" || IsLocateExpr(loc) {
+		return nil
+	}
+	if path.IsAbs(loc) || strings.ContainsAny(loc, " \t\n\\") || slices.Contains(strings.Split(loc, "/"), "..") {
+		return fmt.Errorf("rule %s: locate must be a scope-relative path or a CEL expression yielding one (got %q)", r.ID, loc)
+	}
+	return nil
+}
+
+// IsLocateExpr says whether a rule's locate is a CEL expression (it
+// type-checks as a string) rather than a literal path.
+func IsLocateExpr(loc string) bool { return celenv.CheckString(loc) == nil }
 
 // validateRefs checks every source the rule cites.
 func validateRefs(r *model.Rule) error {

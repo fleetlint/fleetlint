@@ -73,58 +73,6 @@
               }
             },
             {
-              "id": "docs/readme",
-              "name": "title docs/readme",
-              "shortDescription": {
-                "text": "title docs/readme"
-              },
-              "fullDescription": {
-                "text": "req"
-              },
-              "help": {
-                "text": "why\n\nFix: do it"
-              },
-              "helpUri": "https://fleetlint.org/rules/docs--readme/",
-              "properties": {
-                "label": "preset",
-                "selected_by": "",
-                "source": "fleetlint:minimal",
-                "tags": [
-                  "repository-setup",
-                  "docs"
-                ]
-              },
-              "defaultConfiguration": {
-                "level": "warning"
-              }
-            },
-            {
-              "id": "docs/license",
-              "name": "title docs/license",
-              "shortDescription": {
-                "text": "title docs/license"
-              },
-              "fullDescription": {
-                "text": "req"
-              },
-              "help": {
-                "text": "why\n\nFix: do it"
-              },
-              "helpUri": "https://fleetlint.org/rules/docs--license/",
-              "properties": {
-                "label": "preset",
-                "selected_by": "",
-                "source": "fleetlint:minimal",
-                "tags": [
-                  "repository-setup",
-                  "docs"
-                ]
-              },
-              "defaultConfiguration": {
-                "level": "note"
-              }
-            },
-            {
               "id": "repo/exc",
               "name": "title repo/exc",
               "shortDescription": {
@@ -277,44 +225,6 @@
           }
         },
         {
-          "ruleId": "docs/readme",
-          "level": "warning",
-          "message": {
-            "text": "no README"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "web/.fleetlint.yaml"
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "fleetlint/v1": "a466a95e67e29d311773e47ce26db45aab9495b69ac4b281eb91b31db61791b4"
-          }
-        },
-        {
-          "ruleId": "docs/license",
-          "level": "note",
-          "message": {
-            "text": "no LICENSE"
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "lib/.fleetlint.yaml"
-                }
-              }
-            }
-          ],
-          "partialFingerprints": {
-            "fleetlint/v1": "c7b06362fa3baebbe788d0aaa19a1457d17ea131654bcbdf609c04f1c81544de"
-          }
-        },
-        {
           "ruleId": "repo/exc",
           "level": "error",
           "message": {
@@ -336,7 +246,10 @@
             {
               "kind": "external",
               "status": "accepted",
-              "justification": "vendored on purpose"
+              "justification": "vendored on purpose (until 2027-01-01)",
+              "properties": {
+                "until": "2027-01-01"
+              }
             }
           ]
         },
@@ -365,6 +278,146 @@
               "justification": "baselined: grandfathered by the baseline file"
             }
           ]
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "fleetlint",
+          "version": "1.2.3",
+          "informationUri": "https://github.com/fleetlint/fleetlint",
+          "rules": [
+            {
+              "id": "docs/readme",
+              "name": "title docs/readme",
+              "shortDescription": {
+                "text": "title docs/readme"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/docs--readme/",
+              "properties": {
+                "label": "preset",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "docs"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            }
+          ],
+          "properties": {
+            "catalog": "v0.4.0",
+            "catalogs": []
+          }
+        }
+      },
+      "automationDetails": {
+        "id": "fleetlint/demo/web"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "docs/readme",
+          "level": "warning",
+          "message": {
+            "text": "no README"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "web/.fleetlint.yaml"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "a466a95e67e29d311773e47ce26db45aab9495b69ac4b281eb91b31db61791b4"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "fleetlint",
+          "version": "1.2.3",
+          "informationUri": "https://github.com/fleetlint/fleetlint",
+          "rules": [
+            {
+              "id": "docs/license",
+              "name": "title docs/license",
+              "shortDescription": {
+                "text": "title docs/license"
+              },
+              "fullDescription": {
+                "text": "req"
+              },
+              "help": {
+                "text": "why\n\nFix: do it"
+              },
+              "helpUri": "https://fleetlint.org/rules/docs--license/",
+              "properties": {
+                "label": "preset",
+                "selected_by": "",
+                "source": "fleetlint:minimal",
+                "tags": [
+                  "repository-setup",
+                  "docs"
+                ]
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              }
+            }
+          ],
+          "properties": {
+            "catalog": "v0.4.0",
+            "catalogs": []
+          }
+        }
+      },
+      "automationDetails": {
+        "id": "fleetlint/demo/lib"
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "docs/license",
+          "level": "note",
+          "message": {
+            "text": "no LICENSE"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "lib/.fleetlint.yaml"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "fleetlint/v1": "c7b06362fa3baebbe788d0aaa19a1457d17ea131654bcbdf609c04f1c81544de"
+          }
         }
       ]
     }

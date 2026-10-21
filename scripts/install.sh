@@ -16,11 +16,24 @@ fail() {
   exit 1
 }
 
+# https only, TLS 1.2 or later, no redirect to another scheme.
+fetch() {
+  curl --proto '=https' --tlsv1.2 -fsSL "$@"
+}
+
 if [ "$version" = latest ]; then
-  url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$repo/releases/latest") || fail "cannot reach $repo"
+  url=$(fetch -I -o /dev/null -w '%{url_effective}' "$repo/releases/latest") || fail "cannot reach $repo"
   version=${url##*/}
 fi
+case $version in
+  v[0-9]*.[0-9]*.[0-9]*) ;;
+  [0-9]*.[0-9]*.[0-9]*) ;;
+  *) fail "version must be vX.Y.Z or latest (got '$version')" ;;
+esac
 v=${version#v}
+case $v in
+  *[!0-9.]*) fail "version must be vX.Y.Z or latest (got '$version')" ;;
+esac
 
 case $(uname -s) in
   Linux) os=linux ;;
@@ -38,22 +51,27 @@ base="$repo/releases/download/v$v"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cd "$tmp"
-curl -fsSLO "$base/$archive" || fail "no $archive in release v$v"
-curl -fsSLO "$base/checksums.txt"
+fetch -O "$base/$archive" || fail "no $archive in release v$v"
+fetch -O "$base/checksums.txt" || fail "no checksums.txt in release v$v"
 
 if [ "${FLEETLINT_VERIFY:-}" = cosign ] && ! command -v cosign >/dev/null 2>&1; then
   fail "FLEETLINT_VERIFY=cosign but cosign is not installed"
 fi
 if command -v cosign >/dev/null 2>&1; then
-  curl -fsSLO "$base/checksums.txt.sigstore.json"
+  fetch -O "$base/checksums.txt.sigstore.json" || fail "no checksums.txt.sigstore.json in release v$v"
   cosign verify-blob --bundle checksums.txt.sigstore.json \
     --certificate-identity "$repo/.github/workflows/release.yml@refs/tags/v$v" \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
     checksums.txt >/dev/null 2>&1 || fail "the signature of checksums.txt does not verify"
   echo "signature of checksums.txt verified"
+elif command -v gh >/dev/null 2>&1; then
+  # Without cosign, gh checks the build provenance GitHub attested for the archive.
+  gh attestation verify "$archive" --repo fleetlint/fleetlint >/dev/null 2>&1 || fail "the build provenance of $archive does not verify"
+  echo "build provenance of $archive verified"
 fi
 
-grep " $archive\$" checksums.txt >sum || fail "$archive is not in checksums.txt"
+grep -F -- " $archive" checksums.txt | grep -F -- "$archive" >sum || fail "$archive is not in checksums.txt"
+[ "$(wc -l <sum)" -eq 1 ] || fail "$archive is listed more than once in checksums.txt"
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum -c sum >/dev/null || fail "checksum mismatch for $archive"
 else
