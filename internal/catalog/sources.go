@@ -13,6 +13,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
 	"github.com/goccy/go-yaml"
+	"golang.org/x/mod/semver"
 
 	"github.com/fleetlint/fleetlint/internal/rootfs"
 )
@@ -59,9 +60,88 @@ type Sources struct {
 	// extends; names from Catalogs or fleetlint:<preset>.
 	Extends []string `yaml:"extends,omitempty"`
 	// Signers are the identities whose cosign signature makes an oci catalog
-	// trustworthy without a digest pin.
-	Signers  []Signer          `yaml:"signers,omitempty"`
-	Catalogs map[string]string `yaml:"catalogs"`
+	// trustworthy without a digest pin; an entry may name its own instead.
+	Signers  []Signer         `yaml:"signers,omitempty"`
+	Catalogs map[string]Entry `yaml:"catalogs"`
+}
+
+// Entry is one `catalogs:` target: a reference, or a reference with
+// its own signers and a version floor.
+type Entry struct {
+	Ref string `yaml:"ref"`
+	// Signers replace the file's signers for this catalog alone.
+	Signers []Signer `yaml:"signers,omitempty"`
+	// MinVersion is the lowest metadata.version the catalog may report, so
+	// a tag moved back to an older release is noticed.
+	MinVersion string `yaml:"min_version,omitempty"`
+}
+
+// UnmarshalYAML accepts `<reference>` and `{ref: ..., signers: ..., min_version: ...}`.
+func (e *Entry) UnmarshalYAML(unmarshal func(any) error) error {
+	var ref string
+	if err := unmarshal(&ref); err == nil {
+		*e = Entry{Ref: ref}
+		return nil
+	}
+	type plain Entry
+	var full plain
+	if err := unmarshal(&full); err != nil {
+		return err
+	}
+	*e = Entry(full)
+	return nil
+}
+
+// validate checks the reference, the entry's own signers and the floor.
+func (e Entry) validate() error {
+	if e.Ref == "" {
+		return errors.New("ref is required")
+	}
+	for i, sg := range e.Signers {
+		if err := sg.validate(); err != nil {
+			return fmt.Errorf("signers[%d]: %w", i, err)
+		}
+	}
+	if len(e.Signers) > 0 && !strings.HasPrefix(e.Ref, ociPrefix) {
+		return fmt.Errorf("signers apply to oci:// references, not to %q", e.Ref)
+	}
+	if e.MinVersion != "" && !semver.IsValid(semverV(e.MinVersion)) {
+		return fmt.Errorf("min_version %q is not a semantic version", e.MinVersion)
+	}
+	return nil
+}
+
+// CheckVersion holds a catalog loaded through this entry to its floor: an
+// older version means the reference was moved back.
+func (e Entry) CheckVersion(alias string, c *Catalog) error {
+	if e.MinVersion == "" {
+		return nil
+	}
+	have := semverV(c.Metadata.Version)
+	if !semver.IsValid(have) {
+		return fmt.Errorf("catalog %s (%s) is version %q, not a semantic version, so min_version %s cannot be checked", alias, c.Ref, c.Metadata.Version, e.MinVersion)
+	}
+	if semver.Compare(have, semverV(e.MinVersion)) < 0 {
+		return fmt.Errorf("catalog %s (%s) is version %s, an older version than the sources file allows (min_version %s); a tag may have been moved back", alias, c.Ref, c.Metadata.Version, e.MinVersion)
+	}
+	return nil
+}
+
+// semverV gives a version the leading v that x/mod/semver expects.
+func semverV(v string) string {
+	if strings.HasPrefix(v, "v") {
+		return v
+	}
+	return "v" + v
+}
+
+// ForEntry returns the loader for a sources-file entry: with the entry's
+// own signers when it names some, else with the file's.
+func (l Loader) ForEntry(e Entry) Loader {
+	if len(e.Signers) > 0 {
+		l.Signers = e.Signers
+	}
+	return l
 }
 
 // RefLabel returns the label of a reference written directly in `extends`:
@@ -126,18 +206,23 @@ func (s *Sources) validate(local string) error {
 		return err
 	}
 	for _, alias := range s.Aliases() {
-		target := s.Catalogs[alias]
+		entry := s.Catalogs[alias]
+		target := entry.Ref
 		if !aliasRe.MatchString(alias) {
 			return fmt.Errorf("catalogs.%s: a name is lowercase words joined by `/` (`org`, `team/mobile`, `compliance/pci`)", alias)
 		}
+		if err := entry.validate(); err != nil {
+			return fmt.Errorf("catalogs.%s: %w", alias, err)
+		}
 		switch {
 		case strings.HasPrefix(target, presetPrefix), isPinnedRef(target):
-		case target == "" || strings.Contains(target, "://"):
+		case strings.Contains(target, "://"):
 			return fmt.Errorf("catalogs.%s: %q is not a catalog reference", alias, target)
 		case local == "":
 			return fmt.Errorf("catalogs.%s: a remote sources file cannot name the local path %q", alias, target)
 		case !filepath.IsAbs(target):
-			s.Catalogs[alias] = filepath.Join(filepath.Dir(local), target)
+			entry.Ref = filepath.Join(filepath.Dir(local), target)
+			s.Catalogs[alias] = entry
 		}
 	}
 	return nil

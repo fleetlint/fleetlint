@@ -301,6 +301,26 @@ func testLoadOCISigned(t *testing.T, tagSchema bool) {
 	if _, err := other.Load("oci://" + name + "@" + desc.Digest.String()); err == nil {
 		t.Fatal("signers listed: the signature is verified even for a digest reference")
 	}
+	// A sources-file entry's signers replace the file's for that alias alone.
+	signer := func(s string) string { return "{issuer: " + issuer + ", subject: " + s + "}" }
+	body := "version: 1\nsigners: [" + signer(other.Signers[0].Subject) + "]\ncatalogs:\n" +
+		"  team: {ref: " + ref + ", signers: [" + signer(subject) + "]}\n" +
+		"  evil: {ref: " + ref + ", signers: [" + signer(other.Signers[0].Subject) + "], min_version: 1.0.0}\n" +
+		"  org: " + ref + "\n"
+	src, err := loadSourcesBody(t, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := Loader{FetchOCI: localFetch(context.Background()), TrustedRoot: trusted, Signers: src.Signers}
+	if _, err := base.ForEntry(src.Catalogs["team"]).Load(ref); err != nil {
+		t.Errorf("the alias's own signers accept the artifact: %v", err)
+	}
+	if _, err := base.ForEntry(src.Catalogs["evil"]).Load(ref); err == nil || !strings.Contains(err.Error(), "no attached signature is valid") {
+		t.Errorf("another alias's signers refuse it: %v", err)
+	}
+	if _, err := base.ForEntry(src.Catalogs["org"]).Load(ref); err == nil || !strings.Contains(err.Error(), "no attached signature is valid") {
+		t.Errorf("an entry without signers keeps the file's: %v", err)
+	}
 	noRoot := Loader{FetchOCI: localFetch(context.Background()), Signers: ok.Signers}
 	if _, err := noRoot.Load(ref); err == nil || !strings.Contains(err.Error(), "disabled") {
 		t.Errorf("no trusted root, no verification: %v", err)
@@ -332,7 +352,7 @@ func TestSignerValidation(t *testing.T) {
 			t.Errorf("%+v: err=%v want ok=%v", s, err, want)
 		}
 	}
-	src := Sources{Version: 1, Signers: []Signer{{Issuer: "http://x", Subject: "y"}}, Catalogs: map[string]string{"org": "fleetlint:minimal"}}
+	src := Sources{Version: 1, Signers: []Signer{{Issuer: "http://x", Subject: "y"}}, Catalogs: map[string]Entry{"org": {Ref: "fleetlint:minimal"}}}
 	if err := src.validate(""); err == nil || !strings.Contains(err.Error(), "signers[0]") {
 		t.Errorf("sources validation names the signer: %v", err)
 	}

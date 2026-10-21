@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- A `catalogs:` entry in the sources file may be `{ref, signers, min_version}` instead of the bare reference: `signers` verify that `oci://` catalog alone, in place of the top-level signers; `min_version` is a semantic-version floor on the catalog's `metadata.version`, so a tag moved back to an older release fails the run naming the alias, the loaded version and the floor. `fleetlint schema sources` describes both forms.
+
 ## [0.7.0] - 2026-10-21
 
 Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.

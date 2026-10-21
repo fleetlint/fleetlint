@@ -115,3 +115,37 @@ func TestPublishedTagIsTheGitTag(t *testing.T) {
 		}
 	}
 }
+
+// A sources-file entry carries its own signers and a version floor: the
+// alias's signers verify the artifact, and a catalog older than the floor
+// fails the run.
+func TestAliasSignersAndVersionFloor(t *testing.T) {
+	t.Parallel()
+	digest := strings.Repeat("c", 64)
+	body := strings.Replace(layerCatalog("acme", "org/x", "error"), "version: 1.0.0", "version: 1.2.0", 1)
+	art := &fetch.OCIArtifact{Digest: digest, Files: map[string][]byte{"catalog.yaml": []byte(body)}}
+	l := ociLoader(t, map[string]*fetch.OCIArtifact{"registry.example/acme/catalog": art})
+	tag, pinned := "oci://registry.example/acme/catalog:v1", "oci://registry.example/acme/catalog@sha256:"+digest
+	sources := "version: 1\ncatalogs:\n" +
+		"  signed: {ref: \"" + tag + "\", signers: [{issuer: https://token.actions.githubusercontent.com, subject: x}]}\n" +
+		"  bare: \"" + tag + "\"\n" +
+		"  floored: {ref: \"" + pinned + "\", min_version: v1.2.0}\n" +
+		"  toolow: {ref: \"" + pinned + "\", min_version: 2.0.0}\n"
+	for alias, want := range map[string]string{
+		"signed":  "no sigstore bundle",
+		"bare":    "need signers in the sources file",
+		"floored": "",
+		"toolow":  "catalog toolow (" + pinned + ") is version 1.2.0, an older version than the sources file allows (min_version 2.0.0); a tag may have been moved back",
+	} {
+		dir := writeAll(t, map[string]string{"s.yaml": sources, config.FileName: "version: 1\nsources: s.yaml\nextends: [" + alias + "]\n"})
+		eff, err := config.Load(dir, config.Options{Loader: l})
+		switch {
+		case want == "" && err != nil:
+			t.Errorf("%s: %v", alias, err)
+		case want == "" && (len(eff.Catalogs) == 0 || eff.Catalogs[0].Alias != alias):
+			t.Errorf("%s: the catalog is loaded under its alias: %+v", alias, eff.Hierarchy())
+		case want != "" && (err == nil || !strings.Contains(err.Error(), want)):
+			t.Errorf("%s: want %q, got %v", alias, want, err)
+		}
+	}
+}

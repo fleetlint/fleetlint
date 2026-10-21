@@ -75,26 +75,9 @@
     "signers": {
       "type": "array",
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "issuer"
-        ],
-        "properties": {
-          "issuer": {
-            "type": "string",
-            "description": "The OIDC issuer that vouched for the signer, e.g. https://token.actions.githubusercontent.com."
-          },
-          "subject": {
-            "type": "string",
-            "description": "The certificate subject, exact."
-          },
-          "subject_regex": {
-            "type": "string",
-            "description": "The certificate subject as a regular expression."
-          }
-        }
-      }
+        "$ref": "#/$defs/signer"
+      },
+      "description": "The identities whose cosign signature makes an oci catalog trustworthy without a digest pin; an entry under catalogs may name its own instead."
     },
     "catalogs": {
       "type": "object",
@@ -103,10 +86,60 @@
         "pattern": "^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)*$"
       },
       "additionalProperties": {
-        "type": "string",
-        "minLength": 1
+        "type": [
+          "string",
+          "object"
+        ],
+        "minLength": 1,
+        "description": "A catalog reference, or {ref, signers, min_version} for a catalog with its own signers or a version floor.",
+        "additionalProperties": false,
+        "required": [
+          "ref"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The catalog reference: fleetlint:<preset>, a path, an https URL with a digest, a git or an oci reference."
+          },
+          "signers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/signer"
+            },
+            "description": "The signers for this catalog alone, in place of the top-level signers; oci:// references only."
+          },
+          "min_version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The lowest metadata.version the catalog may report (a semantic version, with or without a leading v); an older one fails the run, as when a tag was moved back."
+          }
+        }
       },
-      "description": "Names (`org`, `team/mobile`, `compliance/pci`) mapped to catalog references; a repository writes the name in extends."
+      "description": "Names (`org`, `team/mobile`, `compliance/pci`) mapped to catalog references, as a string or as {ref, signers, min_version}; a repository writes the name in extends."
+    }
+  },
+  "$defs": {
+    "signer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer"
+      ],
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "description": "The OIDC issuer that vouched for the signer, e.g. https://token.actions.githubusercontent.com."
+        },
+        "subject": {
+          "type": "string",
+          "description": "The certificate subject, exact."
+        },
+        "subject_regex": {
+          "type": "string",
+          "description": "The certificate subject as a regular expression."
+        }
+      }
     }
   }
 }
