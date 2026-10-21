@@ -21,12 +21,16 @@ const (
 	MaxCatalogLen = 2 << 20
 )
 
+// transport is the client's round tripper; nil is the default. Tests point it at a test server.
+var transport http.RoundTripper
+
 // HTTPFetch returns a Fetch function for Loader: https only, bounded in time
 // and size, no redirects to other hosts. The digest check in loadRemote is
 // what makes the content trustworthy; this only makes the transport sane.
 func HTTPFetch(ctx context.Context) func(url string) ([]byte, error) {
 	client := &http.Client{
-		Timeout: fetchTimeout,
+		Timeout:   fetchTimeout,
+		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 3 {
 				return errors.New("too many redirects")
