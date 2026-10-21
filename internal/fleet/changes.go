@@ -165,7 +165,7 @@ func (v *view) changes() table {
 				{Text: strings.Join(gone, ", "), Code: len(gone) > 0, Class: classIf(len(gone) > 0, "ok")},
 			}
 		}
-		row[0].Href = "actions/" + name + ".html"
+		row[0].Href = "actions/" + reportFile(name, ".html")
 		t.Rows = append(t.Rows, row)
 	}
 	t.Intro = fmt.Sprintf("Compared with the run of %s: rules failing at error severity %d -> %d; %d rule x repository pairs newly failing, %d fixed.",

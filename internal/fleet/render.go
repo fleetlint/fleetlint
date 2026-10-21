@@ -50,10 +50,10 @@ func Write(dir string, rep *Report) error {
 	files[filepath.Join("history", rep.GeneratedAt.UTC().Format(historyStamp)+".json")] = js
 	for _, r := range rep.Repos {
 		md := renderActions(r)
-		files[filepath.Join("actions", r.Name+".md")] = md
-		files[filepath.Join("actions", r.Name+".html")] = actionsHTML(r.Name, md)
+		files[filepath.Join("actions", reportFile(r.Name, ".md"))] = md
+		files[filepath.Join("actions", reportFile(r.Name, ".html"))] = actionsHTML(r.Name, md)
 		if r.Err == "" {
-			files[filepath.Join("sarif", strings.ReplaceAll(r.Name, "/", "--")+".sarif")] = renderSARIF(rep, r)
+			files[filepath.Join("sarif", reportFile(r.Name, ".sarif"))] = renderSARIF(rep, r)
 		}
 	}
 	for name, content := range files {
@@ -62,6 +62,13 @@ func Write(dir string, rep *Report) error {
 		}
 	}
 	return nil
+}
+
+// reportFile is the file name of a repository's page or SARIF file: its
+// name, already safe once normalised, made safe again for a report built
+// from entries that never were.
+func reportFile(name, ext string) string {
+	return unsafeName.ReplaceAllString(name, "-") + ext
 }
 
 // historyStamp names a run's file in history/; names sort by time.
@@ -330,7 +337,7 @@ func (v *view) repoColumns() []column {
 			return f(r)
 		}
 	}
-	cols := []column{{"Repository", func(r RepoReport) tcell { return tcell{Text: r.Name, Href: "actions/" + r.Name + ".html"} }}}
+	cols := []column{{"Repository", func(r RepoReport) tcell { return tcell{Text: r.Name, Href: "actions/" + reportFile(r.Name, ".html")} }}}
 	if any(func(r RepoReport) bool { return r.Group != "" }) {
 		cols = append(cols, column{"Group", func(r RepoReport) tcell { return txt(r.Group) }})
 	}

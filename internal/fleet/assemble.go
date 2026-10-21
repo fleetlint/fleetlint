@@ -27,7 +27,7 @@ type Sources struct {
 
 // Assemble builds the fleet from its sources. A fleet file entry for a
 // discovered path adjusts the discovered repository instead of adding it
-// twice.
+// twice. Every entry is normalised, whatever its source.
 func Assemble(ctx context.Context, s Sources) (*Spec, error) {
 	spec, err := loadSpec(s.SpecPath, s.Paths)
 	if err != nil {
@@ -36,7 +36,27 @@ func Assemble(ctx context.Context, s Sources) (*Spec, error) {
 	if err := addWalked(spec, s.Discover, s.Exclude); err != nil {
 		return nil, err
 	}
-	return spec, addDiscovered(ctx, spec, s.From)
+	if err := addDiscovered(ctx, spec, s.From); err != nil {
+		return nil, err
+	}
+	return spec, normalizeAll(spec)
+}
+
+// normalizeAll validates every entry and makes its name safe as a file
+// name; the names must still differ afterwards.
+func normalizeAll(spec *Spec) error {
+	names := map[string]bool{}
+	for i := range spec.Repos {
+		e := &spec.Repos[i]
+		if err := e.Normalize(); err != nil {
+			return fmt.Errorf("repository %q: %w", e.Name, err)
+		}
+		if names[e.Name] {
+			return fmt.Errorf("repository name %q is in the fleet twice", e.Name)
+		}
+		names[e.Name] = true
+	}
+	return nil
 }
 
 func loadSpec(specPath string, paths []string) (*Spec, error) {
