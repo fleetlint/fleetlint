@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-21
+
 The release of 0.8.0 did not run: its verify job failed twice on a flaky test, so 0.8.0 is a source tag without binaries or packages. 0.8.1 is 0.8.0 with that test fixed; nothing in fleetlint itself changed.
 
 ### Fixed
