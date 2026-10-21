@@ -33,6 +33,7 @@ func GitFixture(t *testing.T, files map[string]string, gitConfig ...string) *rep
 	dir := t.TempDir()
 	WriteFiles(t, dir, files)
 	Git(t, dir, "init", "-q", "-b", "main")
+	NoBackgroundGit(t, dir)
 	for i := 0; i+1 < len(gitConfig); i += 2 {
 		Git(t, dir, "config", gitConfig[i], gitConfig[i+1])
 	}
@@ -43,6 +44,18 @@ func GitFixture(t *testing.T, files map[string]string, gitConfig ...string) *rep
 		t.Fatal(err)
 	}
 	return r
+}
+
+// NoBackgroundGit turns off automatic gc and maintenance in the repository's
+// own config. GitEnv does the same for the test's git commands, but the code
+// under test runs git with an environment of its own, and a gc it starts
+// (after a commit, or in a bare remote receiving a push) keeps writing after
+// the test ended, so the temp directory cannot be removed.
+func NoBackgroundGit(t *testing.T, dir string) {
+	t.Helper()
+	for _, kv := range [][2]string{{"gc.auto", "0"}, {"gc.autoDetach", "false"}, {"maintenance.auto", "false"}, {"receive.autogc", "false"}} {
+		Git(t, dir, "config", kv[0], kv[1])
+	}
 }
 
 // Git runs git in dir with GitEnv and returns its trimmed stdout; an error

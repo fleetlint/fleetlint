@@ -19,6 +19,7 @@ func onboardingRepo(t *testing.T) (dir, remote string) {
 	t.Helper()
 	remote = t.TempDir()
 	testutil.Git(t, remote, "init", "-q", "--bare")
+	testutil.NoBackgroundGit(t, remote)
 	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", "README.md": "# x\n"},
 		"remote.origin.url", remote, "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 	return r.Root, remote
