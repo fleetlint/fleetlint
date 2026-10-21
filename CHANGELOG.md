@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-21
+
 ### Security
 
 - Binaries are built with Go 1.27.3: GO-2026-6809 (crypto/x509 trusted compromised intermediate certificates) sat on the path that verifies catalog signatures in 0.6.0. google.golang.org/grpc 1.83.2 closes a vulnerability the binary does not call.
