@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-21
+
 Engine level 7: a catalog that names artifact instances or sets `locate:` needs this version, and one written for level 7 may not use `combine:` or `artifact_workflows()`. Catalogs for levels 1 to 6 still run, with both.
 
 ### Added
