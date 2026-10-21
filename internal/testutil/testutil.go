@@ -52,13 +52,18 @@ func GitFixture(t *testing.T, files map[string]string, gitConfig ...string) *rep
 	return r
 }
 
-// GitEnv is the environment for fixture git commands: a fixed identity and
-// no user or system configuration, so settings such as tag.gpgsign cannot
-// change what a test does.
+// GitEnv is the environment for fixture git commands: a fixed identity, no
+// user or system configuration, so settings such as tag.gpgsign cannot
+// change what a test does, and no background maintenance, so nothing writes
+// into a repository after the test that owns it has ended.
 func GitEnv() []string {
 	return append(os.Environ(),
 		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
-		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
+		"GIT_CONFIG_COUNT=3",
+		"GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
+		"GIT_CONFIG_KEY_1=gc.autoDetach", "GIT_CONFIG_VALUE_1=false",
+		"GIT_CONFIG_KEY_2=maintenance.auto", "GIT_CONFIG_VALUE_2=false")
 }
 
 // WriteFiles creates the given files under dir.
