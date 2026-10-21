@@ -37,6 +37,12 @@ type Options struct {
 	// against; every format states both, so a report says which rules made it.
 	Version string
 	Catalog string
+	// Root is the repository root, where SARIF looks for the files pathless
+	// findings are anchored to (the current directory when empty); Name is
+	// the repository's name in SARIF automationDetails (Root's base name
+	// when empty).
+	Root string
+	Name string
 }
 
 // Write renders a run in the chosen format.

@@ -5,6 +5,11 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- SARIF output completed for code scanning: every result has a location (a finding without a path is anchored to its scope's `.fleetlint.yaml`, else `README.md`), `partialFingerprints` (`fleetlint/v1`) so alerts keep their identity across runs, `helpUri` to the rule's page on fleetlint.org, the family as a tag and, for the security families (`release`, `ci`, `deps`, `containers`, `hooks`, `repo`), a `security` tag with `security-severity`; the rule's `refs` in its properties; `automationDetails.id` `fleetlint/<repository>`; excepted and baselined findings as suppressed results with their reason; rule errors as invocation notifications (`executionSuccessful` false) instead of results. The output is validated against the OASIS SARIF 2.1.0 schema in the tests.
+- `fleetlint fleet --out <dir>` writes `sarif/<repository>.sarif` per checked repository, keyed `fleetlint/<fleet name>`.
+
 ## [0.6.2] - 2026-10-21
 
 ### Added

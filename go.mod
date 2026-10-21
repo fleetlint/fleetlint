@@ -12,6 +12,7 @@ require (
 	github.com/google/licensecheck v0.3.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/spf13/cobra v1.10.2
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f

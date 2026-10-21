@@ -147,7 +147,7 @@ func checkCmd(g *globals, code *int) *cobra.Command {
 				return err
 			}
 			fixplan.MarkFixable(r, run)
-			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version, Catalog: eff.Source.Describe()}); err != nil {
+			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version, Catalog: eff.Source.Describe(), Root: r.Root}); err != nil {
 				return &configError{err}
 			}
 			*code = exitFor(run, g.failOn)
