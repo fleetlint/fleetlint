@@ -282,6 +282,7 @@ func inheritScalars(out *model.Rule, impl model.Rule, has func(string) bool) {
 		"rationale":    func() { out.Rationale = impl.Rationale },
 		"message":      func() { out.Message = impl.Message },
 		"since":        func() { out.Since = impl.Since },
+		"locate":       func() { out.Locate = impl.Locate },
 		"locked":       func() { out.Locked = impl.Locked },
 		"min_severity": func() { out.MinSeverity = impl.MinSeverity },
 		"exceptions":   func() { out.AllowExceptions = impl.AllowExceptions },

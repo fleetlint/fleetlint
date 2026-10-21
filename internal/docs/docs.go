@@ -75,6 +75,15 @@ func prose(text string) string {
 	return strings.Join(parts, "`")
 }
 
+// writeSources is the end of a rule page: where a finding points, and the
+// sources the rule cites.
+func writeSources(b *bytes.Buffer, r model.Rule) {
+	if r.Locate != "" {
+		fmt.Fprintf(b, "A finding of this rule points at `%s`.\n\n", r.Locate)
+	}
+	fmt.Fprintf(b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
+}
+
 // refLinks writes URLs so that Markdown renders them as links.
 // refLinks renders the sources as Markdown list items: the link, then
 // the kind and the section where the rule states them.
@@ -312,10 +321,7 @@ func rulePage(r model.Rule) []byte {
 		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
 	}
 	if len(r.Refs) > 0 {
-		if r.Locate != "" {
-			fmt.Fprintf(&b, "A finding of this rule points at `%s`.\n\n", r.Locate)
-		}
-		fmt.Fprintf(&b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
+		writeSources(&b, r)
 	}
 	// Exactly one trailing newline, whichever section came last.
 	return append(bytes.TrimRight(b.Bytes(), "\n"), '\n')

@@ -300,10 +300,6 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		res.Status, res.Evidence = model.StatusNotApplicable, skipped
 		return res
 	}
-	if err := locateFindings(env, rule, findings); err != nil {
-		res.Status, res.Err = model.StatusError, err.Error()
-		return res
-	}
 	res.Findings, res.Evidence, res.Severity = findings, evidence, severity
 	if len(findings) > 0 {
 		res.Status = model.StatusFail
@@ -348,6 +344,9 @@ func perArtifact(f facts.Facts, rule model.Rule) bool {
 func evalPerArtifact(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities) (findings []model.Finding, evidence string, severity model.Severity, skipped string, err error) {
 	if !perArtifact(f, rule) {
 		found, evidence, partial, err := evalKind(ctx, env, r, f, rule, caps)
+		if err == nil {
+			err = locateFindings(env, rule, found)
+		}
 		return found, evidence, partialSeverity(rule, found, partial), "", err
 	}
 	defer env.BindArtifact(facts.Artifact{})
@@ -417,6 +416,9 @@ func evalInstance(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		}
 	}
 	findings, evidence, partial, err = evalKind(ctx, env, r, f, rule, caps)
+	if err == nil {
+		err = locateFindings(env, rule, findings) // with the artifact still bound
+	}
 	if err != nil {
 		if a.Name != "" {
 			err = fmt.Errorf("%s: %w", a, err)

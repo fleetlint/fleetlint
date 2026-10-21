@@ -953,9 +953,6 @@ func validateRule(r *model.Rule, engine int) error {
 	if err := validateRefs(r); err != nil {
 		return err
 	}
-	if err := validateLocate(r); err != nil {
-		return err
-	}
 	if _, err := fix.Decode(r.Fix.Actions); err != nil {
 		return fmt.Errorf("rule %s: fix.%w", r.ID, err)
 	}
@@ -990,14 +987,14 @@ func validateLocate(r *model.Rule) error {
 // type-checks as a string) rather than a literal path.
 func IsLocateExpr(loc string) bool { return celenv.CheckString(loc) == nil }
 
-// validateRefs checks every source the rule cites.
+// validateRefs checks every source the rule cites and where it points.
 func validateRefs(r *model.Rule) error {
 	for _, ref := range r.Refs {
 		if err := ref.Validate(); err != nil {
 			return fmt.Errorf("rule %s: %w", r.ID, err)
 		}
 	}
-	return nil
+	return validateLocate(r)
 }
 
 // settleImplementation reads an implementation id (family/name/<target>):

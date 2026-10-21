@@ -137,3 +137,14 @@ func TestPartialSeverityAcrossArtifacts(t *testing.T) {
 		t.Errorf("outright failures: the rule's severity: %s %s %+v", s.Status, s.Severity, s.Findings)
 	}
 }
+
+// A locate expression on an implementation keyed by artifact sees the
+// artifact: the finding points at the workflow that publishes it.
+func TestLocateSeesTheArtifact(t *testing.T) {
+	t.Parallel()
+	image := "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: docker push ghcr.io/x/y:${GITHUB_REF_NAME}\n"
+	out := run(t, map[string]string{".github/workflows/publish.yml": image}, tier1Public)
+	if s := status(t, out, "release/signing/image"); s.Status != model.StatusFail || len(s.Findings) != 1 || s.Findings[0].Path != ".github/workflows/publish.yml" {
+		t.Errorf("the finding points at the publishing workflow: %s %+v", s.Status, s.Findings)
+	}
+}
