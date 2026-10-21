@@ -118,16 +118,16 @@ func TestSARIFShape(t *testing.T) {
 	testutil.Golden(t, "testdata/sarif.golden.json", out)
 
 	runs, results, rules := sarifRuns(t, out)
-	if len(runs) != 3 || runs["fleetlint/demo"] == nil || runs["fleetlint/demo/web"] == nil || runs["fleetlint/demo/lib"] == nil {
+	if len(runs) != 3 || runs["fleetlint/demo/"] == nil || runs["fleetlint/demo/web/"] == nil || runs["fleetlint/demo/lib/"] == nil {
 		t.Errorf("one run per scope, keyed by repository and scope: %v", slices.Sorted(maps.Keys(runs)))
 	}
-	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/demo" {
+	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/demo/" {
 		t.Errorf("the first run is the root: %v", id)
 	}
 	if len(results) != 6 {
 		t.Fatalf("want 6 results (passes, n/a and rule errors are none), got %d", len(results))
 	}
-	if n := len(runs["fleetlint/demo/web"]["results"].([]any)); n != 1 {
+	if n := len(runs["fleetlint/demo/web/"]["results"].([]any)); n != 1 {
 		t.Errorf("the web scope's run has its one result, got %d", n)
 	}
 	// Every result has a location; pathless findings are anchored per scope.
@@ -231,7 +231,7 @@ func TestSARIFNamesTheRunAfterTheRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, sr := renderSARIF(t, sampleRun(), report.Options{Root: root})
-	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/my-repo" {
+	if id := sr["automationDetails"].(map[string]any)["id"]; id != "fleetlint/my-repo/" {
 		t.Errorf("automationDetails.id = %v", id)
 	}
 	// Without a configuration file or README, the configuration file's path is the anchor anyway.
@@ -246,5 +246,40 @@ func TestSARIFNamesTheRunAfterTheRoot(t *testing.T) {
 	_, sr = renderSARIF(t, run, report.Options{Root: root})
 	if inv := sr["invocations"].([]any)[0].(map[string]any); inv["executionSuccessful"] != true || inv["toolExecutionNotifications"] != nil {
 		t.Errorf("no rule error: successful, no notifications: %v", inv)
+	}
+}
+
+// An anchored finding points at its anchor and keeps the fingerprint of
+// the pathless finding; a named artifact shows in the message and makes
+// its own alert.
+func TestSARIFAnchorsAndArtifacts(t *testing.T) {
+	t.Parallel()
+	run, root := sarifRun(t)
+	run.Results = []model.Result{
+		{
+			Rule: model.Rule{ID: "docs/readme", Title: "t", Severity: model.SeverityError}, Status: model.StatusFail, Severity: model.SeverityError,
+			Findings: []model.Finding{{Message: "no README", Anchor: "README.md"}},
+		},
+		{
+			Rule: model.Rule{ID: "release/signing/image", Title: "t", Severity: model.SeverityError}, Status: model.StatusFail, Severity: model.SeverityError,
+			Findings: []model.Finding{{Message: "not signed", Artifact: "ghcr.io/x/a"}, {Message: "not signed", Artifact: "ghcr.io/x/b"}},
+		},
+	}
+	out, _ := renderSARIF(t, run, report.Options{Root: root, Name: "demo"})
+	_, results, _ := sarifRuns(t, out)
+	readme := results[0].(map[string]any)
+	if uri := readme["locations"].([]any)[0].(map[string]any)["physicalLocation"].(map[string]any)["artifactLocation"].(map[string]any)["uri"]; uri != "README.md" {
+		t.Errorf("the anchor is the location: %v", uri)
+	}
+	sum := sha256.Sum256([]byte("docs/readme\x00\x00\x00no README"))
+	if fp := readme["partialFingerprints"].(map[string]any)["fleetlint/v1"]; fp != hex.EncodeToString(sum[:]) {
+		t.Errorf("the anchor is not part of the fingerprint: %v", fp)
+	}
+	a, b := results[1].(map[string]any), results[2].(map[string]any)
+	if msg := a["message"].(map[string]any)["text"]; msg != "ghcr.io/x/a: not signed" {
+		t.Errorf("the artifact's name leads the message: %v", msg)
+	}
+	if a["partialFingerprints"].(map[string]any)["fleetlint/v1"] == b["partialFingerprints"].(map[string]any)["fleetlint/v1"] {
+		t.Error("two artifacts with the same message are two alerts")
 	}
 }

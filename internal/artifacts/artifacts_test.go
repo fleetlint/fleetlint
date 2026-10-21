@@ -113,3 +113,23 @@ func TestDetectNamesInstances(t *testing.T) {
 		t.Error("instances must be a list expression")
 	}
 }
+
+// Pinned entries of the same kind and name are one artifact with the
+// workflows of both; a pinned workflow that does not exist is refused.
+func TestPinsAreMergedAndChecked(t *testing.T) {
+	t.Parallel()
+	r := testutil.Fixture(t, map[string]string{".github/workflows/a.yml": "on: push\n", ".github/workflows/b.yml": "on: push\n"})
+	env, err := celenv.New(context.Background(), r, facts.Facts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := []facts.Artifact{{Kind: "image"}, {Kind: "image"}, {Kind: "image", Name: "x", Workflows: []string{".github/workflows/a.yml"}}, {Kind: "image", Name: "x", Workflows: []string{".github/workflows/b.yml"}}}
+	found, err := artifacts.Detect(env, nil, &pins)
+	if err != nil || len(found) != 2 || found[0].Name != "" || strings.Join(found[1].Workflows, ",") != ".github/workflows/a.yml,.github/workflows/b.yml" {
+		t.Fatalf("merged: %v %+v", err, found)
+	}
+	typo := []facts.Artifact{{Kind: "image", Name: "x", Workflows: []string{".github/workflows/typo.yml"}}}
+	if _, err := artifacts.Detect(env, nil, &typo); err == nil || !strings.Contains(err.Error(), "typo.yml does not exist") {
+		t.Errorf("a missing pinned workflow is refused: %v", err)
+	}
+}

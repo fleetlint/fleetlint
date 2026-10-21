@@ -6,7 +6,10 @@ package engine
 import (
 	"context"
 	"fmt"
+	"path"
+	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -291,177 +294,218 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		res.Status, res.Evidence = model.StatusNotApplicable, "needs --deep (executes repository code)"
 		return res
 	}
-	findings, evidence, severity, skipped, err := evalPerArtifact(ctx, env, r, f, rule, caps)
+	ev := evaluation{ctx: ctx, env: env, repo: r, facts: f, rule: rule, caps: caps}
+	var (
+		out     outcome
+		skipped bool
+		err     error
+	)
+	if ev.perArtifact() {
+		out, skipped, err = ev.eachArtifact()
+	} else {
+		out, err = ev.once(env)
+	}
 	switch {
 	case err != nil:
 		res.Status, res.Err = model.StatusError, err.Error()
 		return res
-	case skipped != "":
-		res.Status, res.Evidence = model.StatusNotApplicable, skipped
+	case skipped:
+		res.Status, res.Evidence = model.StatusNotApplicable, "when: "+rule.When
 		return res
 	}
-	res.Findings, res.Evidence, res.Severity = findings, evidence, severity
-	if len(findings) > 0 {
+	res.Findings, res.Evidence, res.Severity = out.findings, out.evidence, out.severity(rule)
+	if len(out.findings) > 0 {
 		res.Status = model.StatusFail
 	}
 	return res
 }
 
-// locateFindings puts the rule's `locate` path on every finding that names
-// none, so a report points at the file that is missing or wrong.
-func locateFindings(env *celenv.Env, rule model.Rule, findings []model.Finding) error {
-	if rule.Locate == "" || len(findings) == 0 {
-		return nil
-	}
-	loc := rule.Locate
-	if catalog.IsLocateExpr(loc) {
-		var err error
-		if loc, err = env.EvalString(rule.Locate, rule.Params); err != nil {
-			return fmt.Errorf("locate: %w", err)
-		}
-	}
-	for i := range findings {
-		if findings[i].Path == "" && loc != "" {
-			findings[i].Path = loc
-		}
-	}
-	return nil
+// evaluation is one rule's evaluation in one scope.
+type evaluation struct {
+	ctx   context.Context
+	env   *celenv.Env
+	repo  *repo.Repo
+	facts facts.Facts
+	rule  model.Rule
+	caps  capabilities
 }
 
-// perArtifact says whether the rule runs once per published artifact: an
-// implementation keyed by artifact, with artifacts of its kind published.
-func perArtifact(f facts.Facts, rule model.Rule) bool {
-	return rule.Artifact != "" && len(f.ArtifactInstances(rule.Artifact)) > 0
+// outcome is what evaluating a rule yielded: its findings, the evidence of
+// a pass, and the partial that matched when the findings come from one.
+type outcome struct {
+	findings []model.Finding
+	evidence string
+	partial  *model.Partial
 }
 
-// evalPerArtifact runs an implementation keyed by artifact once per
-// published artifact of its kind, with `artifact` bound, so each is checked
-// on its own: the implementation's `when` is asked for each, a finding
-// names the artifact that fails, the evidence the ones that pass. Any
-// other rule runs once. The severity is the rule's, or a partial's when
-// every failing artifact matched a partial. skipped is set when the rule
-// applied to no published artifact.
-func evalPerArtifact(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities) (findings []model.Finding, evidence string, severity model.Severity, skipped string, err error) {
-	if !perArtifact(f, rule) {
-		found, evidence, partial, err := evalKind(ctx, env, r, f, rule, caps)
-		if err == nil {
-			err = locateFindings(env, rule, found)
-		}
-		return found, evidence, partialSeverity(rule, found, partial), "", err
-	}
-	defer env.BindArtifact(facts.Artifact{})
-	var (
-		evidences []string
-		worst     *model.Partial // the strongest partial, nil once an artifact failed outright
-		applied   int
-	)
-	for _, a := range f.ArtifactInstances(rule.Artifact) {
-		found, evidence, partial, applies, err := evalInstance(ctx, env, r, f, rule, caps, a)
-		switch {
-		case err != nil:
-			return nil, "", rule.Severity, "", err
-		case !applies:
-			continue
-		case len(found) == 0:
-			applied++
-			if evidence != "" {
-				evidences = append(evidences, evidence)
-			}
-			continue
-		}
-		applied++
-		findings = append(findings, found...)
-		worst = strongerPartial(worst, partial, len(findings) == len(found))
-	}
-	if applied == 0 {
-		return nil, "", rule.Severity, "when: " + rule.When, nil
-	}
-	return findings, strings.Join(evidences, "; "), partialSeverity(rule, findings, worst), "", nil
-}
-
-// partialSeverity is the severity a result reports at: a partial's when the
-// findings come from partial matches only, else the rule's.
-func partialSeverity(rule model.Rule, findings []model.Finding, partial *model.Partial) model.Severity {
-	if partial != nil && len(findings) > 0 {
-		return partial.Severity
+// severity is the rule's, or the partial's when the findings come from a
+// partial match only.
+func (o outcome) severity(rule model.Rule) model.Severity {
+	if o.partial != nil && len(o.findings) > 0 {
+		return o.partial.Severity
 	}
 	return rule.Severity
 }
 
-// strongerPartial folds one artifact's partial into the result's: nil once
-// any artifact failed outright (its own or an earlier one), else the one
-// with the higher severity. first says whether this is the first failure.
-func strongerPartial(sofar, next *model.Partial, first bool) *model.Partial {
-	switch {
-	case next == nil, !first && sofar == nil:
-		return nil
-	case first || next.Severity > sofar.Severity:
-		return next
-	}
-	return sofar
+// perArtifact says whether the rule runs once per published artifact: an
+// implementation keyed by artifact whose kind is published, written in
+// CEL. A Go or command rule cannot read `artifact` and runs once.
+func (ev evaluation) perArtifact() bool {
+	return perArtifact(ev.facts, ev.rule)
 }
 
-// evalInstance binds one published artifact, asks the rule's own `when`
-// for it and evaluates the rule when it applies; findings, evidence and an
-// error carry the artifact's name.
-func evalInstance(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities, a facts.Artifact) (findings []model.Finding, evidence string, partial *model.Partial, applies bool, err error) {
-	env.BindArtifact(a)
-	if rule.When != "" {
-		ok, err := env.Check(rule.When, rule.Params)
-		if err != nil {
-			return nil, "", nil, false, fmt.Errorf("when: %w", err)
-		}
-		if !ok {
-			return nil, "", nil, false, nil
-		}
-	}
-	findings, evidence, partial, err = evalKind(ctx, env, r, f, rule, caps)
-	if err == nil {
-		err = locateFindings(env, rule, findings) // with the artifact still bound
-	}
+func perArtifact(f facts.Facts, rule model.Rule) bool {
+	celRule := rule.Kind == model.KindExpr || rule.Kind == model.KindOutcome
+	return celRule && rule.Artifact != "" && len(f.ArtifactInstances(rule.Artifact)) > 0
+}
+
+// once evaluates the rule in env and anchors its pathless findings.
+func (ev evaluation) once(env *celenv.Env) (outcome, error) {
+	out, err := ev.byRuleKind(env)
 	if err != nil {
-		if a.Name != "" {
-			err = fmt.Errorf("%s: %w", a, err)
+		return outcome{}, err
+	}
+	if note := ev.anchor(env, out.findings); note != "" {
+		out.evidence = joinNonEmpty(out.evidence, note)
+	}
+	return out, nil
+}
+
+// eachArtifact runs the rule once per published artifact of its kind, in
+// an environment with `artifact` bound (ADR 0008). skipped means the
+// rule's own `when` held for none of them.
+func (ev evaluation) eachArtifact() (outcome, bool, error) {
+	var (
+		outs    []outcome
+		applied bool
+	)
+	for _, a := range ev.facts.ArtifactInstances(ev.rule.Artifact) {
+		env := ev.env.WithArtifact(a)
+		if ev.rule.When != "" {
+			ok, err := env.Check(ev.rule.When, ev.rule.Params)
+			if err != nil {
+				return outcome{}, false, artifactErr(a, fmt.Errorf("when: %w", err))
+			}
+			if !ok {
+				continue
+			}
 		}
-		return nil, "", nil, true, err
+		applied = true
+		out, err := ev.once(env)
+		if err != nil {
+			return outcome{}, false, artifactErr(a, err)
+		}
+		for i := range out.findings {
+			out.findings[i].Artifact = a.Name
+		}
+		if out.evidence != "" {
+			out.evidence = named(a, out.evidence)
+		}
+		outs = append(outs, out)
+	}
+	return merge(outs), !applied, nil
+}
+
+// merge adds up the outcomes of several artifacts: every finding and every
+// piece of evidence. The partial is the strongest among the failing
+// artifacts', or none once one of them failed outright, so the result
+// reports at the rule's severity.
+func merge(outs []outcome) outcome {
+	var (
+		merged    outcome
+		evidences []string
+		outright  bool
+	)
+	for _, out := range outs {
+		if out.evidence != "" {
+			evidences = append(evidences, out.evidence)
+		}
+		if len(out.findings) == 0 {
+			continue
+		}
+		merged.findings = append(merged.findings, out.findings...)
+		switch {
+		case out.partial == nil:
+			outright = true
+		case merged.partial == nil || out.partial.Severity > merged.partial.Severity:
+			merged.partial = out.partial
+		}
+	}
+	if outright {
+		merged.partial = nil
+	}
+	merged.evidence = strings.Join(evidences, "; ")
+	return merged
+}
+
+// anchor evaluates the rule's `locate` for its pathless findings and sets
+// their Anchor. A locate that fails or leaves the repository anchors
+// nothing; the returned note says why, for the result's evidence.
+func (ev evaluation) anchor(env *celenv.Env, findings []model.Finding) string {
+	if ev.rule.Locate == "" || !slices.ContainsFunc(findings, func(f model.Finding) bool { return f.Path == "" }) {
+		return ""
+	}
+	loc, err := env.EvalString(ev.rule.Locate, ev.rule.Params)
+	switch {
+	case err != nil:
+		return "locate: " + err.Error()
+	case loc == "":
+		return ""
+	case !filepath.IsLocal(filepath.FromSlash(path.Join(ev.repo.Scope, loc))):
+		return fmt.Sprintf("locate: %q is not a path inside the repository", loc)
 	}
 	for i := range findings {
-		findings[i].Message = label(a, findings[i].Message)
+		if findings[i].Path == "" {
+			findings[i].Anchor = path.Clean(loc)
+		}
 	}
-	if evidence != "" {
-		evidence = label(a, evidence)
-	}
-	return findings, evidence, partial, true, nil
+	return ""
 }
 
-// label prefixes a message with the artifact's name, when it has one.
-func label(a facts.Artifact, msg string) string {
+// artifactErr names the artifact an error came from, when it has a name.
+func artifactErr(a facts.Artifact, err error) error {
 	if a.Name == "" {
-		return msg
+		return err
 	}
-	return a.Name + ": " + msg
+	return fmt.Errorf("%s: %w", a, err)
 }
 
-// evalKind evaluates the rule by its kind; a partial is returned when a
-// partial of an outcome rule matched.
-func evalKind(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities) ([]model.Finding, string, *model.Partial, error) {
-	switch rule.Kind {
-	case model.KindExpr:
-		findings, err := evalExpr(env, rule)
-		return findings, "", nil, err
-	case model.KindOutcome:
-		return evalOutcome(env, rule, caps.fallback(rule))
-	case model.KindGo:
-		findings, evidence, err := evalGo(ctx, r, f, rule)
-		return findings, evidence, nil, err
-	case model.KindCommand:
-		findings, err := evalCommand(ctx, r, f, rule)
-		return findings, "", nil, err
-	case model.KindCapability:
-		return nil, "", nil, fmt.Errorf("capability %s is checked by its implementations", rule.ID)
-	default:
-		return nil, "", nil, fmt.Errorf("unknown rule kind %q", rule.Kind)
+// named prefixes evidence with the artifact's name, when it has one.
+func named(a facts.Artifact, text string) string {
+	if a.Name == "" {
+		return text
 	}
+	return a.Name + ": " + text
+}
+
+func joinNonEmpty(a, b string) string {
+	if a == "" {
+		return b
+	}
+	return a + "; " + b
+}
+
+// byRuleKind evaluates the rule by its kind in env.
+func (ev evaluation) byRuleKind(env *celenv.Env) (outcome, error) {
+	var (
+		out outcome
+		err error
+	)
+	switch ev.rule.Kind {
+	case model.KindExpr:
+		out.findings, err = evalExpr(env, ev.rule)
+	case model.KindOutcome:
+		out.findings, out.evidence, out.partial, err = evalOutcome(env, ev.rule, ev.caps.fallback(ev.rule))
+	case model.KindGo:
+		out.findings, out.evidence, err = evalGo(ev.ctx, ev.repo, ev.facts, ev.rule)
+	case model.KindCommand:
+		out.findings, err = evalCommand(ev.ctx, ev.repo, ev.facts, ev.rule)
+	case model.KindCapability:
+		err = fmt.Errorf("capability %s is checked by its implementations", ev.rule.ID)
+	default:
+		err = fmt.Errorf("unknown rule kind %q", ev.rule.Kind)
+	}
+	return out, err
 }
 
 // notApplicable decides whether a rule is out of scope. An error means the
@@ -672,7 +716,7 @@ func applyExceptions(res *model.Result, exceptions []model.Exception) {
 	for i := range res.Findings {
 		candidate := res.Findings[i]
 		if res.Scope != "" && candidate.Path != "" {
-			candidate.Path = res.Scope + "/" + candidate.Path
+			candidate.Path = path.Join(res.Scope, candidate.Path)
 		}
 		for j := range exceptions {
 			ex := &exceptions[j]

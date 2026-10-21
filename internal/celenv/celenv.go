@@ -46,7 +46,7 @@ var Accessors = []Accessor{
 	{"workflows() -> list<string>", "Paths of the repository's CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes. CI lives at the repository root, so in a member scope these are the root's files as `../` paths."},
 	{"ci_kind(path: string) -> string", "The CI system of a file from `workflows()`: `github`, `gitea`, `forgejo` or `gitlab`."},
 	{"tagged_workflows() -> list<string>", "CI files a tag push starts (`on.push.tags`; GitLab rules on `$CI_COMMIT_TAG` or `only: tags`), i.e. release pipelines."},
-	{"artifact_workflows(kind: string) -> list<string>", "CI files that publish any artifact of the kind (`image`, `npm`, `release-files`, ...), as the catalog's `artifacts/<kind>.yaml` detected them or the pin under `facts.artifacts` names them; empty when the kind is not published. In an implementation keyed by artifact, `artifact.workflows` is the current artifact's own."},
+	{"artifact_workflows(kind: string) -> list<string>", "Deprecated, refused in catalogs for engine level 7: use `artifact.workflows` in an implementation keyed by artifact. CI files that publish any artifact of the kind; empty when the kind is not published."},
 	{"find(text: string, regex: string) -> string", "The first capture group of the first match (the whole match without a group), or \"\" when nothing matches."},
 	{"findall(text: string, regex: string) -> list<string>", "The first capture group of every match (the whole match without a group), in order; empty when nothing matches."},
 	{"steps(path: string) -> list<map>", "Every step of every job in a CI file, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields. A GitLab job is one step whose `run` is its before_script, script and after_script."},
@@ -80,12 +80,17 @@ type Env struct {
 	repo  *repo.Repo
 	facts facts.Facts
 	// artifact is the published artifact an implementation keyed by
-	// artifact is being evaluated for; zero outside one.
+	// artifact is being evaluated for (see WithArtifact); zero otherwise.
 	artifact facts.Artifact
 	cache    map[string]cel.Program
-	// rootCI holds the repository's CI files as seen from a member scope.
-	rootCI      sync.Once
-	rootCIFiles []string
+	rootCI   *rootCI
+}
+
+// rootCI holds the repository's CI files as seen from a member scope,
+// shared by an Env and the copies WithArtifact makes.
+type rootCI struct {
+	once  sync.Once
+	files []string
 }
 
 // costLimit bounds one evaluation (about half a minute at worst), so a
@@ -107,7 +112,7 @@ var checker = sync.OnceValues(func() (*Env, error) { return New(context.Backgrou
 // New builds the environment for a repository scope; evaluations stop when
 // ctx is done.
 func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
-	e := &Env{ctx: ctx, repo: r, facts: f, cache: map[string]cel.Program{}}
+	e := &Env{ctx: ctx, repo: r, facts: f, cache: map[string]cel.Program{}, rootCI: &rootCI{}}
 	vars := []cel.EnvOption{
 		cel.Variable("repo", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("release", cel.MapType(cel.StringType, cel.DynType)),
@@ -135,9 +140,13 @@ func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
 // been detected with the environment itself.
 func (e *Env) SetFacts(f facts.Facts) { e.facts = f }
 
-// BindArtifact sets the artifact that `artifact` names in expressions, for
-// one implementation's evaluation; the zero Artifact unbinds it.
-func (e *Env) BindArtifact(a facts.Artifact) { e.artifact = a }
+// WithArtifact is the environment with `artifact` bound to a: a copy that
+// shares the compiled programs and caches, used by the same goroutine.
+func (e *Env) WithArtifact(a facts.Artifact) *Env {
+	c := *e
+	c.artifact = a
+	return &c
+}
 
 // CheckList type-checks an expression that must yield a list, without a
 // repository: for catalog definitions at load time.
@@ -148,17 +157,6 @@ func CheckList(expr string) error {
 	}
 	want := cel.ListType(cel.DynType)
 	_, err = c.check(want.String()+"\x00"+expr, expr, want) // the shared checker is concurrent: only the type-checked ASTs are kept
-	return err
-}
-
-// CheckString type-checks an expression that must yield a string, without
-// a repository: for a rule's `locate` at load time.
-func CheckString(expr string) error {
-	c, err := checker()
-	if err != nil {
-		return err
-	}
-	_, err = c.check(cel.StringType.String()+"\x00"+expr, expr, cel.StringType)
 	return err
 }
 
@@ -223,7 +221,7 @@ func (e *Env) check(key, expr string, want *cel.Type) (*cel.Ast, error) {
 }
 
 // ValidateRules type-checks every expression of the rules: when, expr,
-// foreach, satisfiers, partials and accepted satisfiers. Config loading
+// foreach, locate, satisfiers, partials and accepted satisfiers. Config loading
 // calls it, so a typo fails every repository, not only those where the
 // rule happens to apply; the checked expressions are kept for evaluation.
 func ValidateRules(rules []model.Rule) error {
@@ -233,9 +231,9 @@ func ValidateRules(rules []model.Rule) error {
 	}
 	for _, r := range rules {
 		for _, x := range expressions(r) {
-			want := cel.BoolType
-			if x.list {
-				want = cel.ListType(cel.DynType)
+			want := x.want
+			if want == nil {
+				want = cel.BoolType
 			}
 			if _, err := env.check(want.String()+"\x00"+x.expr, x.expr, want); err != nil {
 				return fmt.Errorf("rule %s: %s: %w", r.ID, x.where, err)
@@ -247,28 +245,29 @@ func ValidateRules(rules []model.Rule) error {
 
 type expression struct {
 	where, expr string
-	list        bool
+	want        *cel.Type // nil: a predicate
 }
 
 func expressions(r model.Rule) []expression {
 	var out []expression
-	add := func(where, expr string, list bool) {
+	add := func(where, expr string, want *cel.Type) {
 		if expr != "" {
-			out = append(out, expression{where, expr, list})
+			out = append(out, expression{where, expr, want})
 		}
 	}
-	add("gate", r.Gate, false)
-	add("when", r.When, false)
-	add("foreach", r.Foreach, true)
+	add("gate", r.Gate, nil)
+	add("when", r.When, nil)
+	add("foreach", r.Foreach, cel.ListType(cel.DynType))
+	add("locate", r.Locate, cel.StringType)
 	if r.Kind == model.KindExpr || r.Kind == "" {
-		add("expr", r.Expr, false)
+		add("expr", r.Expr, nil)
 	}
 	for _, s := range append(append([]model.Satisfier{}, r.Satisfiers...), r.AcceptedSatisfiers()...) {
-		add("satisfier "+s.Name+" when", s.When, false)
-		add("satisfier "+s.Name, s.Expr, false)
+		add("satisfier "+s.Name+" when", s.When, nil)
+		add("satisfier "+s.Name, s.Expr, nil)
 	}
 	for _, p := range r.Partials {
-		add("partial "+p.Name, p.Expr, false)
+		add("partial "+p.Name, p.Expr, nil)
 	}
 	return out
 }
@@ -488,17 +487,17 @@ func (e *Env) workflowPaths() []string {
 	if e.repo.Scope == "" {
 		return ci.Files(e.repo)
 	}
-	e.rootCI.Do(func() {
+	e.rootCI.once.Do(func() {
 		root, err := e.repo.Scoped("")
 		if err != nil {
 			return
 		}
 		up := strings.Repeat("../", strings.Count(e.repo.Scope, "/")+1)
 		for _, f := range ci.Files(root) {
-			e.rootCIFiles = append(e.rootCIFiles, up+f)
+			e.rootCI.files = append(e.rootCI.files, up+f)
 		}
 	})
-	return slices.Clone(e.rootCIFiles)
+	return slices.Clone(e.rootCI.files)
 }
 
 func (e *Env) taggedWorkflows() []string {

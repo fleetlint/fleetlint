@@ -131,3 +131,18 @@ func TestCombineIsGoneSinceLevel7(t *testing.T) {
 		t.Errorf("level 6 keeps combine (it fails on where it is set, not on its presence): %v", err)
 	}
 }
+
+// artifact_workflows() left the format with combine: a level-7 catalog is
+// refused with it, an older one runs.
+func TestArtifactWorkflowsIsGoneSinceLevel7(t *testing.T) {
+	t.Parallel()
+	body := func(engine string) []byte {
+		return []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: a, version: 1.0.0" + engine + "}\nrules:\n  - {id: x/y, title: t, kind: expr, expr: 'artifact_workflows(\"image\").size() > 0', severity: info, requirement: r, fix: {human: h}}\n")
+	}
+	if _, err := catalog.Parse(body(", engine: 7")); err == nil || !strings.Contains(err.Error(), "artifact_workflows() is gone since engine level 7") {
+		t.Errorf("level 7 refuses artifact_workflows: %v", err)
+	}
+	if _, err := catalog.Parse(body(", engine: 6")); err != nil {
+		t.Errorf("level 6 keeps artifact_workflows: %v", err)
+	}
+}

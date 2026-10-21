@@ -142,9 +142,10 @@ type Rule struct {
 	Accept   []Satisfier `yaml:"-" json:"accept,omitempty"`
 	Partials []Partial   `yaml:"partials,omitempty" json:"partials,omitempty"`
 	Run      string      `yaml:"run,omitempty" json:"run,omitempty"`
-	// Locate is where a finding of the rule that names no path belongs: a
-	// scope-relative path (`README.md`), or a CEL expression yielding one,
-	// so a report points at the file that is missing or wrong.
+	// Locate is a CEL expression yielding the scope-relative file a finding
+	// of the rule is about when the finding names no path (`'"README.md"'`,
+	// `taskrunner.file`); reports point there. It sets the finding's
+	// Anchor, never its Path, so identity and fixes are unaffected.
 	Locate      string         `yaml:"locate,omitempty" json:"locate,omitempty"`
 	Message     string         `yaml:"message,omitempty" json:"message,omitempty"`
 	Requirement string         `yaml:"requirement,omitempty" json:"requirement,omitempty"`
@@ -407,15 +408,39 @@ const (
 
 // Finding is one concrete problem a rule reports.
 type Finding struct {
+	// Path and Line are where the problem was observed; they and Message
+	// are the finding's identity for baselines and exceptions.
 	Path    string `json:"path,omitempty"`
 	Line    int    `json:"line,omitempty"`
 	Message string `json:"message"`
+	// Anchor is where a report points when Path is empty: the file the rule
+	// says the finding is about (its `locate`). Presentation only.
+	Anchor string `json:"anchor,omitempty"`
+	// Artifact names the published artifact the finding is about, for an
+	// implementation keyed by artifact whose kind names its instances.
+	Artifact string `json:"artifact,omitempty"`
 	// Evidence names the satisfier or detail that produced the finding.
 	Evidence string `json:"evidence,omitempty"`
 	// Exception is set when an exception covered this finding.
 	Exception *Exception `json:"exception,omitempty"`
 	// Baselined is true when the baseline file grandfathers this finding.
 	Baselined bool `json:"baselined,omitempty"`
+}
+
+// Where is the file a report points at: the path, else the anchor.
+func (f Finding) Where() string {
+	if f.Path != "" {
+		return f.Path
+	}
+	return f.Anchor
+}
+
+// Text is the message as reports show it, after the artifact's name.
+func (f Finding) Text() string {
+	if f.Artifact == "" {
+		return f.Message
+	}
+	return f.Artifact + ": " + f.Message
 }
 
 // Ref is where a rule's practice comes from. In YAML a bare URL string or

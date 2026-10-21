@@ -107,7 +107,10 @@ type disabledOut struct {
 // checkFormat versions the check JSON. 2: every field is snake_case
 // (summary, scopes, disabled, catalogs were Go field names in 1), and the
 // summary's rule-error count is rule_errors. 3: `catalogs` is the hierarchy
-// (order, origin, via, includes, counts) and `layer` is a free label.
+// (order, origin, via, includes, counts) and `layer` is a free label. 4: a
+// rule's refs are objects {url, kind, section}. 5: a published artifact in
+// facts.artifacts carries its name; a finding its anchor and artifact, a
+// rule its locate.
 const checkFormat = 5
 
 func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
@@ -255,7 +258,7 @@ func writeRow(tw *errWriter, r model.Result, verbose bool) {
 
 func writeFailRow(tw *errWriter, id string, r model.Result) {
 	tw.printf("%s\t%s\t%s\n", severityMark(r.Severity), id, firstMessage(r))
-	single := len(r.Findings) == 1 && r.Findings[0].Path == ""
+	single := len(r.Findings) == 1 && r.Findings[0].Where() == ""
 	if !single {
 		for _, f := range r.Findings[:min(len(r.Findings), 5)] {
 			tw.printf("\t\t%s\n", location(f))
@@ -416,20 +419,22 @@ func firstMessage(r model.Result) string {
 	if len(r.Findings) == 0 {
 		return r.Rule.Title
 	}
-	if len(r.Findings) == 1 && r.Findings[0].Path == "" {
-		return r.Findings[0].Message
+	if len(r.Findings) == 1 && r.Findings[0].Where() == "" {
+		return r.Findings[0].Text()
 	}
 	return fmt.Sprintf("%s (%d)", r.Rule.Title, len(r.Findings))
 }
 
+// location is a finding as text: the file it is about (its path, else its
+// anchor), the line, the message after the artifact's name.
 func location(f model.Finding) string {
-	switch {
+	switch where := f.Where(); {
 	case f.Path != "" && f.Line > 0:
-		return fmt.Sprintf("%s:%d: %s", f.Path, f.Line, f.Message)
-	case f.Path != "":
-		return f.Path + ": " + f.Message
+		return fmt.Sprintf("%s:%d: %s", f.Path, f.Line, f.Text())
+	case where != "":
+		return where + ": " + f.Text()
 	}
-	return f.Message
+	return f.Text()
 }
 
 func untilText(ex *model.Exception) string {

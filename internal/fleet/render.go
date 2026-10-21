@@ -140,7 +140,7 @@ func leadMessage(r model.Result) string {
 	if len(r.Findings) == 0 {
 		return r.Rule.Title
 	}
-	return r.Findings[0].Message
+	return r.Findings[0].Text()
 }
 
 // ruleStat is one rule across the fleet; counts are repositories.

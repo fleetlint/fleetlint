@@ -132,8 +132,9 @@ func writeSARIF(w io.Writer, run *engine.Run, opts Options) error {
 }
 
 // WriteSARIF renders results as one SARIF run per scope, keyed
-// `fleetlint/<repository>` for the root and `fleetlint/<repository>/<scope>`
-// for a scope, so a monorepo's scopes keep their own alert sets. Failing,
+// `fleetlint/<repository>/` for the root and `fleetlint/<repository>/<scope>/`
+// for a scope. Code scanning takes an id up to its last `/` as the run's
+// category, so the trailing slash gives every scope its own alert set. Failing,
 // excepted and baselined findings are results (the latter two suppressed),
 // rule errors are invocation notifications, passes and n/a are left out.
 // Every result has a location: a finding without a path is anchored to its
@@ -155,7 +156,7 @@ func WriteSARIF(w io.Writer, results []model.Result, catalogs []config.CatalogIn
 	runs := make([]sarifRun, 0, len(scopes))
 	for _, scope := range scopes {
 		run := sarifRunFor(byScope[scope], catalogs, opts, anchors)
-		run.AutomationDetails = sarifAutomation{ID: path.Join("fleetlint", name, scope)}
+		run.AutomationDetails = sarifAutomation{ID: path.Join("fleetlint", name, scope) + "/"}
 		runs = append(runs, run)
 	}
 	log := sarifLog{Schema: "https://json.schemastore.org/sarif-2.1.0.json", Version: "2.1.0", Runs: runs}
@@ -252,13 +253,13 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 	out := make([]sarifResult, 0, len(r.Findings))
 	for _, f := range r.Findings {
 		res := sarifResult{
-			RuleID: r.Rule.ID, Level: sarifLevel(r.Severity), Message: sarifText{f.Message},
-			PartialFingerprints: map[string]string{fingerprintKey: fingerprint(r.Rule.ID, r.Scope, f.Path, f.Message)},
+			RuleID: r.Rule.ID, Level: sarifLevel(r.Severity), Message: sarifText{f.Text()},
+			PartialFingerprints: map[string]string{fingerprintKey: fingerprint(r.Rule.ID, r.Scope, f)},
 		}
 		loc := sarifLocation{PhysicalLocation: sarifPhysical{ArtifactLocation: sarifArtifact{URI: anchors.anchor(r.Scope)}}}
-		if f.Path != "" {
-			loc.PhysicalLocation.ArtifactLocation.URI = path.Join(r.Scope, f.Path)
-			if f.Line > 0 {
+		if where := f.Where(); where != "" {
+			loc.PhysicalLocation.ArtifactLocation.URI = path.Join(r.Scope, where)
+			if f.Path != "" && f.Line > 0 {
 				loc.PhysicalLocation.Region = &sarifRegion{StartLine: f.Line}
 			}
 		}
@@ -280,9 +281,14 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 }
 
 // fingerprint identifies a finding across runs: the rule, where it was
-// found and what it said, independent of line numbers and ordering.
-func fingerprint(ruleID, scope, path, message string) string {
-	sum := sha256.Sum256([]byte(ruleID + "\x00" + scope + "\x00" + path + "\x00" + message))
+// found, what it said and the artifact it is about, independent of line
+// numbers, ordering and where a report points (the anchor).
+func fingerprint(ruleID, scope string, f model.Finding) string {
+	key := ruleID + "\x00" + scope + "\x00" + f.Path + "\x00" + f.Message
+	if f.Artifact != "" {
+		key += "\x00" + f.Artifact
+	}
+	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 

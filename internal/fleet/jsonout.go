@@ -15,7 +15,9 @@ import (
 // definitions are stored once, under `definitions`. 3: summary fields are
 // snake_case, its rule-error count is rule_errors. 4: each repository
 // lists its catalogs in the order they applied, with their pins. 5: a rule's
-// refs are objects {url, kind, section}.
+// refs are objects {url, kind, section}. 6: a published artifact in
+// facts.artifacts carries its name, a finding its anchor and artifact, a
+// repository its notes.
 const jsonFormat = 6
 
 type reportOut struct {

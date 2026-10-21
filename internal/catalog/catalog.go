@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/fleetlint/fleetlint/internal/artifacts"
-	"github.com/fleetlint/fleetlint/internal/celenv"
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
 	data "github.com/fleetlint/catalog"
@@ -48,8 +47,8 @@ const APIVersion = "fleetlint.org/v1"
 // Level 6: refs as {url, kind, section} entries.
 // Level 7: published artifacts as named instances (`instances:` in an
 // artifact definition, `artifact` in an implementation keyed by artifact,
-// `facts.artifacts` entries with a name and workflows, `find`/`findall`);
-// `combine:` is gone from the rule format.
+// `facts.artifacts` entries with a name and workflows, `find`/`findall`),
+// `locate:` on rules; `combine:` and `artifact_workflows()` are gone.
 const (
 	EngineLevel    = 7
 	MinEngineLevel = 1
@@ -969,32 +968,14 @@ func validateRule(r *model.Rule, engine int) error {
 	return validateCombine(r, engine)
 }
 
-// validateLocate accepts a scope-relative path or a CEL expression that
-// yields one. A path that happens to be a CEL expression is read as the
-// expression; quote it to mean the path.
-func validateLocate(r *model.Rule) error {
-	loc := r.Locate
-	if loc == "" || IsLocateExpr(loc) {
-		return nil
-	}
-	if path.IsAbs(loc) || strings.ContainsAny(loc, " \t\n\\") || slices.Contains(strings.Split(loc, "/"), "..") {
-		return fmt.Errorf("rule %s: locate must be a scope-relative path or a CEL expression yielding one (got %q)", r.ID, loc)
-	}
-	return nil
-}
-
-// IsLocateExpr says whether a rule's locate is a CEL expression (it
-// type-checks as a string) rather than a literal path.
-func IsLocateExpr(loc string) bool { return celenv.CheckString(loc) == nil }
-
-// validateRefs checks every source the rule cites and where it points.
+// validateRefs checks every source the rule cites.
 func validateRefs(r *model.Rule) error {
 	for _, ref := range r.Refs {
 		if err := ref.Validate(); err != nil {
 			return fmt.Errorf("rule %s: %w", r.ID, err)
 		}
 	}
-	return validateLocate(r)
+	return nil
 }
 
 // settleImplementation reads an implementation id (family/name/<target>):
@@ -1035,10 +1016,11 @@ func validateBy(r *model.Rule) error {
 // implementations that inherit it), and only in a catalog written for an
 // engine level before 7, where it left the format.
 func validateCombine(r *model.Rule, engine int) error {
+	if err := checkLevel7(*r, engine); err != nil {
+		return err
+	}
 	switch {
 	case r.Combine == "":
-	case engine >= combineGone:
-		return fmt.Errorf("rule %s: combine is gone since engine level %d: a requirement that one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers, one that differs per published artifact a capability keyed by artifact (by: artifact)", r.ID, combineGone)
 	case r.Combine != model.CombineAll && r.Combine != model.CombineAny:
 		return fmt.Errorf("rule %s: combine must be all or any (got %q)", r.ID, r.Combine)
 	case r.Kind != model.KindCapability && r.Capability == "":
@@ -1047,8 +1029,44 @@ func validateCombine(r *model.Rule, engine int) error {
 	return nil
 }
 
-// combineGone is the engine level since which `combine:` is refused.
-const combineGone = 7
+// level7 is the engine level since which `combine:` and
+// `artifact_workflows()` are refused.
+const level7 = 7
+
+// artifactWorkflowsCall finds the deprecated function in an expression.
+var artifactWorkflowsCall = regexp.MustCompile(`\bartifact_workflows\s*\(`)
+
+// checkLevel7 refuses, in a catalog written for engine level 7 or later,
+// what left the format there: `combine:`, and `artifact_workflows()`, which
+// inside an implementation keyed by artifact reads every artifact of the
+// kind instead of the one being checked (`artifact.workflows`).
+func checkLevel7(r model.Rule, engine int) error {
+	if engine < level7 {
+		return nil
+	}
+	if r.Combine != "" {
+		return fmt.Errorf("rule %s: combine is gone since engine level %d: a requirement that one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers, one that differs per published artifact a capability keyed by artifact (by: artifact)", r.ID, level7)
+	}
+	for _, expr := range ruleExpressions(r) {
+		if artifactWorkflowsCall.MatchString(expr) {
+			return fmt.Errorf("rule %s: artifact_workflows() is gone since engine level %d: use artifact.workflows in an implementation keyed by artifact", r.ID, level7)
+		}
+	}
+	return nil
+}
+
+// ruleExpressions are the CEL expressions a rule carries.
+func ruleExpressions(r model.Rule) []string {
+	out := make([]string, 0, 4+2*len(r.Satisfiers)+len(r.Partials))
+	out = append(out, r.When, r.Expr, r.Foreach, r.Locate)
+	for _, s := range r.Satisfiers {
+		out = append(out, s.When, s.Expr)
+	}
+	for _, p := range r.Partials {
+		out = append(out, p.Expr)
+	}
+	return out
+}
 
 func validateKind(r *model.Rule) error {
 	switch r.Kind {

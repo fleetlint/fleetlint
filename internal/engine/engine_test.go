@@ -654,7 +654,7 @@ func TestImplementationWhenIsAskedPerArtifact(t *testing.T) {
 	publish := "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish\n"
 	files := map[string]string{"package.json": "{\"name\": \"x\"}\n", ".github/workflows/release.yml": publish, ".gitea/workflows/release.yml": publish}
 	both := run(t, files, "version: 1\nextends: [fleetlint:recommended]\nfacts:\n  tier: 1\n  visibility: public\n  artifacts:\n    - {kind: npm, name: hub, workflows: [.github/workflows/release.yml]}\n    - {kind: npm, name: tea, workflows: [.gitea/workflows/release.yml]}\n")
-	if s := status(t, both, "release/trusted-publishing/npm"); s.Status != model.StatusFail || len(s.Findings) != 1 || !strings.HasPrefix(s.Findings[0].Message, "hub: ") {
+	if s := status(t, both, "release/trusted-publishing/npm"); s.Status != model.StatusFail || len(s.Findings) != 1 || s.Findings[0].Artifact != "hub" {
 		t.Errorf("the GitHub one is checked, the Gitea one skipped: %s %+v", s.Status, s.Findings)
 	}
 	teaOnly := run(t, files, "version: 1\nextends: [fleetlint:recommended]\nfacts:\n  tier: 1\n  visibility: public\n  artifacts:\n    - {kind: npm, name: tea, workflows: [.gitea/workflows/release.yml]}\n")
@@ -663,27 +663,43 @@ func TestImplementationWhenIsAskedPerArtifact(t *testing.T) {
 	}
 }
 
-// A rule's locate puts a path on findings that name none: a literal path,
-// or a CEL expression yielding one.
-func TestLocatePutsAPathOnPathlessFindings(t *testing.T) {
+// A rule's locate anchors the findings that name no path: a CEL string,
+// literal or computed. The anchor is where reports point; the finding's
+// path, and so its identity, stays as observed. A locate outside the
+// repository anchors nothing and says so; a bare path is not CEL and
+// fails the load.
+func TestLocateAnchorsPathlessFindings(t *testing.T) {
 	t.Parallel()
-	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n" +
-		"  - {id: x/readme, title: t, kind: expr, expr: 'file(\"README.md\")', severity: info, requirement: r, fix: {human: h}, locate: README.md}\n" +
-		"  - {id: x/runner, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}, locate: 'taskrunner.file != \"\" ? taskrunner.file : \"Makefile\"'}\n" +
-		"  - {id: x/bare, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}}\n"
-	out := run(t, map[string]string{"go.mod": "module x\n", "Makefile": "check:\n\ttrue\n"}, cfg)
-	if s := status(t, out, "x/readme"); s.Status != model.StatusFail || s.Findings[0].Path != "README.md" {
-		t.Errorf("a literal locate is the finding's path: %s %+v", s.Status, s.Findings)
+	rule := func(id, expr, locate string) string {
+		r := "  - {id: " + id + ", title: t, kind: expr, expr: '" + expr + "', severity: info, requirement: r, fix: {human: h}"
+		if locate != "" {
+			r += ", locate: '" + locate + "'"
+		}
+		return r + "}\n"
 	}
-	if s := status(t, out, "x/runner"); s.Findings[0].Path != "Makefile" {
+	cfg := "version: 1\nextends: [fleetlint:minimal]\nrules:\n" +
+		rule("x/readme", `file("README.md")`, `"README.md"`) +
+		rule("x/runner", "false", `taskrunner.file != "" ? taskrunner.file : "Makefile"`) +
+		rule("x/escape", "false", `"../../etc/passwd"`) +
+		rule("x/bare", "false", "")
+	out := run(t, map[string]string{"go.mod": "module x\n", "Makefile": "check:\n\ttrue\n"}, cfg)
+	if s := status(t, out, "x/readme"); s.Status != model.StatusFail || s.Findings[0].Anchor != "README.md" || s.Findings[0].Path != "" || s.Findings[0].Where() != "README.md" {
+		t.Errorf("a literal locate anchors the finding, the path stays empty: %s %+v", s.Status, s.Findings)
+	}
+	if s := status(t, out, "x/runner"); s.Findings[0].Anchor != "Makefile" {
 		t.Errorf("an expression locate is evaluated in the scope: %+v", s.Findings)
 	}
-	if s := status(t, out, "x/bare"); s.Findings[0].Path != "" {
-		t.Errorf("without locate the finding stays pathless: %+v", s.Findings)
+	if s := status(t, out, "x/escape"); s.Status != model.StatusFail || s.Findings[0].Anchor != "" || !strings.Contains(s.Evidence, "not a path inside the repository") {
+		t.Errorf("a locate outside the repository anchors nothing and says so: %s %q %+v", s.Status, s.Evidence, s.Findings)
 	}
-	bad := "version: 1\nextends: [fleetlint:minimal]\nrules:\n  - {id: x/abs, title: t, kind: expr, expr: 'false', severity: info, requirement: r, fix: {human: h}, locate: /etc/passwd}\n"
-	r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", config.FileName: bad})
-	if _, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "locate must be a scope-relative path") {
-		t.Errorf("an absolute locate is refused: %v", err)
+	if s := status(t, out, "x/bare"); s.Findings[0].Where() != "" {
+		t.Errorf("without locate the finding points nowhere: %+v", s.Findings)
+	}
+	for name, locate := range map[string]string{"bare path": "README.md", "not a string": "1 + 1"} {
+		bad := "version: 1\nextends: [fleetlint:minimal]\nrules:\n" + rule("x/bad", "false", locate)
+		r := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n", config.FileName: bad})
+		if _, err := config.Load(r.Root, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "locate") {
+			t.Errorf("%s: a locate that is not a CEL string fails the load: %v", name, err)
+		}
 	}
 }

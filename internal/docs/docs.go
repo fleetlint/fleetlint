@@ -78,8 +78,12 @@ func prose(text string) string {
 // writeSources is the end of a rule page: where a finding points, and the
 // sources the rule cites.
 func writeSources(b *bytes.Buffer, r model.Rule) {
-	if r.Locate != "" {
-		fmt.Fprintf(b, "A finding of this rule points at `%s`.\n\n", r.Locate)
+	switch lit := strings.Trim(r.Locate, `"`); {
+	case r.Locate == "":
+	case `"`+lit+`"` == r.Locate && !strings.Contains(lit, `"`):
+		fmt.Fprintf(b, "A finding of this rule points at `%s`.\n\n", lit)
+	default:
+		fmt.Fprintf(b, "A finding of this rule points at the file `%s` yields.\n\n", r.Locate)
 	}
 	fmt.Fprintf(b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
 }

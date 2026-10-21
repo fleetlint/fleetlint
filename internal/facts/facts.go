@@ -59,8 +59,9 @@ type Facts struct {
 	Members []string `json:"members,omitempty"`
 	CI      []string `json:"ci"`
 	Release Release  `json:"release"`
-	// Artifacts are what the release publishes, by kind, with the workflows
-	// that publish each; detected from the catalog's artifacts/ definitions
+	// Artifacts are what the release publishes, one entry per artifact (a
+	// kind, and a name where the kind names its instances), with the
+	// workflows that publish each; detected from the catalog's artifacts/ definitions
 	// or pinned under facts.artifacts. Root-level: a member scope carries
 	// the root's.
 	Artifacts  []Artifact `json:"artifacts,omitempty"`

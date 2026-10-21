@@ -131,10 +131,11 @@ func Find(defs []Def, id string) (Def, bool) {
 
 // Detect evaluates every definition and returns the published artifacts,
 // in definition order and, within a kind, in the order their names were
-// first seen. pinned replaces detection: what the pin lists, as it says.
+// first seen. pinned replaces detection: what the pin lists, entries of
+// the same kind and name merged, every named workflow present.
 func Detect(env *celenv.Env, defs []Def, pinned *[]facts.Artifact) ([]facts.Artifact, error) {
 	if pinned != nil {
-		return append([]facts.Artifact{}, *pinned...), nil
+		return settlePins(env, *pinned)
 	}
 	var out []facts.Artifact
 	for _, d := range defs {
@@ -154,6 +155,34 @@ func Detect(env *celenv.Env, defs []Def, pinned *[]facts.Artifact) ([]facts.Arti
 			return nil, fmt.Errorf("artifact %s: instances: %w", d.ID, err)
 		}
 		out = append(out, instances...)
+	}
+	return out, nil
+}
+
+// settlePins merges pinned entries of the same kind and name, so an
+// artifact is checked once, and refuses a workflow that does not exist,
+// which the release rules would otherwise read as an empty file.
+func settlePins(env *celenv.Env, pinned []facts.Artifact) ([]facts.Artifact, error) {
+	var out []facts.Artifact
+	index := map[[2]string]int{}
+	for _, p := range pinned {
+		for _, w := range p.Workflows {
+			if !env.HasFile(w) {
+				return nil, fmt.Errorf("facts.artifacts: %s: workflow %s does not exist", p, w)
+			}
+		}
+		key := [2]string{p.Kind, p.Name}
+		i, ok := index[key]
+		if !ok {
+			index[key] = len(out)
+			out = append(out, facts.Artifact{Kind: p.Kind, Name: p.Name})
+			i = index[key]
+		}
+		for _, w := range p.Workflows {
+			if !slices.Contains(out[i].Workflows, w) {
+				out[i].Workflows = append(out[i].Workflows, w)
+			}
+		}
 	}
 	return out, nil
 }

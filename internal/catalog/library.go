@@ -425,11 +425,11 @@ func (l Loader) libraryFor(c *Catalog) (*Library, error) {
 
 // selected is the library rule as the catalog takes it in: a copy marked
 // with its source and the catalog that selected it. A catalog written for
-// engine level 7 or later may not take in a rule with `combine:`.
+// engine level 7 or later may not take in what left the format there.
 func (l *Library) selected(id string, c *Catalog) (model.Rule, error) {
 	r := l.rules[id].Clone()
-	if r.Combine != "" && c.Metadata.Engine >= combineGone {
-		return model.Rule{}, fmt.Errorf("%s: rule %s (%s): combine is gone since engine level %d", c.Metadata.Name, id, l.source[id], combineGone)
+	if err := checkLevel7(r, c.Metadata.Engine); err != nil {
+		return model.Rule{}, fmt.Errorf("%s (%s): %w", c.Metadata.Name, l.source[id], err)
 	}
 	r.Source = l.source[id]
 	r.SelectedBy = c.Metadata.Name + "@" + c.Metadata.Version
