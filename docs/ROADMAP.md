@@ -13,7 +13,7 @@ v0.1.0 (2026-10-06) ran `check.yml` and `release.yml` on GitHub-hosted runners: 
 | 0.1 | engine, presets, check/init/facts/explain, table/json/agent | done |
 | 0.2 | workspace discovery, rule scopes, task-runner contract, `fix` with templates, `.fleetlint.yaml` | done |
 | 0.4 (pulled forward) | JSON schema, SARIF and Markdown output, generated rule docs with drift check, prek hook + GitHub Action definitions, `--deep` (runs `make check`), CLI tests, outcome rules with YAML satisfiers (`release/sbom` as reference), `foreach` | done |
-| 0.3 | release, signing, changelog and CI families as outcome rules that detect producers | done; presets `strict` and `oss` are open |
+| 0.3 | release, signing, changelog and CI families as outcome rules that detect producers | done (presets `strict` and `oss` are in the catalog) |
 | 0.5 | fleet mode: matrix report, history, per-repo agent tasks; `init --pr`; forge discovery with `--from` | done (`--from` is tested against a local server; against the real GitHub API only as far as listing a public owner and starting the clones, and not yet against Gitea or a private organization) |
 | 0.6 | `command` rules, baseline ratchet, nested configs | done |
 | 0.6.1 | 20 further rules towards the 1.0 catalog (`docs/rules-1.0.md`): repo, lint, quality, docs, deps, ci, release (producer detection), public families; accessors `jobs`, `triggers`, `tags`, `commits`, `grep`, `filesize`, `globmatch`; CEL string/list extensions | done |
