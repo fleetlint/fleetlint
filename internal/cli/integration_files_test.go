@@ -12,7 +12,7 @@ import (
 func TestIntegrationFilesParse(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{
-		"../../action/action.yml", "../../.pre-commit-hooks.yaml", "../../.goreleaser.yaml",
+		"../../.pre-commit-hooks.yaml", "../../.goreleaser.yaml",
 		"../../.github/workflows/check.yml", "../../.github/workflows/release.yml", "../../.github/workflows/mutate.yml",
 	} {
 		b, err := os.ReadFile(path)

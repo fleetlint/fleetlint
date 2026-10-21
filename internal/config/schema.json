@@ -391,6 +391,10 @@
           "since": {
             "type": "string",
             "description": "The catalog version that added the rule."
+          },
+          "locate": {
+            "type": "string",
+            "description": "Where a finding that names no path belongs: a scope-relative path (README.md) or a CEL expression yielding one."
           }
         }
       }
