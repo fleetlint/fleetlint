@@ -36,17 +36,24 @@ type Baseline struct {
 	file    File
 }
 
-// Key identifies a finding independent of line numbers and run order: the
-// hex SHA-256 of rule id, scope, path and message. SARIF uses all of it.
-func Key(ruleID, scope, path, message string) string {
-	sum := sha256.Sum256([]byte(ruleID + "\x00" + scope + "\x00" + path + "\x00" + message))
+// Key identifies a finding independent of line numbers, run order and
+// where a report points (its anchor): the hex SHA-256 of rule id, scope,
+// path and message, and of the artifact's name when the finding is about
+// a named artifact, so each artifact is a finding of its own. SARIF uses
+// all of it; a finding without an artifact keeps the key it always had.
+func Key(ruleID, scope string, f model.Finding) string {
+	key := ruleID + "\x00" + scope + "\x00" + f.Path + "\x00" + f.Message
+	if f.Artifact != "" {
+		key += "\x00" + f.Artifact
+	}
+	sum := sha256.Sum256([]byte(key))
 	return hex.EncodeToString(sum[:])
 }
 
 // Fingerprint is the baseline's entry for a finding: the first 16
 // characters of its Key.
 func Fingerprint(rule, scope string, f model.Finding) string {
-	return Key(rule, scope, f.Path, f.Message)[:16]
+	return Key(rule, scope, f)[:16]
 }
 
 // Files reads and writes the baseline inside the repository.

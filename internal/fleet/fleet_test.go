@@ -74,7 +74,7 @@ func TestRunAndWriteLocalRepos(t *testing.T) {
 		t.Error("no sarif for a repository that could not be checked")
 	}
 	sarifOut, _ := os.ReadFile(filepath.Join(out, "sarif/messy.sarif"))
-	for _, want := range []string{`"id": "fleetlint/messy"`, `"ruleId": "repo/no-tracked-junk"`, `"uri": ".DS_Store"`} {
+	for _, want := range []string{`"id": "fleetlint/messy/"`, `"ruleId": "repo/no-tracked-junk"`, `"uri": ".DS_Store"`} {
 		if !strings.Contains(string(sarifOut), want) {
 			t.Errorf("sarif lacks %s:\n%s", want, sarifOut)
 		}

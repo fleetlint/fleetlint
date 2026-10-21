@@ -1,8 +1,6 @@
 package report
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"os"
@@ -10,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fleetlint/fleetlint/internal/baseline"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/model"
@@ -254,7 +253,7 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 	for _, f := range r.Findings {
 		res := sarifResult{
 			RuleID: r.Rule.ID, Level: sarifLevel(r.Severity), Message: sarifText{f.Text()},
-			PartialFingerprints: map[string]string{fingerprintKey: fingerprint(r.Rule.ID, r.Scope, f)},
+			PartialFingerprints: map[string]string{fingerprintKey: baseline.Key(r.Rule.ID, r.Scope, f)},
 		}
 		loc := sarifLocation{PhysicalLocation: sarifPhysical{ArtifactLocation: sarifArtifact{URI: anchors.anchor(r.Scope)}}}
 		if where := f.Where(); where != "" {
@@ -278,18 +277,6 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 		out = append(out, res)
 	}
 	return out
-}
-
-// fingerprint identifies a finding across runs: the rule, where it was
-// found, what it said and the artifact it is about, independent of line
-// numbers, ordering and where a report points (the anchor).
-func fingerprint(ruleID, scope string, f model.Finding) string {
-	key := ruleID + "\x00" + scope + "\x00" + f.Path + "\x00" + f.Message
-	if f.Artifact != "" {
-		key += "\x00" + f.Artifact
-	}
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
 }
 
 // anchorCache finds, once per scope, the file a pathless finding points

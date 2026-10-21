@@ -20,6 +20,7 @@ Engine level 7: a catalog that names artifact instances or sets `locate:` needs 
 
 ### Changed
 
+- A release finding about a named artifact has a baseline fingerprint and SARIF fingerprint of its own (the name is part of it), so a baseline written by 0.7 does not cover it; `fleetlint baseline --reset` grandfathers it again. Every other fingerprint is unchanged: `locate` sets where a report points, not the finding's path.
 - The deprecated `action/` directory is gone; the action is `fleetlint/action`.
 - `scripts/install.sh` speaks https with TLS 1.2 or later only, accepts only `vX.Y.Z`, `X.Y.Z` or `latest` as the version, and takes the checksum line whose file name is exactly the archive's (`checksums.txt` also lists the archive's `.spdx.json`); the GitLab CI job fetches it with `--tlsv1.2` too.
 - `combine:` and `artifact_workflows()` are gone from the rule format at engine level 7: a catalog written for level 7 is refused with either, inline or from its library (`artifact_workflows(kind)` read every artifact of the kind inside an implementation meant to check one; `artifact.workflows` is the one being checked). A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
