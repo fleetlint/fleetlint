@@ -378,7 +378,7 @@ func TestOutcomeRuleSatisfiersAcceptAndPartials(t *testing.T) {
 	if s := capStatus(t, registryOnly, "release/sbom"); s.Status != model.StatusNotApplicable {
 		t.Fatalf("a release that only publishes to a registry: n/a, got %+v", s)
 	}
-	if s := status(t, registryOnly, "release/sbom/npm"); s.Status != model.StatusNotApplicable || !strings.Contains(s.Evidence, "does not apply to a npm") {
+	if s := status(t, registryOnly, "release/sbom/npm"); s.Status != model.StatusNotApplicable || !strings.Contains(s.Evidence, "does not apply to the artifact kind npm") {
 		t.Fatalf("the npm implementation says why: %s %q", s.Status, s.Evidence)
 	}
 	withAssets := run(t, map[string]string{"package.json": "{}", ".github/workflows/release.yml": npmWorkflow + "      - run: npm publish\n      - run: gh release upload v1 dist/app.tgz\n"}, cfg)

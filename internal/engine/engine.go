@@ -576,7 +576,7 @@ func implementationScope(f facts.Facts, rule model.Rule, caps capabilities) stri
 	case rule.Stack != "" && rule.When == "false":
 		return "the capability does not apply to " + rule.Stack + " (see the requirement)"
 	case rule.Artifact != "" && rule.When == "false":
-		return "the capability does not apply to a " + rule.Artifact + " (see the requirement)"
+		return "the capability does not apply to the artifact kind " + rule.Artifact + " (see the requirement)"
 	}
 	return ""
 }
