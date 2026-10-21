@@ -4,6 +4,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -146,7 +147,7 @@ type Rule struct {
 	Rationale   string         `yaml:"rationale,omitempty" json:"rationale,omitempty"`
 	Fix         Fix            `yaml:"fix,omitempty" json:"fix,omitempty"`
 	Params      map[string]any `yaml:"params,omitempty" json:"params,omitempty"`
-	Refs        []string       `yaml:"refs,omitempty" json:"refs,omitempty"`
+	Refs        []Ref          `yaml:"refs,omitempty" json:"refs,omitempty"`
 	Since       string         `yaml:"since,omitempty" json:"since,omitempty"`
 	// Policy fields for organization catalogs. Locked: lower layers cannot
 	// disable the rule, lower its severity or redefine it. MinSeverity: a
@@ -411,6 +412,66 @@ type Finding struct {
 	Exception *Exception `json:"exception,omitempty"`
 	// Baselined is true when the baseline file grandfathers this finding.
 	Baselined bool `json:"baselined,omitempty"`
+}
+
+// Ref is where a rule's practice comes from. In YAML a bare URL string or
+// `{url, kind, section}`; the kinds are RefKinds.
+type Ref struct {
+	URL     string `yaml:"url" json:"url"`
+	Kind    string `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Section string `yaml:"section,omitempty" json:"section,omitempty"`
+}
+
+// RefKinds lists the kinds, strongest first: a language or format specification or an
+// official tool; official guidance; a public style guide; a standard for
+// process or supply chain (SSDF, SLSA, Scorecard, ASVS); a linter check
+// (section is its id); a convention of this catalog with no outside source.
+var RefKinds = []string{"spec", "guidance", "style-guide", "standard", "check", "convention"}
+
+// UnmarshalYAML accepts `https://...` and `{url: ..., kind: ..., section: ...}`.
+func (r *Ref) UnmarshalYAML(unmarshal func(any) error) error {
+	var url string
+	if err := unmarshal(&url); err == nil {
+		*r = Ref{URL: url}
+		return nil
+	}
+	type plain Ref
+	var full plain
+	if err := unmarshal(&full); err != nil {
+		return err
+	}
+	*r = Ref(full)
+	return nil
+}
+
+// Validate checks the URL and the kind.
+func (r Ref) Validate() error {
+	if r.URL == "" {
+		return errors.New("ref without url")
+	}
+	if r.Kind != "" && !slices.Contains(RefKinds, r.Kind) {
+		return fmt.Errorf("ref %s: kind %q is not one of %s", r.URL, r.Kind, strings.Join(RefKinds, ", "))
+	}
+	return nil
+}
+
+// Typed reports a ref that says what kind of source it is; a bare URL
+// has not been classified.
+func (r Ref) Typed() bool { return r.Kind != "" }
+
+// String renders the ref for a report: the URL, then kind and section.
+func (r Ref) String() string {
+	var extra []string
+	if r.Kind != "" {
+		extra = append(extra, r.Kind)
+	}
+	if r.Section != "" {
+		extra = append(extra, r.Section)
+	}
+	if len(extra) == 0 {
+		return r.URL
+	}
+	return r.URL + " (" + strings.Join(extra, ", ") + ")"
 }
 
 // Exception is a deliberate, reasoned acceptance of a finding.

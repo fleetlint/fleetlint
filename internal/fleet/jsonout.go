@@ -14,8 +14,9 @@ import (
 // jsonFormat versions fleet.json. 2: results name their rule by id and the
 // definitions are stored once, under `definitions`. 3: summary fields are
 // snake_case, its rule-error count is rule_errors. 4: each repository
-// lists its catalogs in the order they applied, with their pins.
-const jsonFormat = 4
+// lists its catalogs in the order they applied, with their pins. 5: a rule's
+// refs are objects {url, kind, section}.
+const jsonFormat = 5
 
 type reportOut struct {
 	Version     int                   `json:"version"`

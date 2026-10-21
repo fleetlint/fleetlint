@@ -319,9 +319,30 @@
           "refs": {
             "type": "array",
             "items": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "required": ["url"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": ["spec", "guidance", "style-guide", "standard", "check", "convention"]
+                    },
+                    "section": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
             },
-            "description": "Links to the standard or document the rule comes from."
+            "description": "Where the rule's practice comes from: a URL, or {url, kind, section}. Kinds, strongest first: spec, guidance, style-guide, standard, check (section is the linter's check id), convention (no outside source)."
           },
           "since": {
             "type": "string",

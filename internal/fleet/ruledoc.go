@@ -58,7 +58,7 @@ func docOf(r model.Rule) ruleDoc {
 	case builtinIDs()[r.ID]:
 		d.Href = rulePages + strings.ReplaceAll(r.ID, "/", "--") + "/"
 	case len(r.Refs) > 0:
-		d.Href = r.Refs[0]
+		d.Href = r.Refs[0].URL
 	}
 	return d
 }

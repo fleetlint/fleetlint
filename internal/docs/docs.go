@@ -76,13 +76,26 @@ func prose(text string) string {
 }
 
 // refLinks writes URLs so that Markdown renders them as links.
-func refLinks(refs []string) []string {
+// refLinks renders the sources as Markdown list items: the link, then
+// the kind and the section where the rule states them.
+func refLinks(refs []model.Ref) []string {
 	links := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if strings.HasPrefix(ref, "https://") {
-			ref = "<" + ref + ">"
+		link := ref.URL
+		if strings.HasPrefix(link, "https://") {
+			link = "[" + link + "](" + link + ")"
 		}
-		links = append(links, ref)
+		var extra []string
+		if ref.Kind != "" {
+			extra = append(extra, ref.Kind)
+		}
+		if ref.Section != "" {
+			extra = append(extra, ref.Section)
+		}
+		if len(extra) > 0 {
+			link += " (" + strings.Join(extra, ", ") + ")"
+		}
+		links = append(links, "- "+link)
 	}
 	return links
 }
@@ -299,7 +312,7 @@ func rulePage(r model.Rule) []byte {
 		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
 	}
 	if len(r.Refs) > 0 {
-		fmt.Fprintf(&b, "See: %s\n", strings.Join(refLinks(r.Refs), ", "))
+		fmt.Fprintf(&b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
 	}
 	// Exactly one trailing newline, whichever section came last.
 	return append(bytes.TrimRight(b.Bytes(), "\n"), '\n')

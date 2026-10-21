@@ -44,8 +44,9 @@ const APIVersion = "fleetlint.org/v1"
 // functions, fix actions) that an older catalog or an older binary would
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
+// Level 6: refs as {url, kind, section} entries.
 const (
-	EngineLevel    = 5
+	EngineLevel    = 6
 	MinEngineLevel = 1
 )
 
@@ -941,6 +942,11 @@ func validateRule(r *model.Rule) error {
 	}
 	if r.Fix.Human == "" {
 		return fmt.Errorf("rule %s: fix.human is required", r.ID)
+	}
+	for _, ref := range r.Refs {
+		if err := ref.Validate(); err != nil {
+			return fmt.Errorf("rule %s: %w", r.ID, err)
+		}
 	}
 	if _, err := fix.Decode(r.Fix.Actions); err != nil {
 		return fmt.Errorf("rule %s: fix.%w", r.ID, err)

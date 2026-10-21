@@ -222,7 +222,10 @@ func writeRule(w io.Writer, r model.Rule) error {
 		fmt.Fprintf(&b, "\nAgent instruction\n  %s\n", r.Fix.Agent)
 	}
 	if len(r.Refs) > 0 {
-		fmt.Fprintf(&b, "\nSee: %s\n", strings.Join(r.Refs, ", "))
+		b.WriteString("\nSources\n")
+		for _, ref := range r.Refs {
+			fmt.Fprintf(&b, "  %s\n", ref)
+		}
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

@@ -160,7 +160,7 @@ func TestRuleIDsLinkToTheirDocs(t *testing.T) {
 	builtin.Rule.Title = "No editor, OS or backup files are tracked"
 	builtin.Rule.Requirement = "Files such as .DS_Store\n  are never committed. " + strings.Repeat("word ", 100)
 	own := res("acme/approved-base", model.StatusFail, model.SeverityWarning, false)
-	own.Rule.Refs = []string{"https://wiki.acme.example/base-images"}
+	own.Rule.Refs = []model.Ref{{URL: "https://wiki.acme.example/base-images"}}
 	plain := res("acme/no-refs", model.StatusPass, model.SeverityWarning, false)
 	rep := &Report{Repos: []RepoReport{{Name: "x", Results: []model.Result{builtin, own, plain}}}, Rules: []string{"acme/approved-base", "acme/no-refs", "repo/no-tracked-junk"}}
 	page := string(renderHTML(newView(rep, nil)))

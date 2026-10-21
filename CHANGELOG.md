@@ -5,6 +5,12 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.
+
+### Added
+
+- **Typed sources.** A rule's `refs` entry is a URL or `{url, kind, section}`, where `kind` says what the source is, strongest first: `spec` (a language or format specification, an official tool), `guidance` (official guidance such as Go Code Review Comments or PEP 8), `style-guide`, `standard` (SSDF, SLSA, Scorecard, ASVS, SARIF), `check` (a linter's check, `section` its id) or `convention` (this catalog's own, no outside source). The rule pages get a Sources section, `fleetlint explain` lists them, the check JSON (format 4) and `fleet.json` (format 5) carry them as objects. A catalog test keeps the list of rules that cite only fleetlint.org from growing (`internal/catalog/testdata/rules_without_source.txt`).
+
 ## [0.6.2] - 2026-10-21
 
 ### Added

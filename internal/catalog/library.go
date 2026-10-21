@@ -231,7 +231,7 @@ func inherit(capRule model.Rule, b []byte, p string) (model.Rule, error) {
 	has := func(key string) bool { _, ok := set[key]; return ok }
 	inheritScalars(&out, impl, has)
 	for _, ref := range impl.Refs {
-		if !slices.Contains(out.Refs, ref) {
+		if !slices.ContainsFunc(out.Refs, func(have model.Ref) bool { return have.URL == ref.URL }) {
 			out.Refs = append(out.Refs, ref)
 		}
 	}
@@ -313,6 +313,12 @@ func wrapRules(b []byte) []byte {
 
 // IDs returns every rule id in the library, sorted.
 func (l *Library) IDs() []string { return l.ids }
+
+// Rule returns one definition by id, implementations included.
+func (l *Library) Rule(id string) (model.Rule, bool) {
+	r, ok := l.rules[id]
+	return r, ok
+}
 
 // Select resolves a use pattern: an exact id must exist, a glob must match
 // at least one rule. `*` spans the family separator. A capability brings
