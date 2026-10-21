@@ -217,7 +217,7 @@ func writeArtifactMatrix(b *bytes.Buffer, rules []model.Rule, byID map[string]mo
 	if len(arts) == 0 {
 		return
 	}
-	b.WriteString("\n## Artifacts\n\nA capability keyed by artifact (`by: artifact`) is checked once per artifact kind the release publishes, with an implementation per kind (`rules/<family>/<name>/<artifact>.yaml`): a repository that publishes binaries and an npm package must satisfy both, and the report names the one that does not. There is no `any` implementation here: what counts as signed, attested or described differs per kind. `n/a` means the requirement does not apply to the kind (its page says why). Kinds are detected from the workflows that publish them, by the catalog's `artifacts/<kind>.yaml`; a repository pins `facts: {artifacts: [...]}` when detection misses one.\n\n")
+	b.WriteString("\n## Artifacts\n\nA capability keyed by artifact (`by: artifact`) is checked once per published artifact, with an implementation per kind (`rules/<family>/<name>/<artifact>.yaml`): a repository that publishes binaries and an npm package must satisfy both, two images are checked one by one, and the report names the one that does not. There is no `any` implementation here: what counts as signed, attested or described differs per kind. `n/a` means the requirement does not apply to the kind (its page says why). Artifacts are detected from the workflows that publish them, by the catalog's `artifacts/<kind>.yaml`, which names the instances of a kind where it can (an image reference, a chart path); a repository pins `facts: {artifacts: [...]}` when detection misses one.\n\n")
 	b.WriteString("| Capability |")
 	for _, d := range arts {
 		fmt.Fprintf(b, " %s |", d.ID)

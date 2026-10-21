@@ -45,8 +45,12 @@ const APIVersion = "fleetlint.org/v1"
 // not survive. A catalog states the level it was written for; this binary
 // runs catalogs from MinEngineLevel to EngineLevel.
 // Level 6: refs as {url, kind, section} entries.
+// Level 7: published artifacts as named instances (`instances:` in an
+// artifact definition, `artifact` in an implementation keyed by artifact,
+// `facts.artifacts` entries with a name and workflows, `find`/`findall`);
+// `combine:` is gone from the rule format.
 const (
-	EngineLevel    = 6
+	EngineLevel    = 7
 	MinEngineLevel = 1
 )
 
@@ -830,7 +834,7 @@ func validateRules(c *Catalog) error {
 			return fmt.Errorf("rule %s: a capability belongs in a catalog's rules/ library (rules/%s.yaml) next to its implementations", r.ID, r.ID)
 		}
 		r.Source = c.Metadata.Name + "@" + c.Metadata.Version
-		if err := validateRule(r); err != nil {
+		if err := validateRule(r, c.Metadata.Engine); err != nil {
 			return err
 		}
 		if seen[r.ID] {
@@ -921,7 +925,9 @@ func probeEngine(b []byte) error {
 // ruleIDRe is the id grammar; ids name files, anchors and report rows.
 var ruleIDRe = regexp.MustCompile(`^[a-z0-9-]+/[a-z0-9-]+(/[a-z0-9-]+)?$`)
 
-func validateRule(r *model.Rule) error {
+// validateRule checks a rule; engine is the level of the catalog it is
+// written for, 0 when unknown (a library file carries none).
+func validateRule(r *model.Rule, engine int) error {
 	if r.ID == "" {
 		return errors.New("rule without id")
 	}
@@ -959,7 +965,7 @@ func validateRule(r *model.Rule) error {
 	default:
 		return fmt.Errorf("rule %s: scope must be each, root or members (got %q)", r.ID, r.Scope)
 	}
-	return validateCombine(r)
+	return validateCombine(r, engine)
 }
 
 // validateRefs checks every source the rule cites.
@@ -1007,10 +1013,13 @@ func validateBy(r *model.Rule) error {
 }
 
 // validateCombine accepts combine only on a capability (and so on the
-// implementations that inherit it).
-func validateCombine(r *model.Rule) error {
+// implementations that inherit it), and only in a catalog written for an
+// engine level before 7, where it left the format.
+func validateCombine(r *model.Rule, engine int) error {
 	switch {
 	case r.Combine == "":
+	case engine >= combineGone:
+		return fmt.Errorf("rule %s: combine is gone since engine level %d: a requirement that one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers, one that differs per published artifact a capability keyed by artifact (by: artifact)", r.ID, combineGone)
 	case r.Combine != model.CombineAll && r.Combine != model.CombineAny:
 		return fmt.Errorf("rule %s: combine must be all or any (got %q)", r.ID, r.Combine)
 	case r.Kind != model.KindCapability && r.Capability == "":
@@ -1018,6 +1027,9 @@ func validateCombine(r *model.Rule) error {
 	}
 	return nil
 }
+
+// combineGone is the engine level since which `combine:` is refused.
+const combineGone = 7
 
 func validateKind(r *model.Rule) error {
 	switch r.Kind {

@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -33,6 +34,13 @@ type Def struct {
 	// artifact (`workflows().filter(w, ...)`); an empty list means it is not
 	// published. Evaluated once per repository, at the root.
 	Detect string `yaml:"detect" json:"detect"`
+	// Instances, when set, is a CEL expression evaluated once per detected
+	// CI file (as `item`) that yields the names of the artifacts the file
+	// publishes: image references, chart paths. Each name is one published
+	// artifact, checked on its own; a file that yields no name publishes
+	// one named after the file. Without it the kind is one unnamed
+	// artifact.
+	Instances string `yaml:"instances,omitempty" json:"instances,omitempty"`
 }
 
 var idRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
@@ -94,6 +102,11 @@ func (d *Def) validate() error {
 	if err := celenv.CheckList(d.Detect); err != nil {
 		return fmt.Errorf("detect: %w", err)
 	}
+	if strings.TrimSpace(d.Instances) != "" {
+		if err := celenv.CheckList(d.Instances); err != nil {
+			return fmt.Errorf("instances: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -116,16 +129,12 @@ func Find(defs []Def, id string) (Def, bool) {
 	return Def{}, false
 }
 
-// Detect evaluates every definition and returns the kinds that are
-// published, each with the CI files that publish it, in definition order.
-// pinned replaces detection: the listed kinds, without workflows.
-func Detect(env *celenv.Env, defs []Def, pinned *[]string) ([]facts.Artifact, error) {
+// Detect evaluates every definition and returns the published artifacts,
+// in definition order and, within a kind, in the order their names were
+// first seen. pinned replaces detection: what the pin lists, as it says.
+func Detect(env *celenv.Env, defs []Def, pinned *[]facts.Artifact) ([]facts.Artifact, error) {
 	if pinned != nil {
-		out := make([]facts.Artifact, 0, len(*pinned))
-		for _, kind := range *pinned {
-			out = append(out, facts.Artifact{Kind: kind})
-		}
-		return out, nil
+		return append([]facts.Artifact{}, *pinned...), nil
 	}
 	var out []facts.Artifact
 	for _, d := range defs {
@@ -133,9 +142,18 @@ func Detect(env *celenv.Env, defs []Def, pinned *[]string) ([]facts.Artifact, er
 		if err != nil {
 			return nil, fmt.Errorf("artifact %s: detect: %w", d.ID, err)
 		}
-		if len(files) > 0 {
-			out = append(out, facts.Artifact{Kind: d.ID, Workflows: files})
+		if len(files) == 0 {
+			continue
 		}
+		if strings.TrimSpace(d.Instances) == "" {
+			out = append(out, facts.Artifact{Kind: d.ID, Workflows: files})
+			continue
+		}
+		instances, err := d.instances(env, files)
+		if err != nil {
+			return nil, fmt.Errorf("artifact %s: instances: %w", d.ID, err)
+		}
+		out = append(out, instances...)
 	}
 	return out, nil
 }
@@ -150,12 +168,50 @@ func (d Def) detect(env *celenv.Env) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var files []string
-	for _, it := range items {
-		if s, ok := it.(string); ok && s != "" {
-			files = append(files, s)
+	return names(items), nil
+}
+
+// instances names the artifacts each publishing file publishes and merges
+// them by name: one artifact per name, with every file that publishes it.
+func (d Def) instances(env *celenv.Env, files []string) ([]facts.Artifact, error) {
+	prg, err := env.CompileList(d.Instances)
+	if err != nil {
+		return nil, err
+	}
+	var out []facts.Artifact
+	index := map[string]int{}
+	for _, file := range files {
+		items, err := env.EvalListWith(prg, nil, file)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", file, err)
+		}
+		found := names(items)
+		if len(found) == 0 {
+			found = []string{file}
+		}
+		for _, name := range found {
+			i, ok := index[name]
+			if !ok {
+				index[name] = len(out)
+				out = append(out, facts.Artifact{Kind: d.ID, Name: name})
+				i = index[name]
+			}
+			out[i].Workflows = append(out[i].Workflows, file)
 		}
 	}
-	sort.Strings(files)
-	return files, nil
+	return out, nil
+}
+
+// names keeps the non-empty strings of a list, trimmed, each once, sorted.
+func names(items []any) []string {
+	var out []string
+	for _, it := range items {
+		s, ok := it.(string)
+		s = strings.TrimSpace(s)
+		if ok && s != "" && !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

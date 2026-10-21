@@ -141,7 +141,7 @@ func artifactsText(f facts.Facts) string {
 	}
 	parts := make([]string, 0, len(f.Artifacts))
 	for _, a := range f.Artifacts {
-		p := a.Kind
+		p := a.String()
 		if len(a.Workflows) > 0 {
 			p += " (" + strings.Join(a.Workflows, ", ") + ")"
 		}

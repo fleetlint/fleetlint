@@ -16,7 +16,7 @@ import (
 // snake_case, its rule-error count is rule_errors. 4: each repository
 // lists its catalogs in the order they applied, with their pins. 5: a rule's
 // refs are objects {url, kind, section}.
-const jsonFormat = 5
+const jsonFormat = 6
 
 type reportOut struct {
 	Version     int                   `json:"version"`

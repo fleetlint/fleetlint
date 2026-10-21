@@ -72,31 +72,63 @@ type Facts struct {
 	Sources map[string]Source `json:"sources"`
 }
 
-// Artifact is one published artifact kind (`image`, `npm`, ...) and the CI
-// files that publish it; a pinned artifact names no workflows.
+// Artifact is one published artifact: its kind (`image`, `npm`, ...), the
+// name that tells it from the other artifacts of the kind (an image
+// reference, a chart path; empty when the kind's definition does not name
+// its instances) and the CI files that publish it. A pinned artifact names
+// what the pin says.
 type Artifact struct {
 	Kind      string   `json:"kind"`
+	Name      string   `json:"name,omitempty"`
 	Workflows []string `json:"workflows,omitempty"`
 }
 
-// ArtifactKinds lists the published artifact kinds in order.
+// String is the artifact as the report names it: the kind, with the name
+// when there is one.
+func (a Artifact) String() string {
+	if a.Name == "" {
+		return a.Kind
+	}
+	return a.Kind + " " + a.Name
+}
+
+// ArtifactKinds lists the published artifact kinds in order, each once.
 func (f Facts) ArtifactKinds() []string {
 	out := make([]string, 0, len(f.Artifacts))
 	for _, a := range f.Artifacts {
-		out = append(out, a.Kind)
+		if !slices.Contains(out, a.Kind) {
+			out = append(out, a.Kind)
+		}
 	}
 	return out
 }
 
-// ArtifactWorkflows are the CI files that publish the kind; nil when the
-// kind is not published or was pinned.
-func (f Facts) ArtifactWorkflows(kind string) []string {
+// ArtifactInstances are the published artifacts of the kind, in order.
+func (f Facts) ArtifactInstances(kind string) []Artifact {
+	var out []Artifact
 	for _, a := range f.Artifacts {
 		if a.Kind == kind {
-			return a.Workflows
+			out = append(out, a)
 		}
 	}
-	return nil
+	return out
+}
+
+// ArtifactWorkflows are the CI files that publish any artifact of the
+// kind, sorted; nil when the kind is not published or the pin named none.
+func (f Facts) ArtifactWorkflows(kind string) []string {
+	var out []string
+	for _, a := range f.Artifacts {
+		if a.Kind == kind {
+			for _, w := range a.Workflows {
+				if !slices.Contains(out, w) {
+					out = append(out, w)
+				}
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 // Release describes the release mechanism in use.
@@ -145,10 +177,10 @@ type Overrides struct {
 	FleetTier int
 	// StackDefs are the catalog's stack definitions; nil means the legacy set.
 	StackDefs []stacks.Def
-	// Artifacts pins the published artifact kinds; nil detects, an empty
-	// list says nothing is published. The engine applies it, since
-	// detection needs the rule environment.
-	Artifacts *[]string
+	// Artifacts pins the published artifacts; nil detects, an empty list
+	// says nothing is published. The engine applies it, since detection
+	// needs the rule environment.
+	Artifacts *[]Artifact
 }
 
 // Discover computes facts for a repository, applying overrides last.

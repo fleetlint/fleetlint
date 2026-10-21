@@ -5,6 +5,17 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+Engine level 7: a catalog that names artifact instances needs this version, and one written for level 7 may not use `combine:`. Catalogs for levels 1 to 6 still run, `combine: any` included.
+
+### Added
+
+- **Published artifacts are instances with names.** An artifact definition's `instances:` expression names what tells one artifact of a kind from another (an image reference, a chart path, a registry reference), evaluated per publishing workflow with `item` bound to it. An implementation keyed by artifact runs once per published artifact with `artifact` bound (`{kind, name, workflows}`): its own `when` is asked per artifact, a finding names the artifact that fails (`ghcr.io/x/b: the image is not signed`), the evidence the ones that pass. `facts.artifacts` takes `{kind, name, workflows}` entries next to bare kinds, so a pinned artifact can name the workflows the rules read. `fleetlint facts` and the check JSON (format 5) and `fleet.json` (format 6) carry the name.
+- CEL `find(text, regex)` and `findall(text, regex)`: the first capture group of the first or of every match.
+
+### Changed
+
+- `combine:` is gone from the rule format at engine level 7: a catalog written for level 7 is refused with it, inline or from its library. A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact. Catalog 0.5.0 does both: `changelog/generator-configured` is one rule, `release/reproducible-build` is keyed by artifact.
+
 ## [0.7.0] - 2026-10-21
 
 Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.

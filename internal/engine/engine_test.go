@@ -593,7 +593,7 @@ func TestArtifactImplementationsRunByKind(t *testing.T) {
 		t.Errorf("signing by tag is a warning partial: %s %s %+v", s.Status, s.Severity, s.Findings)
 	}
 	signed := run(t, map[string]string{".github/workflows/release.yml": image + "      - run: cosign sign --yes ghcr.io/x/y@${DIGEST}\n"}, tier1Public)
-	if s := status(t, signed, "release/signing/image"); s.Status != model.StatusPass || s.Evidence != "satisfied by cosign-by-digest" {
+	if s := status(t, signed, "release/signing/image"); s.Status != model.StatusPass || s.Evidence != "ghcr.io/x/y: satisfied by cosign-by-digest" {
 		t.Errorf("a digest-signed image passes: %s %q", s.Status, s.Evidence)
 	}
 	// Images pushed on every push to main count too: :latest deserves a signature.
@@ -641,5 +641,24 @@ func TestEachPublishedArtifactIsChecked(t *testing.T) {
 	}
 	if s := status(t, out, "lint/configured/go"); s.Status != model.StatusFail {
 		t.Errorf("stack capabilities are untouched: %s", s.Status)
+	}
+}
+
+// An implementation keyed by artifact asks its own `when` per published
+// artifact: trusted publishing applies to an npm package published from
+// GitHub, not to one published from Gitea, and when no artifact applies the
+// rule is not applicable.
+func TestImplementationWhenIsAskedPerArtifact(t *testing.T) {
+	t.Parallel()
+	// Neither workflow has id-token: write, so a checked package fails.
+	publish := "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm publish\n"
+	files := map[string]string{"package.json": "{\"name\": \"x\"}\n", ".github/workflows/release.yml": publish, ".gitea/workflows/release.yml": publish}
+	both := run(t, files, "version: 1\nextends: [fleetlint:recommended]\nfacts:\n  tier: 1\n  visibility: public\n  artifacts:\n    - {kind: npm, name: hub, workflows: [.github/workflows/release.yml]}\n    - {kind: npm, name: tea, workflows: [.gitea/workflows/release.yml]}\n")
+	if s := status(t, both, "release/trusted-publishing/npm"); s.Status != model.StatusFail || len(s.Findings) != 1 || !strings.HasPrefix(s.Findings[0].Message, "hub: ") {
+		t.Errorf("the GitHub one is checked, the Gitea one skipped: %s %+v", s.Status, s.Findings)
+	}
+	teaOnly := run(t, files, "version: 1\nextends: [fleetlint:recommended]\nfacts:\n  tier: 1\n  visibility: public\n  artifacts:\n    - {kind: npm, name: tea, workflows: [.gitea/workflows/release.yml]}\n")
+	if s := status(t, teaOnly, "release/trusted-publishing/npm"); s.Status != model.StatusNotApplicable || !strings.HasPrefix(s.Evidence, "when: ") {
+		t.Errorf("no artifact applies: not applicable with the when: %s %q", s.Status, s.Evidence)
 	}
 }

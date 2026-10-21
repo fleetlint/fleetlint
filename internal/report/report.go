@@ -108,7 +108,7 @@ type disabledOut struct {
 // (summary, scopes, disabled, catalogs were Go field names in 1), and the
 // summary's rule-error count is rule_errors. 3: `catalogs` is the hierarchy
 // (order, origin, via, includes, counts) and `layer` is a free label.
-const checkFormat = 4
+const checkFormat = 5
 
 func writeJSON(w io.Writer, run *engine.Run, opts Options) error {
 	out := jsonOut{

@@ -222,3 +222,26 @@ func TestRepositoryRulesCarryNoPolicy(t *testing.T) {
 		}
 	}
 }
+
+// facts.artifacts takes a kind, or a named artifact with the workflows
+// that publish it.
+func TestFactsArtifactsPinsKindsAndNamedArtifacts(t *testing.T) {
+	t.Parallel()
+	root := write(t, "version: 1\nextends: [fleetlint:minimal]\nfacts:\n  artifacts:\n    - npm\n    - {kind: image, name: ghcr.io/x/y, workflows: [.github/workflows/release.yml]}\n")
+	eff, err := config.Load(root, config.Options{Loader: catalog.Loader{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pins := *eff.File.Facts.Artifacts
+	if len(pins) != 2 || pins[0].Kind != "npm" || pins[1].Kind != "image" || pins[1].Name != "ghcr.io/x/y" || len(pins[1].Workflows) != 1 {
+		t.Errorf("pins: %+v", pins)
+	}
+	ov := eff.File.Facts.ToFacts()
+	if ov.Artifacts == nil || len(*ov.Artifacts) != 2 || (*ov.Artifacts)[1].Name != "ghcr.io/x/y" {
+		t.Errorf("overrides: %+v", ov.Artifacts)
+	}
+	bad := write(t, "version: 1\nextends: [fleetlint:minimal]\nfacts: {artifacts: [{kind: wasm}]}\n")
+	if _, err := config.Load(bad, config.Options{Loader: catalog.Loader{}}); err == nil || !strings.Contains(err.Error(), "not an artifact the catalog defines") {
+		t.Errorf("an unknown kind in the map form is refused: %v", err)
+	}
+}

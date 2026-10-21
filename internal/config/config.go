@@ -71,17 +71,44 @@ type FactOverrides struct {
 	Tier       int      `yaml:"tier,omitempty"`
 	Visibility string   `yaml:"visibility,omitempty"`
 	Stacks     []string `yaml:"stacks,omitempty"`
-	// Artifacts pins what the release publishes (artifact kinds from the
-	// catalog's artifacts/), when detection misses one: a publish step in a
-	// reusable workflow, say. An empty list says nothing is published.
-	Artifacts *[]string `yaml:"artifacts,omitempty"`
-	Forge     string    `yaml:"forge,omitempty"`
+	// Artifacts pins what the release publishes, when detection misses
+	// one: a publish step in a reusable workflow, say. An entry is an
+	// artifact kind from the catalog's artifacts/, or the kind with the
+	// name and the workflows that publish it. An empty list says nothing
+	// is published.
+	Artifacts *[]ArtifactPin `yaml:"artifacts,omitempty"`
+	Forge     string         `yaml:"forge,omitempty"`
 	// Container says where the task runner's targets run: none, devcontainer,
 	// docker or podman; unset follows detection.
 	Container string `yaml:"container,omitempty"`
 	// TaskRunner names the runner to use: make, just, task, npm-scripts or
 	// gradle; unset takes the first one found.
 	TaskRunner string `yaml:"taskrunner,omitempty"`
+}
+
+// ArtifactPin is one entry of facts.artifacts: a kind (`image`), or
+// `{kind, name, workflows}` naming one published artifact and the CI files
+// that publish it, so the release rules can read them.
+type ArtifactPin struct {
+	Kind      string   `yaml:"kind"`
+	Name      string   `yaml:"name,omitempty"`
+	Workflows []string `yaml:"workflows,omitempty"`
+}
+
+// UnmarshalYAML accepts a bare kind as well as the map form.
+func (p *ArtifactPin) UnmarshalYAML(unmarshal func(any) error) error {
+	var kind string
+	if err := unmarshal(&kind); err == nil {
+		*p = ArtifactPin{Kind: kind}
+		return nil
+	}
+	type plain ArtifactPin
+	var full plain
+	if err := unmarshal(&full); err != nil {
+		return err
+	}
+	*p = ArtifactPin(full)
+	return nil
 }
 
 // Scope is a directory evaluated as its own project. `path: .` is the
@@ -262,9 +289,9 @@ func (e *Effective) loadArtifacts() error {
 	e.Artifacts = defs
 	known := func(id string) bool { _, ok := artifacts.Find(defs, id); return ok }
 	if e.File.Facts.Artifacts != nil {
-		for _, id := range *e.File.Facts.Artifacts {
-			if !known(id) {
-				return fmt.Errorf("%s: facts.artifacts: %q is not an artifact the catalog defines (catalog %s has: %s)", FileName, id, src.Version, orNoneList(artifacts.IDs(defs)))
+		for _, p := range *e.File.Facts.Artifacts {
+			if !known(p.Kind) {
+				return fmt.Errorf("%s: facts.artifacts: %q is not an artifact the catalog defines (catalog %s has: %s)", FileName, p.Kind, src.Version, orNoneList(artifacts.IDs(defs)))
 			}
 		}
 	}
@@ -660,11 +687,23 @@ func (e *Effective) ScopeFacts(sc Scope) facts.Overrides {
 	return o
 }
 
+// pinnedArtifacts is facts.artifacts as the facts package takes it.
+func (f FactOverrides) pinnedArtifacts() *[]facts.Artifact {
+	if f.Artifacts == nil {
+		return nil
+	}
+	out := make([]facts.Artifact, 0, len(*f.Artifacts))
+	for _, p := range *f.Artifacts {
+		out = append(out, facts.Artifact{Kind: p.Kind, Name: p.Name, Workflows: p.Workflows})
+	}
+	return &out
+}
+
 // ToFacts converts the config section into the facts package type.
 func (f FactOverrides) ToFacts() facts.Overrides {
 	return facts.Overrides{
 		Stacks:     f.Stacks,
-		Artifacts:  f.Artifacts,
+		Artifacts:  f.pinnedArtifacts(),
 		Visibility: facts.Visibility(f.Visibility),
 		Tier:       f.Tier,
 		Forge:      f.Forge,

@@ -197,7 +197,7 @@ func parseLibraryRule(b []byte, p string) (model.Rule, error) {
 	if err := requireSeverity(wrapRules(b)); err != nil {
 		return r, fmt.Errorf("%s: %w", p, err)
 	}
-	if err := validateRule(&r); err != nil {
+	if err := validateRule(&r, 0); err != nil {
 		return r, fmt.Errorf("%s: %w", p, err)
 	}
 	if err := validatePolicy([]model.Rule{r}); err != nil {
@@ -240,7 +240,7 @@ func inherit(capRule model.Rule, b []byte, p string) (model.Rule, error) {
 		out.Fix.Agent = firstNonEmpty(impl.Fix.Agent, capRule.Fix.Agent)
 		out.Fix.Actions = impl.Fix.Actions
 	}
-	if err := validateRule(&out); err != nil {
+	if err := validateRule(&out, 0); err != nil {
 		return out, fmt.Errorf("%s: %w", p, err)
 	}
 	if err := validatePolicy([]model.Rule{out}); err != nil {
@@ -422,6 +422,19 @@ func (l Loader) libraryFor(c *Catalog) (*Library, error) {
 	return merged, nil
 }
 
+// selected is the library rule as the catalog takes it in: a copy marked
+// with its source and the catalog that selected it. A catalog written for
+// engine level 7 or later may not take in a rule with `combine:`.
+func (l *Library) selected(id string, c *Catalog) (model.Rule, error) {
+	r := l.rules[id].Clone()
+	if r.Combine != "" && c.Metadata.Engine >= combineGone {
+		return model.Rule{}, fmt.Errorf("%s: rule %s (%s): combine is gone since engine level %d", c.Metadata.Name, id, l.source[id], combineGone)
+	}
+	r.Source = l.source[id]
+	r.SelectedBy = c.Metadata.Name + "@" + c.Metadata.Version
+	return r, nil
+}
+
 // expand replaces the catalog's `use:` entries with the library rules they
 // select, in place, keeping the order of the list. Each rule carries the
 // catalog as its source, like an inline rule.
@@ -454,9 +467,10 @@ func (l Loader) expand(c *Catalog) error {
 				continue
 			}
 			have[id] = true
-			r := lib.rules[id].Clone()
-			r.Source = lib.source[id]
-			r.SelectedBy = c.Metadata.Name + "@" + c.Metadata.Version
+			r, err := lib.selected(id, c)
+			if err != nil {
+				return err
+			}
 			out = append(out, r)
 			c.used[id] = true
 		}

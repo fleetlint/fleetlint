@@ -354,7 +354,8 @@
           },
           "combine": {
             "enum": ["all", "any"],
-            "description": "On a capability: whether every implementation that runs in a scope must pass (all, the default) or one passing is enough (any, for what belongs to the repository rather than to each stack, such as a release)."
+            "deprecated": true,
+            "description": "Gone since engine level 7, read for older catalogs only. On a capability: whether every implementation that runs in a scope must pass (all, the default) or one passing is enough (any). A requirement one stack's tooling meets for the whole repository is a rule at the root with the union of the satisfiers; one that differs per published artifact is a capability keyed by artifact."
           },
           "locked": {
             "type": "boolean",

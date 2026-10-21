@@ -1,0 +1,16 @@
+# 0008 — Published artifacts as named instances, `combine:` removed
+
+Date: 2026-10-21. Status: accepted.
+
+## Context
+ADR 0007 made the release checks per published artifact kind: a repository that publishes an image and an npm package is checked for both. Two images in one repository were still one kind: a signed `ghcr.io/x/api` carried an unsigned `ghcr.io/x/worker`, and the report could not say which image was missing what. `combine: any` stayed in the format for two capabilities whose requirement is met once per repository (a changelog generator) or by whichever stack publishes (a reproducible build); it is a verdict that passes when one of several implementations passes, the thing ADR 0007 rejected for the release checks, and the format was to be frozen at 1.0 with it.
+
+## Decision
+An artifact definition may say what tells one artifact of its kind from another: `instances:`, a CEL expression evaluated once per publishing workflow (as `item`) that yields names (an image reference without tag or digest, a chart path, a registry reference). Each name is one published artifact with the workflows that publish it; a workflow that yields no name publishes one named after the workflow file; a kind without `instances:` is one unnamed artifact, as before. An implementation keyed by artifact runs once per published artifact of its kind with `artifact` (`{kind, name, workflows}`) bound: its own `when` is asked per artifact, a failing artifact's findings carry its name, a passing one's evidence does too, and the severity is a partial's only when every failing artifact matched a partial. `facts.artifacts` entries may be `{kind, name, workflows}`, so a pin can name the workflows the rules read. The check JSON and `fleet.json` carry the name.
+
+`combine:` leaves the rule format: engine level 7 refuses it in a catalog written for level 7, inline or selected from a library, and still runs older catalogs with it. What it expressed is written as one of two things: a requirement one stack's tooling meets for the whole repository is a plain rule at the root with the union of the satisfiers (`changelog/generator-configured`); one that differs per published artifact is a capability keyed by artifact (`release/reproducible-build`: binaries, images and Maven archives each have their own way, source packages have nothing to reproduce).
+
+Rejected: one result per artifact (the rule id is the identity overrides, exceptions and the baseline key on; a second result with the same id in a scope would need a new key everywhere); naming instances in Go from the publish steps (the registry-specific knowledge belongs in the catalog, like detection); keeping `combine:` as the escape hatch (a third-party catalog can model the same two cases).
+
+## Consequences
+Engine level 7, fleetlint 0.8.0, catalog 0.5.0. The fleetlint catalog names instances for `image`, `helm-chart` and `oci-artifact`; the other kinds stay unnamed until a case needs them. Two images pushed from the same workflow with one signing step both pass: the check is per publishing workflow, not per step. The stack-keyed ids of the two rewritten capabilities are aliases. Catalogs at level 6 or lower keep `combine: any` until they move to level 7.

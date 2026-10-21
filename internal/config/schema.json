@@ -214,9 +214,24 @@
         "artifacts": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "description": "An artifact kind the catalog defines in artifacts/ (release-files, image, helm-chart, npm, pypi, crate, gem, maven, nuget, pub, android-app, apple-app in the fleetlint catalog)."
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "description": "An artifact kind the catalog defines in artifacts/ (release-files, image, oci-artifact, helm-chart, npm, pypi, crate, gem, maven, nuget, pub, android-app, apple-app in the fleetlint catalog)."
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind"],
+                "properties": {
+                  "kind": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "description": "An artifact kind the catalog defines in artifacts/."},
+                  "name": {"type": "string", "description": "What tells this artifact from the others of its kind: an image reference, a chart path. The report names it."},
+                  "workflows": {"type": "array", "items": {"type": "string"}, "description": "The CI files that publish it, so the release rules can read them."}
+                },
+                "description": "One published artifact: its kind, name and the workflows that publish it."
+              }
+            ]
           },
           "description": "What the release publishes, when detection misses it (a publish step in a reusable workflow, say). Replaces detection; an empty list says nothing is published, so the release capabilities do not apply."
         },

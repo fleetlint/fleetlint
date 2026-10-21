@@ -46,7 +46,9 @@ var Accessors = []Accessor{
 	{"workflows() -> list<string>", "Paths of the repository's CI files: Actions workflows (`.github/workflows`, `.gitea/workflows`, `.forgejo/workflows`), `.gitlab-ci.yml` and the local files it includes. CI lives at the repository root, so in a member scope these are the root's files as `../` paths."},
 	{"ci_kind(path: string) -> string", "The CI system of a file from `workflows()`: `github`, `gitea`, `forgejo` or `gitlab`."},
 	{"tagged_workflows() -> list<string>", "CI files a tag push starts (`on.push.tags`; GitLab rules on `$CI_COMMIT_TAG` or `only: tags`), i.e. release pipelines."},
-	{"artifact_workflows(kind: string) -> list<string>", "CI files that publish an artifact of the kind (`image`, `npm`, `release-files`, ...), as the catalog's `artifacts/<kind>.yaml` detected them; empty when the kind is not published or was pinned under `facts.artifacts`."},
+	{"artifact_workflows(kind: string) -> list<string>", "CI files that publish any artifact of the kind (`image`, `npm`, `release-files`, ...), as the catalog's `artifacts/<kind>.yaml` detected them or the pin under `facts.artifacts` names them; empty when the kind is not published. In an implementation keyed by artifact, `artifact.workflows` is the current artifact's own."},
+	{"find(text: string, regex: string) -> string", "The first capture group of the first match (the whole match without a group), or \"\" when nothing matches."},
+	{"findall(text: string, regex: string) -> list<string>", "The first capture group of every match (the whole match without a group), in order; empty when nothing matches."},
 	{"steps(path: string) -> list<map>", "Every step of every job in a CI file, each as `{job, name, uses, run, with}` with `\"\"`/`{}` for absent fields. A GitLab job is one step whose `run` is its before_script, script and after_script."},
 	{"jobs(path: string) -> list<map>", "Every job of a CI file as `{name, timeout_minutes, permissions, runs_on, uses, image, interruptible}`; `timeout_minutes` is 0 when unset (GitLab `timeout:` durations are converted); `interruptible` is GitLab's."},
 	{"triggers(path: string) -> list<string>", "Event names a CI file reacts to (`push`, `pull_request`, `pull_request_target`, ...), whatever the `on:` shape; a GitLab pipeline reads as `push`, plus `pull_request` for merge request pipelines and `schedule`."},
@@ -66,7 +68,8 @@ var Variables = []Accessor{
 	{"release", "`{exists, mechanisms, tag_patterns, latest_tag}`."},
 	{"taskrunner", "`{kind, targets, file, cmd, deps, recipes}`: the task runner whatever its kind (`make`, `just`, `task`, `npm-scripts`, `gradle`, `none`). `cmd` is how a target is invoked (`make`, `just`, `task`, `npm run`, `./gradlew`); `deps` and `recipes` map each target to what it depends on and the commands it runs."},
 	{"params", "The rule's `params` map from the catalog or the repo override."},
-	{"item", "In a rule with `foreach`, the current element; `\"\"` otherwise."},
+	{"item", "In a rule with `foreach`, the current element; in an artifact definition's `instances`, the CI file; `\"\"` otherwise."},
+	{"artifact", "In an implementation keyed by artifact (`by: artifact`), the published artifact being checked: `{kind, name, workflows}`; `name` is `\"\"` when the kind does not name its instances. Empty strings and lists elsewhere."},
 }
 
 // Env wraps a compiled CEL environment bound to one repository scope. It is
@@ -76,7 +79,10 @@ type Env struct {
 	env   *cel.Env
 	repo  *repo.Repo
 	facts facts.Facts
-	cache map[string]cel.Program
+	// artifact is the published artifact an implementation keyed by
+	// artifact is being evaluated for; zero outside one.
+	artifact facts.Artifact
+	cache    map[string]cel.Program
 	// rootCI holds the repository's CI files as seen from a member scope.
 	rootCI      sync.Once
 	rootCIFiles []string
@@ -108,6 +114,7 @@ func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
 		cel.Variable("taskrunner", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("params", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("item", cel.DynType),
+		cel.Variable("artifact", cel.MapType(cel.StringType, cel.DynType)),
 	}
 	fns, ci, code := e.functions(), e.ciAccessors(), e.codeAccessors() //nolint:contextcheck // git lookups run under the repository's own bounded context
 	opts := make([]cel.EnvOption, 0, len(vars)+len(fns)+len(ci)+len(code)+2)
@@ -127,6 +134,10 @@ func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
 // SetFacts replaces the facts the environment exposes, once artifacts have
 // been detected with the environment itself.
 func (e *Env) SetFacts(f facts.Facts) { e.facts = f }
+
+// BindArtifact sets the artifact that `artifact` names in expressions, for
+// one implementation's evaluation; the zero Artifact unbinds it.
+func (e *Env) BindArtifact(a facts.Artifact) { e.artifact = a }
 
 // CheckList type-checks an expression that must yield a list, without a
 // repository: for catalog definitions at load time.
@@ -245,7 +256,12 @@ func acceptable(got, want *cel.Type) bool {
 
 // EvalList evaluates a list expression.
 func (e *Env) EvalList(prg cel.Program, params map[string]any) ([]any, error) {
-	out, _, err := prg.ContextEval(e.ctx, e.activation(params, nil))
+	return e.EvalListWith(prg, params, nil)
+}
+
+// EvalListWith evaluates a list expression with `item` bound.
+func (e *Env) EvalListWith(prg cel.Program, params map[string]any, item any) ([]any, error) {
+	out, _, err := prg.ContextEval(e.ctx, e.activation(params, item))
 	if err != nil {
 		return nil, fmt.Errorf("evaluate: %w", err)
 	}
@@ -337,6 +353,11 @@ func (e *Env) activation(params map[string]any, item any) map[string]any {
 	f := e.facts
 	return map[string]any{
 		"item": item,
+		"artifact": map[string]any{
+			"kind":      e.artifact.Kind,
+			"name":      e.artifact.Name,
+			"workflows": toAnyList(e.artifact.Workflows),
+		},
 		"repo": map[string]any{
 			"name":       f.Name,
 			"stacks":     toAnyList(f.Stacks),
@@ -405,6 +426,10 @@ func (e *Env) functions() []cel.EnvOption {
 			cel.BinaryBinding(func(p, re ref.Val) ref.Val { return e.scan(p, re) }))),
 		cel.Function("matchesAny", cel.Overload("matchesany_list_string", []*cel.Type{strList, str}, cel.BoolType,
 			cel.BinaryBinding(matchesAny))),
+		cel.Function("find", cel.Overload("find_string_string", []*cel.Type{str, str}, str,
+			cel.BinaryBinding(func(t, re ref.Val) ref.Val { return findMatches(t, re, true) }))),
+		cel.Function("findall", cel.Overload("findall_string_string", []*cel.Type{str, str}, strList,
+			cel.BinaryBinding(func(t, re ref.Val) ref.Val { return findMatches(t, re, false) }))),
 		cel.Function("workflows", cel.Overload("workflows_void", nil, strList,
 			cel.FunctionBinding(func(...ref.Val) ref.Val { return strs(e.workflowPaths()) }))),
 		cel.Function("tagged_workflows", cel.Overload("tagged_workflows_void", nil, strList,
@@ -500,6 +525,39 @@ func (e *Env) makefile(path string) ref.Val {
 		"deps":    deps,
 		"recipes": recipes,
 	})
+}
+
+// findMatches is find and findall: the first capture group (or the whole
+// match) of the first or of every match of the regex in the text.
+func findMatches(textV, reV ref.Val, first bool) ref.Val {
+	text, ok1 := textV.Value().(string)
+	pattern, ok2 := reV.Value().(string)
+	if !ok1 || !ok2 {
+		return types.NewErr("find: arguments must be strings")
+	}
+	re, err := compileRegexp(pattern)
+	if err != nil {
+		return types.NewErr("find: bad regex: %v", err)
+	}
+	n := -1
+	if first {
+		n = 1
+	}
+	var out []string
+	for _, m := range re.FindAllStringSubmatch(text, n) {
+		if len(m) > 1 {
+			out = append(out, m[1])
+		} else {
+			out = append(out, m[0])
+		}
+	}
+	if first {
+		if len(out) == 0 {
+			return types.String("")
+		}
+		return types.String(out[0])
+	}
+	return strs(out)
 }
 
 func (e *Env) scan(pathV, reV ref.Val) ref.Val {

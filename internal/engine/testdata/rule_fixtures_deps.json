@@ -1045,32 +1045,69 @@
    }
   }
  ],
- "release/reproducible-build/any": [
+ "release/reproducible-build/image": [
   {
    "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          uv build\n",
-    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          tags: ghcr.io/x/y:latest\n",
+    "Dockerfile": "FROM scratch\n"
    },
+   "message": "not set up to be reproducible",
    "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) uv build\n",
-    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          tags: ghcr.io/x/y:latest\n          build-args: |\n            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp }}\n",
+    "Dockerfile": "FROM scratch\n"
    }
   }
  ],
- "release/reproducible-build/dotnet": [
+ "release/reproducible-build/maven": [
   {
    "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n",
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
+    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
+    "pom.xml": "<project><properties><project.build.outputTimestamp>2024-01-01T00:00:00Z</project.build.outputTimestamp></properties></project>\n"
+   }
+  },
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.1.0-bin.zip\n"
+   }
+  }
+ ],
+ "release/reproducible-build/nuget": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n          dotnet nuget push out/*.nupkg --api-key ${NUGET_KEY}\n",
     "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
    },
    "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n",
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          dotnet pack\n          dotnet nuget push out/*.nupkg --api-key ${NUGET_KEY}\n",
     "Directory.Build.props": "<Project><PropertyGroup><ContinuousIntegrationBuild Condition=\"'$(CI)' == 'true'\">true</ContinuousIntegrationBuild></PropertyGroup></Project>\n",
     "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
    }
   }
  ],
- "release/reproducible-build/go": [
+ "release/reproducible-build/pypi": [
+  {
+   "fail": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          uv build\n          uv publish\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) uv build\n          uv publish\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  }
+ ],
+ "release/reproducible-build/release-files": [
   {
    "fail": {
     ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          goreleaser release\n",
@@ -1095,43 +1132,15 @@
     ".goreleaser.yaml": "builds: [{main: .}]\n",
     "go.mod": "module x\n"
    }
-  }
- ],
- "release/reproducible-build/java": [
+  },
   {
    "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
-    "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          mvn deploy\n",
-    "pom.xml": "<project><properties><project.build.outputTimestamp>2024-01-01T00:00:00Z</project.build.outputTimestamp></properties></project>\n"
-   }
-  }
- ],
- "release/reproducible-build/kotlin": [
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
-    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
-    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14-bin.zip\n"
-   },
-   "pass": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew publish\n",
-    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
-    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.1.0-bin.zip\n"
-   }
-  }
- ],
- "release/reproducible-build/rust": [
-  {
-   "fail": {
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release\n",
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release\n          gh release create ${GITHUB_REF_NAME} target/release/x\n",
     "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
    },
    "pass": {
     ".cargo/config.toml": "[build]\nrustflags = [\"--remap-path-prefix=/home=~\"]\n",
-    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release --locked\n",
+    ".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  a:\n    steps:\n      - run: |\n          cargo build --release --locked\n          gh release create ${GITHUB_REF_NAME} target/release/x\n",
     "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n"
    }
   }

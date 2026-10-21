@@ -115,3 +115,19 @@ func TestSchemasMatchTheTypes(t *testing.T) {
 	testutil.SchemaMatches(t, reflect.TypeFor[catalog.Catalog](), catalog.CatalogSchema, nil)
 	testutil.SchemaMatches(t, reflect.TypeFor[catalog.Sources](), catalog.SourcesSchema, nil)
 }
+
+// `combine:` left the rule format at engine level 7: a catalog written for
+// that level is refused with it, inline or selected from a library, while
+// an older catalog keeps running.
+func TestCombineIsGoneSinceLevel7(t *testing.T) {
+	t.Parallel()
+	inline := func(engine string) []byte {
+		return []byte("apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: a, version: 1.0.0" + engine + "}\nrules:\n  - {id: x/y, title: t, kind: expr, expr: \"true\", severity: info, requirement: r, fix: {human: h}, combine: any}\n")
+	}
+	if _, err := catalog.Parse(inline(", engine: 7")); err == nil || !strings.Contains(err.Error(), "combine is gone since engine level 7") {
+		t.Errorf("level 7 refuses combine: %v", err)
+	}
+	if _, err := catalog.Parse(inline(", engine: 6")); err == nil || strings.Contains(err.Error(), "combine is gone") {
+		t.Errorf("level 6 keeps combine (it fails on where it is set, not on its presence): %v", err)
+	}
+}

@@ -109,7 +109,7 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 // detectArtifacts fills the root's published artifacts from the catalog's
 // definitions, or from the pinned list. Detection needs the rule environment
 // (workflows, steps), so it runs after the other facts.
-func detectArtifacts(ctx context.Context, r *repo.Repo, root *facts.Facts, eff *config.Effective, pinned *[]string) error {
+func detectArtifacts(ctx context.Context, r *repo.Repo, root *facts.Facts, eff *config.Effective, pinned *[]facts.Artifact) error {
 	if len(eff.Artifacts) == 0 && pinned == nil {
 		return nil
 	}
@@ -291,38 +291,150 @@ func evaluateRule(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Fa
 		res.Status, res.Evidence = model.StatusNotApplicable, "needs --deep (executes repository code)"
 		return res
 	}
-	var (
-		findings []model.Finding
-		evidence string
-		err      error
-	)
-	switch rule.Kind {
-	case model.KindExpr:
-		findings, err = evalExpr(env, rule)
-	case model.KindOutcome:
-		var partial *model.Partial
-		findings, evidence, partial, err = evalOutcome(env, rule, caps.fallback(rule))
-		if partial != nil {
-			res.Severity = partial.Severity // a partial match reports at its own severity
-		}
-	case model.KindGo:
-		findings, evidence, err = evalGo(ctx, r, f, rule)
-	case model.KindCommand:
-		findings, err = evalCommand(ctx, r, f, rule)
-	case model.KindCapability:
-		err = fmt.Errorf("capability %s is checked by its implementations", rule.ID)
-	default:
-		err = fmt.Errorf("unknown rule kind %q", rule.Kind)
-	}
-	if err != nil {
+	findings, evidence, severity, skipped, err := evalPerArtifact(ctx, env, r, f, rule, caps)
+	switch {
+	case err != nil:
 		res.Status, res.Err = model.StatusError, err.Error()
 		return res
+	case skipped != "":
+		res.Status, res.Evidence = model.StatusNotApplicable, skipped
+		return res
 	}
-	res.Findings, res.Evidence = findings, evidence
+	res.Findings, res.Evidence, res.Severity = findings, evidence, severity
 	if len(findings) > 0 {
 		res.Status = model.StatusFail
 	}
 	return res
+}
+
+// perArtifact says whether the rule runs once per published artifact: an
+// implementation keyed by artifact, with artifacts of its kind published.
+func perArtifact(f facts.Facts, rule model.Rule) bool {
+	return rule.Artifact != "" && len(f.ArtifactInstances(rule.Artifact)) > 0
+}
+
+// evalPerArtifact runs an implementation keyed by artifact once per
+// published artifact of its kind, with `artifact` bound, so each is checked
+// on its own: the implementation's `when` is asked for each, a finding
+// names the artifact that fails, the evidence the ones that pass. Any
+// other rule runs once. The severity is the rule's, or a partial's when
+// every failing artifact matched a partial. skipped is set when the rule
+// applied to no published artifact.
+func evalPerArtifact(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities) (findings []model.Finding, evidence string, severity model.Severity, skipped string, err error) {
+	if !perArtifact(f, rule) {
+		found, evidence, partial, err := evalKind(ctx, env, r, f, rule, caps)
+		return found, evidence, partialSeverity(rule, found, partial), "", err
+	}
+	defer env.BindArtifact(facts.Artifact{})
+	var (
+		evidences []string
+		worst     *model.Partial // the strongest partial, nil once an artifact failed outright
+		applied   int
+	)
+	for _, a := range f.ArtifactInstances(rule.Artifact) {
+		found, evidence, partial, applies, err := evalInstance(ctx, env, r, f, rule, caps, a)
+		switch {
+		case err != nil:
+			return nil, "", rule.Severity, "", err
+		case !applies:
+			continue
+		case len(found) == 0:
+			applied++
+			if evidence != "" {
+				evidences = append(evidences, evidence)
+			}
+			continue
+		}
+		applied++
+		findings = append(findings, found...)
+		worst = strongerPartial(worst, partial, len(findings) == len(found))
+	}
+	if applied == 0 {
+		return nil, "", rule.Severity, "when: " + rule.When, nil
+	}
+	return findings, strings.Join(evidences, "; "), partialSeverity(rule, findings, worst), "", nil
+}
+
+// partialSeverity is the severity a result reports at: a partial's when the
+// findings come from partial matches only, else the rule's.
+func partialSeverity(rule model.Rule, findings []model.Finding, partial *model.Partial) model.Severity {
+	if partial != nil && len(findings) > 0 {
+		return partial.Severity
+	}
+	return rule.Severity
+}
+
+// strongerPartial folds one artifact's partial into the result's: nil once
+// any artifact failed outright (its own or an earlier one), else the one
+// with the higher severity. first says whether this is the first failure.
+func strongerPartial(sofar, next *model.Partial, first bool) *model.Partial {
+	switch {
+	case next == nil, !first && sofar == nil:
+		return nil
+	case first || next.Severity > sofar.Severity:
+		return next
+	}
+	return sofar
+}
+
+// evalInstance binds one published artifact, asks the rule's own `when`
+// for it and evaluates the rule when it applies; findings, evidence and an
+// error carry the artifact's name.
+func evalInstance(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities, a facts.Artifact) (findings []model.Finding, evidence string, partial *model.Partial, applies bool, err error) {
+	env.BindArtifact(a)
+	if rule.When != "" {
+		ok, err := env.Check(rule.When, rule.Params)
+		if err != nil {
+			return nil, "", nil, false, fmt.Errorf("when: %w", err)
+		}
+		if !ok {
+			return nil, "", nil, false, nil
+		}
+	}
+	findings, evidence, partial, err = evalKind(ctx, env, r, f, rule, caps)
+	if err != nil {
+		if a.Name != "" {
+			err = fmt.Errorf("%s: %w", a, err)
+		}
+		return nil, "", nil, true, err
+	}
+	for i := range findings {
+		findings[i].Message = label(a, findings[i].Message)
+	}
+	if evidence != "" {
+		evidence = label(a, evidence)
+	}
+	return findings, evidence, partial, true, nil
+}
+
+// label prefixes a message with the artifact's name, when it has one.
+func label(a facts.Artifact, msg string) string {
+	if a.Name == "" {
+		return msg
+	}
+	return a.Name + ": " + msg
+}
+
+// evalKind evaluates the rule by its kind; a partial is returned when a
+// partial of an outcome rule matched.
+func evalKind(ctx context.Context, env *celenv.Env, r *repo.Repo, f facts.Facts, rule model.Rule, caps capabilities) ([]model.Finding, string, *model.Partial, error) {
+	switch rule.Kind {
+	case model.KindExpr:
+		findings, err := evalExpr(env, rule)
+		return findings, "", nil, err
+	case model.KindOutcome:
+		return evalOutcome(env, rule, caps.fallback(rule))
+	case model.KindGo:
+		findings, evidence, err := evalGo(ctx, r, f, rule)
+		return findings, evidence, nil, err
+	case model.KindCommand:
+		findings, err := evalCommand(ctx, r, f, rule)
+		return findings, "", nil, err
+	case model.KindCapability:
+		return nil, "", nil, fmt.Errorf("capability %s is checked by its implementations", rule.ID)
+	default:
+		return nil, "", nil, fmt.Errorf("unknown rule kind %q", rule.Kind)
+	}
 }
 
 // notApplicable decides whether a rule is out of scope. An error means the
@@ -341,7 +453,11 @@ func notApplicable(env *celenv.Env, f facts.Facts, rule model.Rule, caps capabil
 	if why := implementationScope(f, rule, caps); why != "" {
 		return true, why, nil
 	}
-	for _, c := range []struct{ label, expr, why string }{{"gate", rule.Gate, "capability when: "}, {"when", rule.When, "when: "}} {
+	gates := []struct{ label, expr, why string }{{"gate", rule.Gate, "capability when: "}, {"when", rule.When, "when: "}}
+	if perArtifact(f, rule) {
+		gates = gates[:1] // the implementation's own `when` is asked per published artifact
+	}
+	for _, c := range gates {
 		if c.expr == "" {
 			continue
 		}

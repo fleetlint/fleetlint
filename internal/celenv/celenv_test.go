@@ -64,6 +64,12 @@ func TestExpressions(t *testing.T) {
 		`matchesAny(glob("**"), "^docs/")`:                                                  true,
 		`yaml(".github/workflows/release.yml").permissions.contents == "read"`:              true,
 		`taskrunner.kind == "make"`:                                                         true,
+		`find("docker push ghcr.io/x/y:1", "push ([^\\s:]+)") == "ghcr.io/x/y"`:             true,
+		`find("nothing here", "push ([^\\s:]+)") == ""`:                                     true,
+		`find("a1 b2", "[a-z]\\d") == "a1"`:                                                 true,
+		`findall("a1 b2 c", "([a-z])\\d") == ["a", "b"]`:                                    true,
+		`findall("none", "\\d").size() == 0`:                                                true,
+		`artifact.kind == "" && artifact.name == "" && artifact.workflows.size() == 0`:      true,
 	}
 	for expr, want := range cases {
 		got, err := env.Check(expr, nil)
