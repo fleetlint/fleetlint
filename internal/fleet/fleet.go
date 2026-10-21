@@ -6,7 +6,9 @@ package fleet
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -508,13 +510,16 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 	return dest, nil
 }
 
-// cacheDir is cache/<host>/<path segments> for a clone URL, each segment
-// sanitised on its own, so a/b_c and a_b/c never share a clone.
+// cacheDir is cache/<host>/<path segments>-<hash> for a clone URL, each
+// segment sanitised on its own, so a/b_c and a_b/c never share a clone;
+// the hash of the unsanitised host and path keeps apart what sanitising or
+// a case-insensitive filesystem would merge (we%20ird and we_20ird).
 func cacheDir(cache, raw string) (string, error) {
 	host, path := splitCloneURL(raw)
 	segments := append([]string{host}, strings.Split(strings.Trim(path, "/"), "/")...)
 	last := len(segments) - 1
 	segments[last] = strings.TrimSuffix(segments[last], ".git")
+	sum := sha256.Sum256([]byte(strings.ToLower(host) + "/" + strings.Join(segments[1:], "/")))
 	for i, seg := range segments {
 		seg = unsafeName.ReplaceAllString(seg, "_")
 		if seg == "" || seg == "." || seg == ".." {
@@ -526,6 +531,7 @@ func cacheDir(cache, raw string) (string, error) {
 		}
 		segments[i] = seg
 	}
+	segments[last] += "-" + hex.EncodeToString(sum[:4])
 	return filepath.Join(append([]string{cache}, segments...)...), nil
 }
 
