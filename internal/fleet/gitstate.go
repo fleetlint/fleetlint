@@ -35,11 +35,21 @@ func gitState(r *repo.Repo) *GitState {
 	if b, err := r.Git("rev-parse", "--abbrev-ref", "HEAD"); err == nil && b != "HEAD" {
 		g.Branch = b
 	}
-	if st, err := r.Git("status", "--porcelain"); err == nil && st != "" {
-		g.Dirty = len(strings.Split(st, "\n"))
-	}
+	g.Dirty = DirtyCount(r)
 	if ts, err := r.Git("log", "-1", "--format=%cI"); err == nil {
 		g.LastCommit, _ = time.Parse(time.RFC3339, ts)
 	}
 	return g
+}
+
+// DirtyCount is the number of uncommitted changes in the working tree; a
+// repository without git has none.
+func DirtyCount(r *repo.Repo) int {
+	if !r.HasGit() {
+		return 0
+	}
+	if st, err := r.Git("status", "--porcelain"); err == nil && st != "" {
+		return len(strings.Split(st, "\n"))
+	}
+	return 0
 }

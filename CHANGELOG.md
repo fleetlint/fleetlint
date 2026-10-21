@@ -5,6 +5,18 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `fleetlint fleet --deep-clones`: with `--deep`, also run the rules that execute repository code in cloned repositories (url entries, `--from`).
+- `--allow-dirty` on `fleetlint fix --apply` and `fleetlint fleet --fix --apply`: write into a working tree that has uncommitted changes.
+
+### Security
+
+- `fleet --deep` no longer executes code from cloned repositories: url entries and discovered repositories are checked without their deep rules unless `--deep-clones` is given, and the report notes it per repository (`notes` in `fleet.json`, a Notes column in the report).
+- `fix --apply` refuses a working tree with uncommitted changes (exit 2) unless `--allow-dirty` is given; `fleet --fix --apply` leaves such a repository unfixed, still checks it and records the refusal in its notes. A repository without git is never dirty.
+- Clone cache directories follow the URL's host and path (`<cache>/<host>/<owner>/<repo>`), each segment sanitised on its own, so two URLs can no longer share a clone (`a/b_c` and `a_b/c` did). Existing clones at the old flat path are not reused; the next run clones afresh, and the old directories can be deleted.
+- Repositories discovered with `--from` are cloned only from `https://`, `ssh://` or `git@` URLs on the forge's own host (for GitHub Enterprise, also the host of `GITHUB_API_URL`); a clone URL elsewhere, a local path among them, fails the run naming the repository. Discovered names were already sanitised like fleet-file names; a test now pins that.
+
 ## [0.7.0] - 2026-10-21
 
 Engine level 6: a catalog whose `refs` are `{url, kind, section}` entries needs this version. Catalogs for levels 1 to 5 still run.

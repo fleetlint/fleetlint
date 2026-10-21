@@ -10,48 +10,56 @@ import (
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
+	"github.com/fleetlint/fleetlint/internal/fleet"
 	"github.com/fleetlint/fleetlint/internal/model"
 )
 
 func fixCmd(g *globals, code *int) *cobra.Command {
-	var apply bool
+	var apply, allowDirty bool
 	cmd := &cobra.Command{
 		Use:   "fix [rule-id...]",
 		Short: "Show (or with --apply, perform) the mechanical fixes for failing rules",
 		Long: `fix plans the declarative actions attached to failing rules: creating files from
 templates, untracking files, adding .gitignore patterns. It never overwrites an
-existing file. Without --apply it only prints what it would do. Rules without
-actions print their instruction instead.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			r, eff, err := load(cmd.Context(), g)
-			if err != nil {
-				return err
-			}
-			run, err := engine.Evaluate(cmd.Context(), r, eff)
-			if err != nil {
-				return err
-			}
-			changes, manual, err := fixplan.Plan(r, run, args)
-			if err != nil {
-				return &configError{err}
-			}
-			out := cmd.OutOrStdout()
-			if err := printPlan(out, changes, manual, apply); err != nil {
-				return err
-			}
-			if !apply || len(changes) == 0 {
-				return nil
-			}
-			if err := fix.Apply(changes); err != nil {
-				return err
-			}
-			_, err = fmt.Fprintf(out, "\napplied %d change(s). Run `fleetlint check` to confirm.\n", len(changes))
-			*code = ExitOK
-			return err
-		},
+existing file. Without --apply it only prints what it would do, and --apply
+writes only into a clean working tree unless --allow-dirty is given. Rules
+without actions print their instruction instead.`,
+		RunE: func(cmd *cobra.Command, args []string) error { return runFix(cmd, g, code, args, apply, allowDirty) },
 	}
 	cmd.Flags().BoolVar(&apply, "apply", false, "write the changes (default is a dry run)")
+	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "with --apply: write although the working tree has uncommitted changes")
 	return cmd
+}
+
+func runFix(cmd *cobra.Command, g *globals, code *int, rules []string, apply, allowDirty bool) error {
+	r, eff, err := load(cmd.Context(), g)
+	if err != nil {
+		return err
+	}
+	run, err := engine.Evaluate(cmd.Context(), r, eff)
+	if err != nil {
+		return err
+	}
+	changes, manual, err := fixplan.Plan(r, run, rules)
+	if err != nil {
+		return &configError{err}
+	}
+	if apply && len(changes) > 0 && !allowDirty && fleet.DirtyCount(r) > 0 {
+		return &configError{fleet.ErrDirty}
+	}
+	out := cmd.OutOrStdout()
+	if err := printPlan(out, changes, manual, apply); err != nil {
+		return err
+	}
+	if !apply || len(changes) == 0 {
+		return nil
+	}
+	if err := fix.Apply(changes); err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "\napplied %d change(s). Run `fleetlint check` to confirm.\n", len(changes))
+	*code = ExitOK
+	return err
 }
 
 func printPlan(w io.Writer, changes []fix.Change, manual []model.Result, apply bool) error {

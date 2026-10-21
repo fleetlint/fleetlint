@@ -48,6 +48,7 @@ type repoOut struct {
 	// Catalogs are the repository's catalogs in the order they applied,
 	// with their pins.
 	Catalogs []config.CatalogInfo `json:"catalogs,omitempty"`
+	Notes    []string             `json:"notes,omitempty"`
 	Err      string               `json:"error,omitempty"`
 }
 
@@ -78,7 +79,7 @@ func (rep *Report) MarshalJSON() ([]byte, error) {
 		ro := repoOut{
 			Name: r.Name, Team: r.Team, Group: r.Group, Source: r.Source, Git: r.Git, Facts: r.Facts,
 			Compliance: r.Compliance(), Fixable: r.Fixable(), Summary: r.Summary,
-			Disabled: r.Disabled, Weakened: r.Weakened, Exceptions: r.Exceptions, Catalogs: r.Catalogs, Err: r.Err,
+			Disabled: r.Disabled, Weakened: r.Weakened, Exceptions: r.Exceptions, Catalogs: r.Catalogs, Notes: r.Notes, Err: r.Err,
 			Results: make([]resultOut, 0, len(r.Results)),
 		}
 		for _, res := range r.Results {
