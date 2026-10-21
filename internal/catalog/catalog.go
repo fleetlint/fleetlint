@@ -943,10 +943,8 @@ func validateRule(r *model.Rule) error {
 	if r.Fix.Human == "" {
 		return fmt.Errorf("rule %s: fix.human is required", r.ID)
 	}
-	for _, ref := range r.Refs {
-		if err := ref.Validate(); err != nil {
-			return fmt.Errorf("rule %s: %w", r.ID, err)
-		}
+	if err := validateRefs(r); err != nil {
+		return err
 	}
 	if _, err := fix.Decode(r.Fix.Actions); err != nil {
 		return fmt.Errorf("rule %s: fix.%w", r.ID, err)
@@ -962,6 +960,16 @@ func validateRule(r *model.Rule) error {
 		return fmt.Errorf("rule %s: scope must be each, root or members (got %q)", r.ID, r.Scope)
 	}
 	return validateCombine(r)
+}
+
+// validateRefs checks every source the rule cites.
+func validateRefs(r *model.Rule) error {
+	for _, ref := range r.Refs {
+		if err := ref.Validate(); err != nil {
+			return fmt.Errorf("rule %s: %w", r.ID, err)
+		}
+	}
+	return nil
 }
 
 // settleImplementation reads an implementation id (family/name/<target>):
