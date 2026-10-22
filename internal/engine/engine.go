@@ -171,7 +171,21 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 	ov.FleetTier = opts.Tier
 	f := facts.Discover(sr, ov)
 	f.Artifacts = root.Artifacts // what the repository publishes is decided at the root
+	inheritTier(&f, root)
 	return sr, f, sc, nil
+}
+
+// inheritTier gives a scope whose tier nobody set the repository's when
+// that is more serious: workflows and releases live at the root, so a
+// member of a released repository would otherwise count as an experiment.
+func inheritTier(f *facts.Facts, root facts.Facts) {
+	if src := f.Sources["tier"]; (src != facts.SourceDefault && src != facts.SourceInferred) || root.Tier >= f.Tier {
+		return
+	}
+	f.Tier, f.Sources["tier"], f.TierReason = root.Tier, root.Sources["tier"], ""
+	if root.TierReason != "" {
+		f.TierReason = "the repository (" + root.TierReason + ")"
+	}
 }
 
 func now(opts Options) time.Time {

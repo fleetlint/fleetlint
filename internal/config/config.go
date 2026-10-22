@@ -7,7 +7,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -328,10 +327,10 @@ func checkStacks(scopes []Scope, defs []stacks.Def, anyOK func(string) bool) err
 // catalogs the repository extends, later layers first, over the preset
 // source's templates.
 func (e *Effective) FixTemplates() compose.Templates {
-	layers := make([]fs.FS, 0, len(e.Catalogs)+1)
+	layers := make([]catalog.TemplateLayer, 0, len(e.Catalogs))
 	for i := len(e.Catalogs) - 1; i >= 0; i-- {
 		if e.Catalogs[i].Templates != nil {
-			layers = append(layers, e.Catalogs[i].Templates)
+			layers = append(layers, catalog.TemplateLayer{Name: e.Catalogs[i].Ref, FS: e.Catalogs[i].Templates})
 		}
 	}
 	src := e.Source
@@ -490,7 +489,11 @@ func validateExceptions(exs []model.Exception) error {
 		if ex.Rule == "" || ex.Reason == "" {
 			return fmt.Errorf("exceptions[%d]: rule and reason are required", i)
 		}
-		if ex.Match != "" && !strings.HasPrefix(ex.Match, "re:") && !repo.ValidGlob(ex.Match) {
+		if re, ok := strings.CutPrefix(ex.Match, "re:"); ok {
+			if _, err := regexp.Compile(re); err != nil {
+				return fmt.Errorf("exceptions[%d]: match %q is not a valid regex: %w", i, ex.Match, err)
+			}
+		} else if ex.Match != "" && !repo.ValidGlob(ex.Match) {
 			return fmt.Errorf("exceptions[%d]: match %q is not a valid glob", i, ex.Match)
 		}
 		if ex.Until == "" {

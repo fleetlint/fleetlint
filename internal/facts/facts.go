@@ -27,6 +27,8 @@ const (
 	SourceInferred Source = "inferred"
 	// SourceFleet is a value the fleet file set for the repository.
 	SourceFleet Source = "fleet"
+	// SourceForge is a value the forge's API reported.
+	SourceForge Source = "forge"
 )
 
 // Visibility of the repository on its forge.
@@ -195,10 +197,12 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 	f.Sources["stacks"] = SourceDetected
 	f.Forge, f.ForgeHost = detectForge(r.RemoteURL())
 	f.Sources["forge"] = SourceDetected
-	if f.Visibility = detectVisibility(r); f.Visibility == VisibilityUnknown && ov.DetectedVisibility != "" {
-		f.Visibility = ov.DetectedVisibility
-	}
+	f.Visibility = detectVisibility(r)
 	f.Sources["visibility"] = SourceDetected
+	if f.Visibility == VisibilityUnknown && ov.DetectedVisibility != "" {
+		f.Visibility = ov.DetectedVisibility
+		f.Sources["visibility"] = SourceForge
+	}
 	f.Container = ContainerNone
 	if r.Has(".devcontainer/devcontainer.json") || r.Has(".devcontainer.json") || len(r.Glob(".devcontainer/*/devcontainer.json")) > 0 {
 		f.Container = ContainerDevcontainer

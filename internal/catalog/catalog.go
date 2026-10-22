@@ -170,24 +170,41 @@ func (s *Source) FixTemplates() compose.Templates {
 	return compose.Templates{FS: s.Templates, Stacks: defs}
 }
 
-// FixTemplatesOver serves the source's templates with the given file
-// systems in front: the first that has a file wins.
-func (s *Source) FixTemplatesOver(layers ...fs.FS) compose.Templates {
+// TemplateLayer is a catalog's templates; Name is its reference.
+type TemplateLayer struct {
+	Name string
+	FS   fs.FS
+}
+
+// FixTemplatesOver serves the source's templates with the given layers in
+// front: the first that has a file wins. The result's Origins names the
+// layers that served a file.
+func (s *Source) FixTemplatesOver(layers ...TemplateLayer) compose.Templates {
 	if len(layers) == 0 {
 		return s.FixTemplates()
 	}
 	t := s.FixTemplates()
-	t.FS = overlayFS(append(layers, s.Templates))
+	t.FS = &overlayFS{layers: append(layers, TemplateLayer{FS: s.Templates}), served: map[string]bool{}}
 	return t
 }
 
-// overlayFS reads from the first layer that has the file.
-type overlayFS []fs.FS
+// overlayFS reads from the first layer that has the file and records the
+// named layers that served one.
+type overlayFS struct {
+	layers []TemplateLayer
+	mu     sync.Mutex
+	served map[string]bool
+}
 
-func (o overlayFS) Open(name string) (fs.File, error) {
-	for _, layer := range o {
-		f, err := layer.Open(name)
+func (o *overlayFS) Open(name string) (fs.File, error) {
+	for _, layer := range o.layers {
+		f, err := layer.FS.Open(name)
 		if err == nil {
+			if st, serr := f.Stat(); layer.Name != "" && serr == nil && !st.IsDir() {
+				o.mu.Lock()
+				o.served[layer.Name] = true
+				o.mu.Unlock()
+			}
 			return f, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -195,6 +212,18 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 		}
 	}
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
+// Served lists the named layers a file was read from, sorted.
+func (o *overlayFS) Served() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]string, 0, len(o.served))
+	for name := range o.served {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // PresetNames lists the presets of the source.

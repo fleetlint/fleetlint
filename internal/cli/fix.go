@@ -70,6 +70,9 @@ func printPlan(w io.Writer, changes []fix.Change, manual []model.Result, apply b
 	}
 	for _, c := range changes {
 		b.WriteString(c.Diff)
+		if c.From != "" {
+			b.WriteString("  (template from catalog " + c.From + ")\n")
+		}
 		b.WriteString("\n")
 	}
 	if len(changes) > 0 && !apply {

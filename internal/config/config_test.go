@@ -120,6 +120,7 @@ func TestValidationErrors(t *testing.T) {
 		"inline go rule":           "version: 1\nrules:\n  - {id: x/y, kind: go}\n",
 		"bad cel is caught later":  "version: 1\nrules:\n  x/y: {kind: expr, expr: 'file(']\n",
 		"bad exception glob":       "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: repo/no-tracked-junk, reason: r, match: '['}\n",
+		"bad exception regex":      "version: 1\nextends: [fleetlint:minimal]\nexceptions:\n  - {rule: repo/no-tracked-junk, reason: r, match: 're:('}\n",
 		"scope inline rule":        "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    rules:\n      x/y: {kind: expr, expr: 'true'}\n",
 		"scope unknown rule":       "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    overrides:\n      nope/nope: {enabled: false, reason: r}\n",
 		"scope lower no reason":    "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - path: api\n    overrides:\n      hooks/config-present: {severity: info}\n",

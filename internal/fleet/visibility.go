@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/fleetlint/fleetlint/internal/facts"
 	"github.com/fleetlint/fleetlint/internal/forge"
@@ -18,6 +19,7 @@ import (
 // repository. Its Lookup method is an Options.Visibility.
 type ForgeLookup struct {
 	Client  forge.Client
+	mu      sync.Mutex     // fleet checks repositories in parallel
 	hidden  map[string]int // host -> repositories it did not show
 	unnamed map[string]int // Gitea host -> repositories not asked, the user did not name it
 	failed  []string
@@ -30,6 +32,8 @@ func (v *ForgeLookup) Lookup(ctx context.Context, r *repo.Repo, f facts.Facts) f
 		return ""
 	}
 	public, asked, host, err := v.Client.RemoteVisibility(ctx, f.Forge, r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	switch {
 	case !asked:
 		return ""
@@ -57,6 +61,8 @@ func increment(m map[string]int, k string) map[string]int {
 
 // Notes explains, per host, why visibilities stayed unknown.
 func (v *ForgeLookup) Notes() []string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
 	var out []string
 	for _, host := range slices.Sorted(maps.Keys(v.hidden)) {
 		hint := "GITEA_TOKEN"

@@ -147,6 +147,9 @@ type Change struct {
 	// Old and New are the file's text before and after; both are empty for
 	// an untrack.
 	Old, New string
+	// From names the catalogs whose templates the change uses when they are
+	// not the run's catalog source.
+	From string
 	// apply performs the change.
 	apply func() error
 }

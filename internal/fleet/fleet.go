@@ -17,7 +17,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
 
@@ -264,8 +267,11 @@ type Options struct {
 	Visibility func(context.Context, *repo.Repo, facts.Facts) facts.Visibility
 	// Fix plans (and may apply) the mechanical fixes in a local repository
 	// and returns how many changes it wrote; the repository is checked again
-	// when it wrote any. Cloned repositories are left alone.
+	// when it wrote any. Cloned repositories are left alone. Calls never
+	// overlap, so its output stays together per repository.
 	Fix func(name string, r *repo.Repo, run *engine.Run) (int, error)
+	// Jobs is how many repositories are checked at once (at least 1).
+	Jobs int
 }
 
 // RepoReport is one repository's outcome.
@@ -364,13 +370,34 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 		opts.Now = time.Now()
 	}
 	rep := &Report{GeneratedAt: opts.Now, Tool: opts.Version, Catalog: catalog.ModuleVersion()}
-	seen := map[string]bool{}
-	for _, e := range spec.Repos {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	if fix := opts.Fix; fix != nil {
+		var mu sync.Mutex
+		opts.Fix = func(name string, r *repo.Repo, run *engine.Run) (int, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return fix(name, r, run)
 		}
-		rr := checkOne(ctx, spec.settle(e), spec, opts)
-		rep.Repos = append(rep.Repos, rr)
+	}
+	rep.Repos = make([]RepoReport, len(spec.Repos))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(max(opts.Jobs, 1))
+	for i, e := range spec.Repos {
+		g.Go(func() error {
+			if gctx.Err() != nil {
+				return gctx.Err()
+			}
+			rep.Repos[i] = checkSafely(gctx, spec.settle(e), spec, opts)
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	seen := map[string]bool{}
+	for _, rr := range rep.Repos {
 		for _, res := range rr.Results {
 			seen[res.Rule.ID] = true
 		}
@@ -384,6 +411,17 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 	rep.Groups = summarizeGroups(rep.Repos, opts.Now)
 	rep.Unversioned = spec.Unversioned
 	return rep, nil
+}
+
+// checkSafely is checkOne with a panic reported as the repository's error,
+// so one broken rule or repository does not end the run.
+func checkSafely(ctx context.Context, e Entry, spec *Spec, opts Options) (rr RepoReport) {
+	defer func() {
+		if p := recover(); p != nil {
+			rr = RepoReport{Name: e.Name, Team: e.Team, Group: e.Group, Source: firstNonEmpty(e.URL, e.Path), Err: fmt.Sprintf("fleetlint failed on this repository (please report it): %v", p)}
+		}
+	}()
+	return checkOne(ctx, e, spec, opts)
 }
 
 func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport {
@@ -476,6 +514,10 @@ func deriveName(e Entry) string {
 
 // materialize returns a local path for the entry, cloning or updating a URL
 // into the cache directory.
+// cloneLocks serialise clones into one cache directory: two entries may
+// name the same URL.
+var cloneLocks sync.Map
+
 func materialize(ctx context.Context, e Entry, cache string, update bool) (string, error) {
 	if e.Path != "" {
 		if _, err := os.Stat(e.Path); err != nil {
@@ -493,6 +535,9 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 	if err != nil {
 		return "", err
 	}
+	lock, _ := cloneLocks.LoadOrStore(dest, &sync.Mutex{})
+	lock.(*sync.Mutex).Lock()
+	defer lock.(*sync.Mutex).Unlock()
 	if _, err := os.Stat(filepath.Join(dest, ".git")); err != nil {
 		if err := os.MkdirAll(filepath.Dir(dest), 0o750); err != nil {
 			return "", err

@@ -22,7 +22,17 @@ import (
 // and history/<timestamp>.json; index.html duplicates fleet.html so the
 // directory publishes as a static site. The latest earlier run in history/
 // is the baseline for what changed.
-func Write(dir string, rep *Report) error {
+func Write(dir string, rep *Report) error { return WriteWith(dir, rep, WriteOptions{}) }
+
+// WriteOptions control history/: Keep is how many runs it holds (0 keeps
+// every run), NoHistory leaves this run out (a dry run of fixes).
+type WriteOptions struct {
+	Keep      int
+	NoHistory bool
+}
+
+// WriteWith is Write with history options. History files are compact JSON.
+func WriteWith(dir string, rep *Report, opts WriteOptions) error {
 	prev, err := loadPrevious(dir, rep.GeneratedAt)
 	if err != nil {
 		return err
@@ -47,7 +57,13 @@ func Write(dir string, rep *Report) error {
 	if files["fleet.csv"], err = renderCSV(rep); err != nil {
 		return err
 	}
-	files[filepath.Join("history", rep.GeneratedAt.UTC().Format(historyStamp)+".json")] = js
+	if !opts.NoHistory {
+		compact, err := json.Marshal(rep)
+		if err != nil {
+			return err
+		}
+		files[filepath.Join("history", rep.GeneratedAt.UTC().Format(historyStamp)+".json")] = compact
+	}
 	for _, r := range rep.Repos {
 		md := renderActions(r)
 		files[filepath.Join("actions", reportFile(r.Name, ".md"))] = md
@@ -60,6 +76,25 @@ func Write(dir string, rep *Report) error {
 		if err := os.WriteFile(filepath.Join(dir, name), content, 0o644); err != nil { //nolint:gosec // report files
 			return err
 		}
+	}
+	return pruneHistory(dir, opts.Keep)
+}
+
+// pruneHistory removes the oldest runs beyond keep; 0 keeps them all.
+func pruneHistory(dir string, keep int) error {
+	if keep <= 0 {
+		return nil
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "history", "*.json"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(files)
+	for len(files) > keep {
+		if err := os.Remove(files[0]); err != nil {
+			return err
+		}
+		files = files[1:]
 	}
 	return nil
 }
@@ -407,7 +442,7 @@ func tierCell(f facts.Facts) tcell {
 	case facts.SourceDefault:
 		c.Text += " (default)"
 		c.Class = "warn"
-	case facts.SourceConfigured, facts.SourceDetected, facts.SourceFleet:
+	case facts.SourceConfigured, facts.SourceDetected, facts.SourceFleet, facts.SourceForge:
 	}
 	return c
 }

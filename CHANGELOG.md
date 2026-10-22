@@ -7,7 +7,21 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Added
 
+- `fleetlint fleet --jobs N` (default 4) checks that many repositories at once. A panic while checking one repository is reported as that repository's error and the run goes on.
+- `fleetlint fleet --keep-history N` keeps only the latest N runs in `history/`. History files are written as compact JSON, and a `--fix` run without `--apply` adds none.
+- The fix plan names the catalog a change's template came from when it is not the run's catalog source (`(template from catalog oci://...)`), since such a template becomes a hook or a workflow.
 - SARIF `fixes`: a failing result that `fleetlint fix --apply` can repair carries the change it would make, one replacement per file (`deletedRegion` in UTF-16 code units, the run's `columnKind`, and the inserted text), on the rule's first finding. Created files, appends and edits are included; a rule whose fix untracks a file or changes one file twice has none.
+
+### Changed
+
+- The baseline counts fingerprints: a finding recorded twice covers two findings with that fingerprint, so a new copy of a grandfathered finding fails instead of hiding behind the old one, and `baseline` keeps one entry per copy. Existing baseline files keep working (each entry counts once).
+- A scope whose tier no configuration or fleet file sets takes the repository's tier when that is more serious (`inferred from the repository (release pipeline)`): a workspace member of a released repository was inferred as tier 3 because the workflows live at the root.
+- Visibility the forge reported through its API has the source `forge` in `fleetlint facts` and the JSON, instead of `detected`.
+
+### Fixed
+
+- An exception whose `match: re:...` does not compile is a configuration error; it used to load and never match.
+- `fleetlint init` replaces control characters in the workspace member names it writes into a comment of `.fleetlint.yaml`, so a directory name with a newline cannot add a key.
 
 ## [0.8.1] - 2026-10-21
 

@@ -240,6 +240,9 @@ func TestSourcesSignersAndCatalogTemplates(t *testing.T) {
 	if b, err := tpl.Template("SECURITY.md"); err != nil || string(b) != "acme policy\n" {
 		t.Errorf("the org catalog's template wins: %q %v", b, err)
 	}
+	if o := tpl.Origins(); len(o) != 1 || o[0] != "oci://registry.example/acme/catalog@sha256:"+digest {
+		t.Errorf("the fix plan can name the catalog the template came from: %v", o)
+	}
 	if b, err := tpl.Template("editorconfig"); err != nil || len(b) == 0 {
 		t.Errorf("preset templates remain: %v", err)
 	}

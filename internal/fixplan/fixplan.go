@@ -5,6 +5,7 @@ package fixplan
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/engine"
@@ -122,9 +123,16 @@ func planRule(r *repo.Repo, run *engine.Run, res model.Result) ([]fix.Change, er
 	if id := fix.DetectLicense(r); id != "" {
 		p.Vars["license"] = id
 	}
-	planned, err := fix.PlanFor(scope, p, actions, templatesFor(run), res.Findings)
+	tpl := templatesFor(run)
+	planned, err := fix.PlanFor(scope, p, actions, tpl, res.Findings)
 	if err != nil {
 		return nil, err
+	}
+	if o, ok := tpl.(interface{ Origins() []string }); ok {
+		from := strings.Join(o.Origins(), ", ")
+		for i := range planned {
+			planned[i].From = from
+		}
 	}
 	if res.Scope != "" {
 		for i := range planned {

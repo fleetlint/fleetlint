@@ -19,6 +19,7 @@ type fleetFlags struct {
 	from, discoverRoots, exclude, rule []string
 	update, fail, fix, apply           bool
 	deepClones, allowDirty             bool
+	keepHistory, jobs                  int
 }
 
 func fleetCmd(g *globals, code *int) *cobra.Command {
@@ -34,8 +35,8 @@ GITEA_TOKEN from the environment, if set) and clones them over https with the
 same token; without one, public repositories only. --discover walks a
 directory for git repositories (groups follow the directory layout) and
 lists project directories that are in no repository of their own.
---fix plans the mechanical fixes (fleetlint fix) in every local repository;
-with --apply it writes them, into clean working trees only unless --allow-dirty
+--fix plans the mechanical fixes (fleetlint fix) in every local repository
+(a dry run, kept out of history/); with --apply it writes them, into clean working trees only unless --allow-dirty
 is given, and the report shows the state after them. Nothing is committed.
 --deep runs rules that execute repository code in the local repositories;
 clones (url entries, --from) run that code only with --deep-clones.`,
@@ -49,6 +50,8 @@ clones (url entries, --from) run that code only with --deep-clones.`,
 	cmd.Flags().StringVar(&f.cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
 	cmd.Flags().BoolVar(&f.update, "update", false, "git pull cached clones before checking")
 	cmd.Flags().BoolVar(&f.fail, "fail", false, "exit 1 if any repository has errors")
+	cmd.Flags().IntVar(&f.jobs, "jobs", 4, "check this many repositories at once")
+	cmd.Flags().IntVar(&f.keepHistory, "keep-history", 0, "keep only the latest N runs in history/ (0 keeps all)")
 	cmd.Flags().BoolVar(&f.fix, "fix", false, "plan the mechanical fixes in every local repository (dry run)")
 	cmd.Flags().BoolVar(&f.apply, "apply", false, "with --fix: write the changes; nothing is committed")
 	cmd.Flags().StringArrayVar(&f.rule, "rule", nil, "with --fix: only fix this rule (repeatable)")
@@ -66,7 +69,7 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 	asked := &fleet.ForgeLookup{}
 	opts := fleet.Options{
 		Deep: g.deep, DeepClones: f.deepClones, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
-		MarkFixable: fixplan.MarkFixable, Visibility: asked.Lookup,
+		MarkFixable: fixplan.MarkFixable, Visibility: asked.Lookup, Jobs: f.jobs,
 	}
 	fixer := &fleet.Fixer{W: cmd.OutOrStdout(), Apply: f.apply, AllowDirty: f.allowDirty, Rules: f.rule}
 	if f.fix {
@@ -89,7 +92,7 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 			return err
 		}
 	}
-	if err := fleet.Write(f.out, rep); err != nil {
+	if err := fleet.WriteWith(f.out, rep, fleet.WriteOptions{Keep: f.keepHistory, NoHistory: f.fix && !f.apply}); err != nil {
 		return err
 	}
 	failing, errs := tally(rep)

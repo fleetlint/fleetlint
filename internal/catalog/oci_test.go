@@ -361,13 +361,16 @@ func TestSignerValidation(t *testing.T) {
 func TestOverlayAndMemFS(t *testing.T) {
 	t.Parallel()
 	over := memFS{"templates/SECURITY.md": []byte("org"), "templates/sub/x.txt": []byte("x")}
-	tpl := Builtin().FixTemplatesOver(over)
+	tpl := Builtin().FixTemplatesOver(TemplateLayer{Name: "oci://x/org", FS: over})
+	if b, err := tpl.Template("cliff.toml"); err != nil || len(b) == 0 || len(tpl.Origins()) != 0 {
+		t.Errorf("the preset's file is still served, from no named layer: %v %v", err, tpl.Origins())
+	}
 	b, err := tpl.Template("SECURITY.md")
 	if err != nil || string(b) != "org" {
 		t.Errorf("the catalog's file wins: %q %v", b, err)
 	}
-	if b, err := tpl.Template("cliff.toml"); err != nil || len(b) == 0 {
-		t.Errorf("the preset's file is still served: %v", err)
+	if o := tpl.Origins(); len(o) != 1 || o[0] != "oci://x/org" {
+		t.Errorf("the overlay names the catalog that served a file: %v", o)
 	}
 	if _, err := tpl.Template("nope"); err == nil {
 		t.Error("a missing file is missing in every layer")

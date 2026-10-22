@@ -8,6 +8,7 @@ import (
 
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/model"
 )
 
@@ -77,5 +78,19 @@ func TestReleaseText(t *testing.T) {
 		if got := releaseText(facts.Facts{Release: c.rel}); got != c.want {
 			t.Errorf("%s: releaseText = %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+// A change built from another catalog's template says which one, since
+// that template becomes a hook or a workflow.
+func TestPrintPlanNamesTheTemplateCatalog(t *testing.T) {
+	t.Parallel()
+	var b strings.Builder
+	changes := []fix.Change{{Path: "SECURITY.md", Kind: "create", Diff: "+++ SECURITY.md\n", From: "oci://registry.example/acme/catalog:1"}, {Path: ".editorconfig", Kind: "create", Diff: "+++ .editorconfig\n"}}
+	if err := printPlan(&b, changes, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	if out := b.String(); !strings.Contains(out, "+++ SECURITY.md\n  (template from catalog oci://registry.example/acme/catalog:1)\n") || strings.Count(out, "template from") != 1 {
+		t.Errorf("plan:\n%s", out)
 	}
 }
