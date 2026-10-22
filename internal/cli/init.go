@@ -135,6 +135,7 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"artifacts", artifactsText(f), string(f.Sources["artifacts"])},
 		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), string(f.Sources["taskrunner"])},
 		{"hooks", orNone(strings.Join(f.Hooks, ", ")), "detected"},
+		{"owner", orNone(f.Owner), f.OwnerFrom},
 	}...)
 	scopeSource := "detected"
 	if run.Config != nil && run.Config.File.Scopes != nil {

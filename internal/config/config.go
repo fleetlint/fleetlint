@@ -160,6 +160,8 @@ type Effective struct {
 	Rules      []model.Rule
 	Disabled   []Disabled
 	Exceptions []model.Exception
+	// ExceptionPolicy is what the catalogs so far ask of an exception.
+	ExceptionPolicy catalog.ExceptionPolicy
 	// Weakened lists severity reductions with their reasons.
 	Weakened []Disabled
 	// Pin is the catalog version this run uses; nil is the built-in one.
@@ -981,6 +983,9 @@ func (e *Effective) addCatalog(c *catalog.Catalog, byID map[string]*model.Rule, 
 	if err := e.applyCatalogOverrides(c, byID); err != nil {
 		return err
 	}
+	if c.ExceptionPolicy != nil {
+		e.ExceptionPolicy.Tighten(*c.ExceptionPolicy, c.Ref)
+	}
 	return e.addExceptions(c, byID, now)
 }
 
@@ -1003,6 +1008,9 @@ func (e *Effective) addExceptions(c *catalog.Catalog, byID map[string]*model.Rul
 		}
 		if !known && !e.isDisabled(ex.Rule) {
 			return fmt.Errorf("%s: exceptions: rule %q is not loaded", c.Ref, ex.Rule)
+		}
+		if err := e.policyAllows(ex, now); err != nil {
+			return fmt.Errorf("%s: exceptions: rule %s: %w", c.Ref, ex.Rule, err)
 		}
 		ex.Label, ex.Where, ex.Expired = c.Label, c.Ref, expired(ex.Until, now)
 		e.Exceptions = append(e.Exceptions, ex)
@@ -1300,10 +1308,23 @@ func keepExceptionPolicy(c *catalog.Catalog, prev, r *model.Rule) error {
 	return nil
 }
 
+// policyAllows checks an exception against the exception policy, naming
+// the catalogs that set it.
+func (e *Effective) policyAllows(ex model.Exception, now time.Time) error {
+	if err := e.ExceptionPolicy.Check(ex, now); err != nil {
+		return fmt.Errorf("%w (exception policy of %s)", err, strings.Join(e.ExceptionPolicy.By, ", "))
+	}
+	return nil
+}
+
 // CheckExceptions validates exceptions declared by a scope or nested file
-// against the rules' policy; where names the file for the error.
-func (e *Effective) CheckExceptions(where string, exs []model.Exception) error {
+// against the rules' policy and the exception policy; where names the file
+// for the error.
+func (e *Effective) CheckExceptions(where string, exs []model.Exception, now time.Time) error {
 	for _, ex := range exs {
+		if err := e.policyAllows(ex, now); err != nil {
+			return fmt.Errorf("%s: exceptions: rule %s: %w", where, ex.Rule, err)
+		}
 		for i := range e.Rules {
 			if e.Rules[i].Covers(ex.Rule) && !e.Rules[i].ExceptionsAllowed() {
 				return fmt.Errorf("%s: exceptions: rule %s forbids exceptions (set by %s)", where, ex.Rule, e.Rules[i].PolicySource())

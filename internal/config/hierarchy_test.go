@@ -3,6 +3,7 @@ package config_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
 
@@ -277,5 +278,41 @@ func TestRepositoryGrammar(t *testing.T) {
 	}
 	if r, _ := ruleByID(eff, "repo/gitignore-present"); r.Severity != model.SeverityError {
 		t.Error("the repository may raise")
+	}
+}
+
+// An exception policy binds the exceptions of its catalog and every later
+// one; policies add up, and the error names the catalogs that set them.
+func TestExceptionPolicy(t *testing.T) {
+	t.Parallel()
+	org := catHead("acme", ", label: org, includes: [\"fleetlint:minimal\"]") + "rules: []\nexception_policy: {max_days: 90, require_approver: true}\n"
+	team := catHead("t", ", label: team") + "rules: []\nexception_policy: {max_days: 30}\n"
+	now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	cases := map[string]struct{ exceptions, want string }{
+		"no approver":     {"  - {rule: repo/no-tracked-junk, reason: r, until: 2026-11-01}\n", "approved_by is required (exception policy of org.yaml, team.yaml)"},
+		"no until":        {"  - {rule: repo/no-tracked-junk, reason: r, approved_by: \"@acme/security\"}\n", "until is required"},
+		"too far":         {"  - {rule: repo/no-tracked-junk, reason: r, approved_by: \"@acme/security\", until: 2026-12-31}\n", "more than 30 days away"},
+		"within the cap":  {"  - {rule: repo/no-tracked-junk, reason: r, approved_by: \"@acme/security\", until: 2026-11-15}\n", ""},
+		"expired is fine": {"  - {rule: repo/no-tracked-junk, reason: r, approved_by: \"@acme/security\", until: 2026-01-01}\n", ""},
+	}
+	for name, c := range cases {
+		dir := writeAll(t, map[string]string{
+			"org.yaml": org, "team.yaml": team,
+			config.FileName: "version: 1\nextends: [org.yaml, team.yaml]\nexceptions:\n" + c.exceptions,
+		})
+		eff, err := config.Load(dir, config.Options{Loader: catalog.Loader{}, Now: now})
+		switch {
+		case c.want == "" && err != nil:
+			t.Errorf("%s: %v", name, err)
+		case c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)):
+			t.Errorf("%s: want %q, got %v", name, c.want, err)
+		case c.want == "" && eff.Exceptions[0].ApprovedBy != "@acme/security":
+			t.Errorf("%s: approved_by is kept: %+v", name, eff.Exceptions[0])
+		}
+	}
+	eff := loadDir(t, writeAll(t, map[string]string{"org.yaml": org, config.FileName: "version: 1\nextends: [org.yaml]\n"}))
+	ex := model.Exception{Rule: "repo/no-tracked-junk", Reason: "r", Until: "2099-01-01", ApprovedBy: "x"}
+	if err := eff.CheckExceptions("api/.fleetlint.yaml", []model.Exception{ex}, now); err == nil || !strings.Contains(err.Error(), "api/.fleetlint.yaml: exceptions: rule repo/no-tracked-junk: until 2099-01-01 is more than 90 days away") {
+		t.Errorf("a scope's exceptions are bound too: %v", err)
 	}
 }

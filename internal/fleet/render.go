@@ -572,7 +572,7 @@ func (v *view) policyTables() []table {
 	return []table{
 		{Title: "Disabled rules", Head: cols, Rows: collectDisabled(v.rep, false)},
 		{Title: "Lowered severities", Head: cols, Rows: collectDisabled(v.rep, true)},
-		{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Until"}, Rows: collectExceptions(v.rep)},
+		{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Approved by", "Until"}, Rows: collectExceptions(v.rep)},
 	}
 }
 
@@ -716,7 +716,7 @@ func collectExceptions(rep *Report) [][]tcell {
 				until.Text += fmt.Sprintf(" (in %d days)", days)
 				until.Class = "warn"
 			}
-			rows = append(rows, []tcell{txt(r.Name), txt(r.Team), code(ex.Rule), txt(ex.Reason), until})
+			rows = append(rows, []tcell{txt(r.Name), txt(r.Team), code(ex.Rule), txt(ex.Reason), txt(ex.ApprovedBy), until})
 		}
 	}
 	return rows

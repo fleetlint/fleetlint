@@ -70,6 +70,11 @@ type Facts struct {
 	TaskRunner TaskRunner `json:"taskrunner"`
 	Hooks      []string   `json:"hooks"`
 	HasGit     bool       `json:"has_git"`
+	// Owner is who owns the repository by its own files, and OwnerFrom the
+	// file: catalog-info.yaml (Backstage spec.owner) or a CODEOWNERS file
+	// (the default owner). Empty when neither says.
+	Owner     string `json:"owner,omitempty"`
+	OwnerFrom string `json:"owner_from,omitempty"`
 
 	// Sources records provenance per top-level fact name.
 	Sources map[string]Source `json:"sources"`
@@ -218,6 +223,7 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 		f.Sources["taskrunner"] = SourceConfigured
 	}
 	f.Hooks = detectHooks(r)
+	f.Owner, f.OwnerFrom = detectOwner(r)
 
 	applyOverrides(&f, ov)
 

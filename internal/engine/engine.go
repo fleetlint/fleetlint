@@ -92,7 +92,7 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 			return nil, err
 		}
 		sc.Exceptions = eff.RenameExceptions(sc.Exceptions, sc.Path+"/"+config.FileName)
-		if err := eff.CheckExceptions(sc.Path+"/"+config.FileName, sc.Exceptions); err != nil {
+		if err := eff.CheckExceptions(sc.Path+"/"+config.FileName, sc.Exceptions, now(opts)); err != nil {
 			return nil, err
 		}
 		run.Scopes = append(run.Scopes, ScopeRun{Path: sc.Path, Facts: f})

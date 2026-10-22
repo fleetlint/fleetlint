@@ -177,6 +177,26 @@
         }
       }
     },
+    "exception_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "What every exception declared by this catalog and the ones after it (the repository and its scopes too) must say. Policies add up: a later catalog can tighten, never loosen.",
+      "properties": {
+        "require_until": {
+          "type": "boolean",
+          "description": "Every exception needs until."
+        },
+        "max_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "until may lie at most this many days after the run; implies require_until."
+        },
+        "require_approver": {
+          "type": "boolean",
+          "description": "Every exception needs approved_by."
+        }
+      }
+    },
     "exceptions": {
       "type": "array",
       "items": {
@@ -202,6 +222,11 @@
             "type": "string",
             "format": "date",
             "description": "YYYY-MM-DD; after this date the finding returns at full severity."
+          },
+          "approved_by": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Who agreed to the exception, as the organization names people or teams; recorded, not verified."
           }
         }
       }

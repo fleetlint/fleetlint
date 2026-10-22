@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fleetlint/fleetlint/internal/artifacts"
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
@@ -263,6 +264,9 @@ type Catalog struct {
 	// Exceptions are per-finding exceptions the catalog grants to every
 	// repository that extends it, bound by `exceptions: false` set earlier.
 	Exceptions []model.Exception `yaml:"exceptions,omitempty"`
+	// ExceptionPolicy binds the exceptions this catalog and every later one
+	// declare, the repository's and its scopes' among them.
+	ExceptionPolicy *ExceptionPolicy `yaml:"exception_policy,omitempty"`
 	// Ref is how the catalog was referenced; Digest is its sha256 (hex);
 	// Artifact is the manifest digest of the OCI artifact it came in.
 	Ref      string `yaml:"-"`
@@ -330,6 +334,47 @@ type Override struct {
 	Locked      *bool  `yaml:"locked,omitempty"`
 	MinSeverity string `yaml:"min_severity,omitempty"`
 	Exceptions  *bool  `yaml:"exceptions,omitempty"`
+}
+
+// ExceptionPolicy is what an exception must say. Policies of several
+// catalogs add up: a later one can tighten, never loosen.
+type ExceptionPolicy struct {
+	// RequireUntil asks every exception for an expiry date.
+	RequireUntil bool `yaml:"require_until,omitempty" json:"require_until,omitempty"`
+	// MaxDays caps how far in the future, counted from the run, an expiry
+	// may lie; it implies RequireUntil.
+	MaxDays int `yaml:"max_days,omitempty" json:"max_days,omitempty"`
+	// RequireApprover asks every exception for approved_by.
+	RequireApprover bool `yaml:"require_approver,omitempty" json:"require_approver,omitempty"`
+	// By names the catalogs that set the policy; filled by config.
+	By []string `yaml:"-" json:"by,omitempty"`
+}
+
+// Tighten adds a later catalog's policy to this one.
+func (p *ExceptionPolicy) Tighten(q ExceptionPolicy, by string) {
+	p.RequireUntil = p.RequireUntil || q.RequireUntil
+	p.RequireApprover = p.RequireApprover || q.RequireApprover
+	if q.MaxDays > 0 && (p.MaxDays == 0 || q.MaxDays < p.MaxDays) {
+		p.MaxDays = q.MaxDays
+	}
+	p.By = append(p.By, by)
+}
+
+// Check says what an exception lacks under the policy; until is a valid
+// YYYY-MM-DD date or empty.
+func (p ExceptionPolicy) Check(ex model.Exception, now time.Time) error {
+	switch {
+	case p.RequireApprover && strings.TrimSpace(ex.ApprovedBy) == "":
+		return errors.New("approved_by is required")
+	case (p.RequireUntil || p.MaxDays > 0) && ex.Until == "":
+		return errors.New("until is required")
+	case p.MaxDays > 0:
+		until, err := time.Parse("2006-01-02", ex.Until)
+		if err == nil && until.After(now.AddDate(0, 0, p.MaxDays)) {
+			return fmt.Errorf("until %s is more than %d days away", ex.Until, p.MaxDays)
+		}
+	}
+	return nil
 }
 
 // Metadata identifies a catalog.

@@ -249,6 +249,7 @@
               "status": "accepted",
               "justification": "vendored on purpose (until 2027-01-01)",
               "properties": {
+                "approved_by": "@acme/security",
                 "until": "2027-01-01"
               }
             }

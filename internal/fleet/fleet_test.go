@@ -483,3 +483,28 @@ func TestPanicInOneRepositoryKeepsTheRun(t *testing.T) {
 		}
 	}
 }
+
+// The entry's own team wins; the repository's owner file beats a group's
+// or the defaults' team; without either the group's team stays.
+func TestTeamFromTheRepositoryFiles(t *testing.T) {
+	t.Parallel()
+	cfg := ".fleetlint.yaml"
+	owned := map[string]string{"go.mod": "module x\n", cfg: "version: 1\nextends: [fleetlint:minimal]\n", ".github/CODEOWNERS": "* @acme/payments\n"}
+	plain := map[string]string{"go.mod": "module x\n", cfg: "version: 1\nextends: [fleetlint:minimal]\n"}
+	spec := &fleet.Spec{Version: 1, Groups: map[string]fleet.Settings{"apps": {Team: "apps-team"}}, Repos: []fleet.Entry{
+		{Path: testutil.GitFixture(t, owned).Root, Name: "own", Team: "named"},
+		{Path: testutil.GitFixture(t, owned).Root, Name: "file", Group: "apps"},
+		{Path: testutil.GitFixture(t, plain).Root, Name: "group", Group: "apps"},
+		{Path: testutil.GitFixture(t, plain).Root, Name: "none"},
+	}}
+	rep, err := fleet.Run(context.Background(), spec, fleet.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"own": "named / fleet file", "file": "acme/payments / .github/CODEOWNERS", "group": "apps-team / fleet file", "none": " / "}
+	for _, rr := range rep.Repos {
+		if got := rr.Team + " / " + rr.TeamFrom; got != want[rr.Name] {
+			t.Errorf("%s: team %q, want %q", rr.Name, got, want[rr.Name])
+		}
+	}
+}

@@ -79,6 +79,7 @@ func (s *Spec) settle(e Entry) Entry {
 		chain = append(chain, s.Groups[g])
 	}
 	chain = append(chain, s.Defaults)
+	own := e.Team != "" && !e.sharedTeam
 	for _, from := range chain {
 		e.Team = firstNonEmpty(e.Team, from.Team)
 		e.Visibility = firstNonEmpty(e.Visibility, from.Visibility)
@@ -86,6 +87,7 @@ func (s *Spec) settle(e Entry) Entry {
 			e.Tier = from.Tier
 		}
 	}
+	e.sharedTeam = !own && e.Team != ""
 	return e
 }
 
@@ -117,6 +119,9 @@ type Entry struct {
 	// TokenUser is the user name git sends with it (GitLab wants oauth2).
 	Token     string `yaml:"-"`
 	TokenUser string `yaml:"-"`
+	// sharedTeam is true when the team came from a group or the defaults,
+	// which the repository's own owner file overrules.
+	sharedTeam bool
 }
 
 // Normalize validates an entry built outside a fleet file.
@@ -282,10 +287,13 @@ type Options struct {
 
 // RepoReport is one repository's outcome.
 type RepoReport struct {
-	Name   string `json:"name"`
-	Team   string `json:"team,omitempty"`
-	Group  string `json:"group,omitempty"`
-	Source string `json:"source"`
+	Name string `json:"name"`
+	Team string `json:"team,omitempty"`
+	// TeamFrom says where the team came from: the fleet file, or the
+	// repository's catalog-info.yaml or CODEOWNERS.
+	TeamFrom string `json:"team_from,omitempty"`
+	Group    string `json:"group,omitempty"`
+	Source   string `json:"source"`
 	// Catalog is the catalog version the repository pinned, when it did;
 	// the report's own catalog is the one built in.
 	Catalog    string            `json:"catalog,omitempty"`
@@ -426,6 +434,20 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 	return rep, nil
 }
 
+// team is the entry's own team, else the owner the repository's files
+// name, else the team of its group or the defaults.
+func team(e Entry, f facts.Facts) (string, string) {
+	switch {
+	case e.Team != "" && !e.sharedTeam:
+		return e.Team, "fleet file"
+	case f.Owner != "":
+		return f.Owner, f.OwnerFrom
+	case e.Team != "":
+		return e.Team, "fleet file"
+	}
+	return "", ""
+}
+
 // checkSafely is checkOne with a panic reported as the repository's error,
 // so one broken rule or repository does not end the run.
 func checkSafely(ctx context.Context, e Entry, spec *Spec, opts Options) (rr RepoReport) {
@@ -466,6 +488,7 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	rr.Git = gitState(r) //nolint:contextcheck // git lookups run under the repository's own bounded context
 	rr.Root = r.Root
 	rr.Facts, rr.Results, rr.Summary = run.Facts, run.Results, model.Summarize(run.Results)
+	rr.Team, rr.TeamFrom = team(e, run.Facts)
 	rr.Disabled, rr.Weakened, rr.Deprecations, rr.Catalogs = eff.Disabled, eff.Weakened, eff.Deprecations, eff.Hierarchy()
 	if eff.Source != nil && eff.Source.Pinned {
 		rr.Catalog = eff.Source.Version
