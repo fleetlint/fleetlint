@@ -67,7 +67,7 @@ jobs:
       GITEA_API_URL: ${{ github.server_url != 'https://github.com' && format('{0}/api/v1', github.server_url) || '' }}
       GITEA_DOWNLOAD_URL: ${{ github.server_url != 'https://github.com' && github.server_url || '' }}
       # renovate: datasource=github-releases depName=goreleaser/goreleaser
-      GORELEASER_VERSION: v2.18.3
+      GORELEASER_VERSION: v2.19.0
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
