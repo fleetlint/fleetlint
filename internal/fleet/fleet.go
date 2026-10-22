@@ -114,7 +114,9 @@ type Entry struct {
 	Tier int `yaml:"tier,omitempty"`
 	// Token authenticates the clone over https the way the forge API call
 	// was authenticated; set by discovery, never read from a fleet file.
-	Token string `yaml:"-"`
+	// TokenUser is the user name git sends with it (GitLab wants oauth2).
+	Token     string `yaml:"-"`
+	TokenUser string `yaml:"-"`
 }
 
 // Normalize validates an entry built outside a fleet file.
@@ -270,6 +272,10 @@ type Options struct {
 	// when it wrote any. Cloned repositories are left alone. Calls never
 	// overlap, so its output stays together per repository.
 	Fix func(name string, r *repo.Repo, run *engine.Run) (int, error)
+	// PullRequest proposes the fixes of a repository as a pull request
+	// instead of Fix, for clones too since no working tree is written; it
+	// returns a note for the report. Calls never overlap either.
+	PullRequest func(ctx context.Context, e Entry, r *repo.Repo) (string, error)
 	// Jobs is how many repositories are checked at once (at least 1).
 	Jobs int
 }
@@ -370,12 +376,19 @@ func Run(ctx context.Context, spec *Spec, opts Options) (*Report, error) {
 		opts.Now = time.Now()
 	}
 	rep := &Report{GeneratedAt: opts.Now, Tool: opts.Version, Catalog: catalog.ModuleVersion()}
+	var mu sync.Mutex
 	if fix := opts.Fix; fix != nil {
-		var mu sync.Mutex
 		opts.Fix = func(name string, r *repo.Repo, run *engine.Run) (int, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			return fix(name, r, run)
+		}
+	}
+	if pr := opts.PullRequest; pr != nil {
+		opts.PullRequest = func(ctx context.Context, e Entry, r *repo.Repo) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return pr(ctx, e, r)
 		}
 	}
 	rep.Repos = make([]RepoReport, len(spec.Repos))
@@ -461,6 +474,19 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
+// propose runs Options.PullRequest; its note or its failure is a note of
+// the report, not an error of the repository.
+func propose(ctx context.Context, e Entry, r *repo.Repo, opts Options) []string {
+	note, err := opts.PullRequest(ctx, e, r)
+	if err != nil {
+		note = "fixes not proposed: " + err.Error()
+	}
+	if note == "" {
+		return nil
+	}
+	return []string{note}
+}
+
 // ErrNotApplied is what an Options.Fix wraps when it refused to write, such
 // as into a checkout with uncommitted changes; the repository is reported
 // unfixed, with the reason.
@@ -486,8 +512,13 @@ func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *conf
 		return run, err
 	}
 	run, err := once(r)
-	if err != nil || opts.Fix == nil || e.Path == "" {
+	switch {
+	case err != nil:
 		return r, run, notes, err
+	case opts.PullRequest != nil:
+		return r, run, append(notes, propose(ctx, e, r, opts)...), nil
+	case opts.Fix == nil || e.Path == "":
+		return r, run, notes, nil
 	}
 	applied, err := opts.Fix(e.Name, r, run)
 	if errors.Is(err, ErrNotApplied) {
@@ -609,7 +640,11 @@ func cloneAuth(e Entry) []string {
 	if err != nil || u.Host == "" {
 		return nil
 	}
-	basic := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + e.Token))
+	user := e.TokenUser
+	if user == "" {
+		user = "x-access-token"
+	}
+	basic := base64.StdEncoding.EncodeToString([]byte(user + ":" + e.Token))
 	return []string{
 		"GIT_CONFIG_COUNT=1",
 		"GIT_CONFIG_KEY_0=http." + u.Scheme + "://" + u.Host + "/.extraheader",

@@ -7,6 +7,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Added
 
+- `fleetlint fix --apply --pr` proposes the fixes as a pull request instead of writing the working tree: they are made on the default branch in a temporary worktree, committed on `fleetlint/fixes` (as whoever runs fleetlint, with the repository's git hooks off), force-pushed, and the open pull request from that branch is updated, or one is opened, with the changes and the report as its description. A protected default branch and uncommitted work are both fine. The forge's API is used when `GITHUB_TOKEN`, `GITEA_TOKEN` or `GITLAB_TOKEN` is set, else gh, tea or glab.
+- `fleetlint fleet --fix --apply --pr` does the same per repository, cloned ones included, and notes each pull request in the report.
+- GitLab in the forge client: `fleet --from gitlab:<host>/<group>` lists a group's projects with its subgroups' (a user's when no group has the name), the visibility of a GitLab remote is looked up (nested namespaces too), and `init --pr` and `fix --pr` open merge requests. Self-hosted hosts are named in `GITLAB_HOST` before fleetlint contacts them or sends `GITLAB_TOKEN`; gitlab.com is known.
+
 - `fleetlint fleet --jobs N` (default 4) checks that many repositories at once. A panic while checking one repository is reported as that repository's error and the run goes on.
 - `fleetlint fleet --keep-history N` keeps only the latest N runs in `history/`. History files are written as compact JSON, and a `--fix` run without `--apply` adds none.
 - The fix plan names the catalog a change's template came from when it is not the run's catalog source (`(template from catalog oci://...)`), since such a template becomes a hook or a workflow.

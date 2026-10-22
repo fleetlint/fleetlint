@@ -51,12 +51,12 @@ Interview after 0.7.0. The next minor clears everything that still touches a fro
 Gaps noted on 2026-10-06 against what exists today. The forge client lists repositories and looks up visibility only; the fleet history is a directory of dated JSON files; six stacks are detected; `init --pr` opens a pull request but nothing runs on a schedule.
 
 Running at scale
-- A scheduled central runner: nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries. API-only evaluation for cheap facts so not every repository is cloned.
-- `fix --apply --pr` and `fleet --fix --pr`: when main is protected, commit the fixes on a branch and open a pull request on GitHub, GitLab, Gitea or Forgejo through the forge API (`init --pr` does this for the config only, and only on GitHub and Gitea; GitLab is not in the forge client at all). Detect protection instead of failing on push, reuse an open fleetlint branch, and write the findings into the PR body.
-- Trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
+- After 1.0 (decided 2026-10-22): a scheduled central runner (nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries, API-only evaluation for cheap facts so not every repository is cloned).
+- After 1.0, as part of a reporting endpoint (decided 2026-10-22): trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
+- Done (unreleased): `fix --apply --pr` and `fleet --fix --apply --pr`. The fixes of the default branch are made in a temporary worktree, so the checkout is untouched and a protected main does not matter; they are committed on `fleetlint/fixes` with the repository's hooks off, force-pushed, and the open pull request is updated (or one opened) with the changes and the report as its description: through the forge API with `GITHUB_TOKEN`, `GITEA_TOKEN` or `GITLAB_TOKEN`, else with gh, tea or glab. `fleet --pr` covers clones too. `init --pr` uses the same path, so it works on GitLab now.
+- Done (unreleased): GitLab in the forge client: `--from gitlab:<host>/<group>` with subgroups, visibility of a remote (nested namespaces too), merge requests; self-hosted hosts are named in `GITLAB_HOST`, gitlab.com is known.
 - Ownership from `CODEOWNERS`, forge teams or a service catalog (Backstage) instead of the hand-kept fleet file; the `repo/codeowners` rule only checks presence.
-- Exception governance: who may grant one, approver recorded, escalation when they expire, policy layers that forbid exceptions per rule (locks cover the rule side, not the human side).
-
+- Exception governance: who may grant one, approver recorded, escalation when they expire (locks and `exceptions: false` cover the rule side, not the human side).
 Security and supply chain
 - A `forge/*` family for repository settings read through the API: branch protection, required reviews, signed commits, secret scanning and vulnerability alerts enabled, deploy keys, admin list. This is the Scorecard overlap the comparison page exposes.
 - Verification beyond presence: stated SLSA level and attestations checked, lockfile integrity, fork pull-request workflows without write tokens, allowed-actions lists, dependency review on pull requests (`ci/pull-request-target` exists; the rest does not).

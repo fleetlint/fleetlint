@@ -195,7 +195,7 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 	}
 	f.Stacks = stacks.Detect(r, defs)
 	f.Sources["stacks"] = SourceDetected
-	f.Forge, f.ForgeHost = detectForge(r.RemoteURL())
+	f.Forge, f.ForgeHost = ForgeOf(r.RemoteURL())
 	f.Sources["forge"] = SourceDetected
 	f.Visibility = detectVisibility(r)
 	f.Sources["visibility"] = SourceDetected
@@ -273,7 +273,8 @@ func (f Facts) TierSource() string {
 // Public is a convenience for rules.
 func (f Facts) Public() bool { return f.Visibility == VisibilityPublic }
 
-func detectForge(remote string) (forge, host string) {
+// ForgeOf is the forge a git remote is on and its host.
+func ForgeOf(remote string) (forge, host string) {
 	if remote == "" {
 		return "unknown", ""
 	}

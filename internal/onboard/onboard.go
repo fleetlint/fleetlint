@@ -1,6 +1,6 @@
 // Package onboard opens the onboarding pull request of `fleetlint init --pr`:
 // a branch with the new configuration, pushed, and a pull request opened
-// with gh or tea whose description is the report.
+// through the forge's API or CLI whose description is the report.
 package onboard
 
 import (
@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -18,6 +17,8 @@ import (
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
+	"github.com/fleetlint/fleetlint/internal/forge"
+	"github.com/fleetlint/fleetlint/internal/pullreq"
 	"github.com/fleetlint/fleetlint/internal/repo"
 	"github.com/fleetlint/fleetlint/internal/report"
 )
@@ -68,7 +69,7 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 		_, werr := fmt.Fprintf(out, "the commit is on branch %s, which is checked out, but pushing it failed (%v).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description.\n", Branch, err, Branch)
 		return werr
 	}
-	if err := createPR(ctx, r.Root, body.String()); err != nil {
+	if _, err := pullreq.Open(ctx, forge.Client{}, r.Root, run.Facts.Forge, r.RemoteURL(), forge.PullRequest{Head: Branch, Title: "Add fleetlint configuration", Body: body.String()}); err != nil { //nolint:contextcheck // the remote is read under the repository's own bounded context
 		_, werr := fmt.Fprintf(out, "branch %s is pushed to origin and checked out here, but the pull request could not be opened (%v).\nOpen it on the forge from %s, with the report as its description.\n", Branch, err, Branch)
 		return werr
 	}
@@ -81,33 +82,6 @@ func push(ctx context.Context, dir string) error {
 	cmd.Env = proc.GitEnv()
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-// createPR opens the PR with gh (GitHub) or tea (Gitea), whichever is
-// installed.
-func createPR(ctx context.Context, dir, body string) error {
-	title := "Add fleetlint configuration"
-	switch {
-	case lookPath("gh"):
-		return runIn(ctx, dir, "gh", "pr", "create", "--title", title, "--body", body, "--head", Branch)
-	case lookPath("tea"):
-		return runIn(ctx, dir, "tea", "pr", "create", "--title", title, "--description", body, "--head", Branch)
-	}
-	return errors.New("neither gh nor tea is installed")
-}
-
-func lookPath(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
-func runIn(ctx context.Context, dir string, name string, args ...string) error {
-	cmd := proc.Command(ctx, name, args...)
-	cmd.Dir = dir
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
