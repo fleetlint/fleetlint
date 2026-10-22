@@ -76,7 +76,7 @@ func planSet(r *repo.Repo, s SetAction, vars map[string]string) (*Change, error)
 		return nil, err
 	}
 	return &Change{
-		Path: s.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", s.File, strings.TrimSpace(added)),
+		Path: s.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", s.File, strings.TrimSpace(added)), Old: old, New: updated,
 		apply: func() error { return reapply(r, s.File, edit) },
 	}, nil
 }

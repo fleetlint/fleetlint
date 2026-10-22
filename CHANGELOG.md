@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- SARIF `fixes`: a failing result that `fleetlint fix --apply` can repair carries the change it would make, one replacement per file (`deletedRegion` in UTF-16 code units, the run's `columnKind`, and the inserted text), on the rule's first finding. Created files, appends and edits are included; a rule whose fix untracks a file or changes one file twice has none.
+
 ## [0.8.1] - 2026-10-21
 
 The release of 0.8.0 did not run: its verify job failed twice on a flaky test, so 0.8.0 is a source tag without binaries or packages. 0.8.1 is 0.8.0 with that test fixed; nothing in fleetlint itself changed.

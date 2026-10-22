@@ -7,6 +7,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/fleetlint/fleetlint/internal/baseline"
 	"github.com/fleetlint/fleetlint/internal/config"
@@ -23,6 +24,7 @@ type sarifLog struct {
 
 type sarifRun struct {
 	Tool              sarifTool         `json:"tool"`
+	ColumnKind        string            `json:"columnKind"`
 	AutomationDetails sarifAutomation   `json:"automationDetails"`
 	Invocations       []sarifInvocation `json:"invocations"`
 	Results           []sarifResult     `json:"results"`
@@ -88,6 +90,34 @@ type sarifResult struct {
 	Locations           []sarifLocation    `json:"locations"`
 	PartialFingerprints map[string]string  `json:"partialFingerprints"`
 	Suppressions        []sarifSuppression `json:"suppressions,omitempty"`
+	Fixes               []sarifFix         `json:"fixes,omitempty"`
+}
+
+// sarifFix is what `fleetlint fix --apply` would change, one replacement
+// per file.
+type sarifFix struct {
+	Description     sarifText           `json:"description"`
+	ArtifactChanges []sarifArtifactEdit `json:"artifactChanges"`
+}
+
+type sarifArtifactEdit struct {
+	ArtifactLocation sarifArtifact      `json:"artifactLocation"`
+	Replacements     []sarifReplacement `json:"replacements"`
+}
+
+type sarifReplacement struct {
+	DeletedRegion   sarifCharRegion `json:"deletedRegion"`
+	InsertedContent sarifContent    `json:"insertedContent"`
+}
+
+// sarifCharRegion counts UTF-16 code units, the run's columnKind.
+type sarifCharRegion struct {
+	CharOffset int `json:"charOffset"`
+	CharLength int `json:"charLength"`
+}
+
+type sarifContent struct {
+	Text string `json:"text"`
 }
 
 // sarifSuppression marks a finding an exception or the baseline accepted;
@@ -187,7 +217,7 @@ func sarifRunFor(results []model.Result, catalogs []config.CatalogInfo, opts Opt
 		}
 		sarifResults = append(sarifResults, toSarifResults(r, anchors)...)
 	}
-	return sarifRun{Tool: sarifTool{Driver: driver}, Invocations: []sarifInvocation{inv}, Results: sarifResults}
+	return sarifRun{Tool: sarifTool{Driver: driver}, ColumnKind: "utf16CodeUnits", Invocations: []sarifInvocation{inv}, Results: sarifResults}
 }
 
 // runName is the repository name: as given, else the root directory's.
@@ -263,6 +293,9 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 			}
 		}
 		res.Locations = []sarifLocation{loc}
+		if len(out) == 0 && len(r.Edits) > 0 {
+			res.Fixes = []sarifFix{toSarifFix(r)}
+		}
 		switch {
 		case f.Exception != nil:
 			sup := sarifSuppression{Kind: "external", Status: "accepted", Justification: orText(f.Exception.Reason, "excepted")}
@@ -277,6 +310,43 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 		out = append(out, res)
 	}
 	return out
+}
+
+// toSarifFix is the rule's planned edits, on the first finding only: a
+// viewer applying it fixes the rule, a copy on every finding would conflict.
+func toSarifFix(r model.Result) sarifFix {
+	fix := sarifFix{Description: sarifText{orText(r.Rule.Fix.Human, "apply the fix of "+r.Rule.ID)}}
+	for _, e := range r.Edits {
+		fix.ArtifactChanges = append(fix.ArtifactChanges, sarifArtifactEdit{
+			ArtifactLocation: sarifArtifact{URI: e.Path},
+			Replacements:     []sarifReplacement{replacement(e.Old, e.New)},
+		})
+	}
+	return fix
+}
+
+// replacement is the one span where old and new differ, between their
+// common prefix and suffix, in UTF-16 code units.
+func replacement(old, updated string) sarifReplacement {
+	a, b := utf16.Encode([]rune(old)), utf16.Encode([]rune(updated))
+	pre := 0
+	for pre < len(a) && pre < len(b) && a[pre] == b[pre] {
+		pre++
+	}
+	if pre > 0 && utf16.IsSurrogate(rune(a[pre-1])) {
+		pre-- // keep a surrogate pair whole
+	}
+	suf := 0
+	for suf < len(a)-pre && suf < len(b)-pre && a[len(a)-1-suf] == b[len(b)-1-suf] {
+		suf++
+	}
+	if suf > 0 && utf16.IsSurrogate(rune(a[len(a)-suf])) {
+		suf--
+	}
+	return sarifReplacement{
+		DeletedRegion:   sarifCharRegion{CharOffset: pre, CharLength: len(a) - pre - suf},
+		InsertedContent: sarifContent{Text: string(utf16.Decode(b[pre : len(b)-suf]))},
+	}
 }
 
 // anchorCache finds, once per scope, the file a pathless finding points

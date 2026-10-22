@@ -99,11 +99,12 @@ func planAppend(r *repo.Repo, a AppendAction, p Project, tpl Templates) (*Change
 		return nil, err
 	}
 	block := strings.Trim(string(body), "\n") + "\n"
-	if _, err := appended(a.File, old, block); err != nil {
+	updated, err := appended(a.File, old, block)
+	if err != nil {
 		return nil, fmt.Errorf("%s: appending %s would not parse: %w", a.File, a.Template, err)
 	}
 	return &Change{
-		Path: a.File, Kind: "append", Diff: renderAppend(a.File, block),
+		Path: a.File, Kind: "append", Diff: renderAppend(a.File, block), Old: old, New: updated,
 		apply: func() error {
 			return reapply(r, a.File, func(current string) (string, string, error) {
 				if unless.MatchString(current) {
@@ -185,7 +186,7 @@ func planMerge(r *repo.Repo, a MergeAction, p Project, tpl Templates) (*Change, 
 		return nil, err
 	}
 	return &Change{
-		Path: a.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", a.File, added),
+		Path: a.File, Kind: "edit", Diff: fmt.Sprintf("~~~ %s (insert)\n+ %s\n", a.File, added), Old: old, New: updated,
 		apply: func() error { return reapply(r, a.File, edit) },
 	}, nil
 }

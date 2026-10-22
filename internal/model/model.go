@@ -530,6 +530,14 @@ type Result struct {
 	// Fixable is true for a failing result that `fleetlint fix --apply` can
 	// repair in this repository as it is now.
 	Fixable bool `json:"fixable,omitempty"`
+	// Edits are the file changes that fix would make, for SARIF fixes.
+	Edits []FileEdit `json:"-"`
+}
+
+// FileEdit is a planned fix of one file: its text before and after; Old is
+// empty for a file that does not exist yet.
+type FileEdit struct {
+	Path, Old, New string
 }
 
 // Counts summarizes results by status.

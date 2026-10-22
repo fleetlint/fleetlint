@@ -144,6 +144,9 @@ type Change struct {
 	Kind string // create | append | untrack | edit
 	// Diff is a unified-style rendering for the dry run.
 	Diff string
+	// Old and New are the file's text before and after; both are empty for
+	// an untrack.
+	Old, New string
 	// apply performs the change.
 	apply func() error
 }
@@ -267,7 +270,7 @@ func planTemplate(r *repo.Repo, p Project, a Action, tpl Templates) (*Change, er
 		return nil, err
 	}
 	return &Change{
-		Path: dest, Kind: "create", Diff: renderCreate(dest, string(body)),
+		Path: dest, Kind: "create", Diff: renderCreate(dest, string(body)), New: string(body),
 		apply: func() error { return r.WriteFile(dest, body, true) },
 	}, nil
 }
@@ -309,8 +312,12 @@ func planGitignore(r *repo.Repo, patterns []string) *Change {
 		return nil
 	}
 	block := strings.Join(add, "\n") + "\n"
+	prefix := ""
+	if existing != "" && !strings.HasSuffix(existing, "\n") {
+		prefix = "\n"
+	}
 	return &Change{
-		Path: ".gitignore", Kind: "append", Diff: renderAppend(".gitignore", block),
+		Path: ".gitignore", Kind: "append", Diff: renderAppend(".gitignore", block), Old: existing, New: existing + prefix + block,
 		apply: func() error {
 			current, _ := r.ReadFile(".gitignore")
 			missing := missingLines(string(current), add)

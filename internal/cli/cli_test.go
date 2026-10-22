@@ -318,6 +318,10 @@ func TestCheckMarksFixableFindings(t *testing.T) {
 	if !strings.Contains(js, `"fixable": true`) {
 		t.Error("json results carry the fixable flag")
 	}
+	_, sarif, _ := runCLI(t, dir, "check", "--format", "sarif")
+	if !strings.Contains(sarif, `"uri": ".editorconfig"`) || !strings.Contains(sarif, `"insertedContent"`) {
+		t.Errorf("sarif carries the planned fix for a created file:\n%s", sarif)
+	}
 }
 
 // A Go repository with a Node project in frontend/ gets one hook file and

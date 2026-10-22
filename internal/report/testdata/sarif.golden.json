@@ -163,6 +163,7 @@
           }
         }
       },
+      "columnKind": "utf16CodeUnits",
       "automationDetails": {
         "id": "fleetlint/demo/"
       },
@@ -321,6 +322,7 @@
           }
         }
       },
+      "columnKind": "utf16CodeUnits",
       "automationDetails": {
         "id": "fleetlint/demo/web/"
       },
@@ -347,7 +349,32 @@
           ],
           "partialFingerprints": {
             "fleetlint/v1": "a466a95e67e29d311773e47ce26db45aab9495b69ac4b281eb91b31db61791b4"
-          }
+          },
+          "fixes": [
+            {
+              "description": {
+                "text": "do it"
+              },
+              "artifactChanges": [
+                {
+                  "artifactLocation": {
+                    "uri": "web/README.md"
+                  },
+                  "replacements": [
+                    {
+                      "deletedRegion": {
+                        "charOffset": 0,
+                        "charLength": 0
+                      },
+                      "insertedContent": {
+                        "text": "# web\n"
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -391,6 +418,7 @@
           }
         }
       },
+      "columnKind": "utf16CodeUnits",
       "automationDetails": {
         "id": "fleetlint/demo/lib/"
       },

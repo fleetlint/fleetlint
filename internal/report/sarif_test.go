@@ -25,7 +25,8 @@ import (
 // sarifRun covers every kind of result: findings with and without a path
 // (at the root, in a scope with its own configuration file, in one
 // without), an excepted and a baselined finding, a rule error, a pass and
-// an n/a. The root has a README.md but no .fleetlint.yaml.
+// an n/a. The root has a README.md but no .fleetlint.yaml; the web scope's
+// README rule carries a planned fix.
 func sarifRun(t *testing.T) (*engine.Run, string) {
 	t.Helper()
 	root := t.TempDir()
@@ -48,7 +49,7 @@ func sarifRun(t *testing.T) (*engine.Run, string) {
 		Results: []model.Result{
 			{Rule: rule("repo/junk", model.SeverityError), Status: model.StatusFail, Severity: model.SeverityError, Findings: []model.Finding{{Path: "a.log", Line: 3, Message: "junk tracked"}}},
 			{Rule: sast, Status: model.StatusFail, Severity: model.SeverityError, Findings: []model.Finding{{Message: "no SAST workflow"}}},
-			{Rule: rule("docs/readme", model.SeverityWarning), Scope: "web", Status: model.StatusFail, Severity: model.SeverityWarning, Findings: []model.Finding{{Message: "no README"}}},
+			{Rule: rule("docs/readme", model.SeverityWarning), Scope: "web", Status: model.StatusFail, Severity: model.SeverityWarning, Findings: []model.Finding{{Message: "no README"}}, Fixable: true, Edits: []model.FileEdit{{Path: "web/README.md", New: "# web\n"}}},
 			{Rule: rule("docs/license", model.SeverityInfo), Scope: "lib", Status: model.StatusFail, Severity: model.SeverityInfo, Findings: []model.Finding{{Message: "no LICENSE"}}},
 			{Rule: rule("repo/exc", model.SeverityError), Status: model.StatusExcepted, Severity: model.SeverityError, Findings: []model.Finding{{Path: "vendor/x.go", Message: "vendored", Exception: &model.Exception{Rule: "repo/exc", Reason: "vendored on purpose", Until: "2027-01-01"}}}},
 			{Rule: rule("repo/base", model.SeverityWarning), Status: model.StatusBaselined, Severity: model.SeverityWarning, Findings: []model.Finding{{Message: "old debt", Baselined: true}}},
@@ -281,5 +282,38 @@ func TestSARIFAnchorsAndArtifacts(t *testing.T) {
 	}
 	if a["partialFingerprints"].(map[string]any)["fleetlint/v1"] == b["partialFingerprints"].(map[string]any)["fleetlint/v1"] {
 		t.Error("two artifacts with the same message are two alerts")
+	}
+}
+
+// A fix is one replacement per file, on the rule's first finding, with
+// offsets in UTF-16 code units.
+func TestSARIFFixes(t *testing.T) {
+	t.Parallel()
+	run, root := sarifRun(t)
+	run.Results = []model.Result{{
+		Rule: model.Rule{ID: "deps/license", Title: "t", Severity: model.SeverityError, Fix: model.Fix{Human: "set the license"}}, Status: model.StatusFail, Severity: model.SeverityError,
+		Findings: []model.Finding{{Message: "one"}, {Message: "two"}}, Fixable: true,
+		Edits: []model.FileEdit{
+			{Path: "package.json", Old: "{\"name\": \"😀\",\n}\n", New: "{\"name\": \"😀\",\n\"license\": \"MIT\",\n}\n"},
+			{Path: "LICENSE", New: "MIT\n"},
+			{Path: "x", Old: "😀", New: "😃"},
+		},
+	}}
+	out, _ := renderSARIF(t, run, report.Options{Root: root, Name: "demo"})
+	_, results, _ := sarifRuns(t, out)
+	if _, ok := results[1].(map[string]any)["fixes"]; ok {
+		t.Error("only the first finding carries the fix")
+	}
+	fixes := results[0].(map[string]any)["fixes"].([]any)
+	fix := fixes[0].(map[string]any)
+	if fix["description"].(map[string]any)["text"] != "set the license" {
+		t.Errorf("description is the rule's fix text: %v", fix)
+	}
+	got, _ := json.Marshal(fix["artifactChanges"])
+	want := `[{"artifactLocation":{"uri":"package.json"},"replacements":[{"deletedRegion":{"charLength":0,"charOffset":15},"insertedContent":{"text":"\"license\": \"MIT\",\n"}}]},` +
+		`{"artifactLocation":{"uri":"LICENSE"},"replacements":[{"deletedRegion":{"charLength":0,"charOffset":0},"insertedContent":{"text":"MIT\n"}}]},` +
+		`{"artifactLocation":{"uri":"x"},"replacements":[{"deletedRegion":{"charLength":2,"charOffset":0},"insertedContent":{"text":"😃"}}]}]`
+	if string(got) != want {
+		t.Errorf("artifactChanges:\n got %s\nwant %s", got, want)
 	}
 }

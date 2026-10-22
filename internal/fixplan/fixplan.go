@@ -53,6 +53,7 @@ func PlanEach(r *repo.Repo, run *engine.Run, only []string, onErr func(id string
 // MarkFixable flags the failing results whose fix is mechanical here: the
 // rule has actions and they plan at least one change for this repository.
 // A rule with a template is not fixable when the file already exists.
+// The planned file edits go on the result for SARIF.
 func MarkFixable(r *repo.Repo, run *engine.Run) {
 	for i := range run.Results {
 		res := &run.Results[i]
@@ -61,7 +62,26 @@ func MarkFixable(r *repo.Repo, run *engine.Run) {
 		}
 		planned, err := planRule(r, run, *res)
 		res.Fixable = err == nil && len(planned) > 0
+		res.Edits = nil
+		if res.Fixable {
+			res.Edits = fileEdits(planned)
+		}
 	}
+}
+
+// fileEdits are the changes as text edits; none when the plan untracks a
+// file or changes one file twice, which one edit of the original cannot say.
+func fileEdits(changes []fix.Change) []model.FileEdit {
+	seen := map[string]bool{}
+	out := make([]model.FileEdit, 0, len(changes))
+	for _, c := range changes {
+		if c.Kind == "untrack" || seen[c.Path] {
+			return nil
+		}
+		seen[c.Path] = true
+		out = append(out, model.FileEdit{Path: c.Path, Old: c.Old, New: c.New})
+	}
+	return out
 }
 
 // appendUnique drops changes already planned: the root scope sees member
