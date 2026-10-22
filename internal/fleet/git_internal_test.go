@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -16,6 +17,10 @@ func TestCloneAuth(t *testing.T) {
 	}
 	if !strings.HasPrefix(env[2], "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ") || strings.Contains(env[2], "tok") {
 		t.Errorf("the token is sent base64-encoded, never raw: %q", env[2])
+	}
+	gl := cloneAuth(Entry{URL: "https://gitlab.com/acme/x.git", Token: "tok", TokenUser: "oauth2"})
+	if want := base64.StdEncoding.EncodeToString([]byte("oauth2:tok")); len(gl) != 3 || !strings.HasSuffix(gl[2], want) {
+		t.Errorf("GitLab takes the token with the user oauth2: %q", gl)
 	}
 	for _, e := range []Entry{{URL: "https://github.com/acme/x.git"}, {URL: "git@github.com:acme/x.git", Token: "tok"}, {Path: "/tmp/x", Token: "tok"}} {
 		if got := cloneAuth(e); got != nil {

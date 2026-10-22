@@ -703,3 +703,28 @@ func TestLocateAnchorsPathlessFindings(t *testing.T) {
 		}
 	}
 }
+
+// A member of a repository with a root-only release pipeline is as serious
+// as the repository; a scope that sets its own tier keeps it.
+func TestScopeInheritsTheRepositoryTier(t *testing.T) {
+	t.Parallel()
+	out := run(t, map[string]string{
+		"go.work":                       "go 1.24\nuse (\n\t./api\n\t./worker\n)\n",
+		"api/go.mod":                    "module a\n",
+		"worker/go.mod":                 "module w\n",
+		".github/workflows/release.yml": "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: goreleaser/goreleaser-action@v6\n",
+	}, "version: 1\nextends: [fleetlint:minimal]\nscopes:\n  - {path: api}\n  - {path: worker, facts: {tier: 3}}\n")
+	byPath := map[string]facts.Facts{}
+	for _, s := range out.Scopes {
+		byPath[s.Path] = s.Facts
+	}
+	if root := byPath[""]; root.Tier != 1 || root.TierSource() != "inferred from release pipeline" {
+		t.Fatalf("root: tier %d (%s)", root.Tier, root.TierSource())
+	}
+	if api := byPath["api"]; api.Tier != 1 || api.TierSource() != "inferred from the repository (release pipeline)" {
+		t.Errorf("api inherits the root tier: %d (%s)", api.Tier, api.TierSource())
+	}
+	if w := byPath["worker"]; w.Tier != 3 || w.Sources["tier"] != facts.SourceConfigured {
+		t.Errorf("a configured scope tier stays: %d (%s)", w.Tier, w.TierSource())
+	}
+}

@@ -113,3 +113,31 @@ func TestEmptyBaselineDoesNotRegrow(t *testing.T) {
 		t.Fatalf("empty baseline must refuse new entries without reset: added=%d err=%v", added, err)
 	}
 }
+
+// Two findings with one fingerprint are two entries: a third copy fails
+// and cannot be written in, a fixed copy drops one entry.
+func TestDuplicatesAreCounted(t *testing.T) {
+	t.Parallel()
+	r, path := testutil.Fixture(t, map[string]string{}), "b.json"
+	now := time.Now()
+	if added, _, err := baseline.Write(r, path, baseline.Build(results("a.log", "a.log")), nil, false, now); err != nil || added != 2 {
+		t.Fatalf("first write: %d %v", added, err)
+	}
+	b, _, _ := baseline.Load(r, path)
+	if b.Len() != 2 {
+		t.Fatalf("len %d, want 2", b.Len())
+	}
+	three := results("a.log", "a.log", "a.log")
+	if used := b.Apply(three); used != 2 || three[0].Status != model.StatusFail || three[0].Findings[2].Baselined {
+		t.Fatalf("the third copy is new: used=%d %+v", used, three[0])
+	}
+	if added, removed, err := baseline.Write(r, path, baseline.Build(three), b, false, now); err != nil || added != 0 || removed != 0 {
+		t.Fatalf("the third copy is refused: added=%d removed=%d %v", added, removed, err)
+	}
+	if _, removed, _ := baseline.Write(r, path, baseline.Build(results("a.log")), b, false, now); removed != 1 {
+		t.Fatalf("a fixed copy drops one entry: removed=%d", removed)
+	}
+	if b, _, _ := baseline.Load(r, path); b.Len() != 1 {
+		t.Fatalf("len %d, want 1", b.Len())
+	}
+}

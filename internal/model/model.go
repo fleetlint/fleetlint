@@ -509,6 +509,10 @@ type Exception struct {
 	Match  string `yaml:"match,omitempty" json:"match,omitempty"`
 	Reason string `yaml:"reason" json:"reason"`
 	Until  string `yaml:"until,omitempty" json:"until,omitempty"`
+	// ApprovedBy names who agreed to the exception: a person or team, as
+	// the organization writes them. fleetlint records it, it does not
+	// verify it.
+	ApprovedBy string `yaml:"approved_by,omitempty" json:"approved_by,omitempty"`
 	// Expired is computed at run time.
 	Expired bool `yaml:"-" json:"expired,omitempty"`
 	// Label and Where say who declared the exception: the repository, a

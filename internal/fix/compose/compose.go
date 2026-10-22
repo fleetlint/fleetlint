@@ -43,6 +43,15 @@ func (t Templates) stack(id string) (stacks.Def, bool) {
 	return stacks.Find(defs, id)
 }
 
+// Origins names the catalogs in front of the source whose files were read
+// so far; none when the source's own templates served everything.
+func (t Templates) Origins() []string {
+	if o, ok := t.FS.(interface{ Served() []string }); ok {
+		return o.Served()
+	}
+	return nil
+}
+
 // Template returns the content of a template by name, e.g. "editorconfig"
 // or "go/pre-commit-config.yaml".
 func (t Templates) Template(name string) ([]byte, error) {

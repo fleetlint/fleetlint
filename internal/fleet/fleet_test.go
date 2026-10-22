@@ -450,3 +450,61 @@ func TestNotesAreRendered(t *testing.T) {
 		t.Error("html lacks the note")
 	}
 }
+
+// A panic while checking one repository is that repository's error; the
+// others are checked, in parallel, and keep the order of the spec.
+func TestPanicInOneRepositoryKeepsTheRun(t *testing.T) {
+	t.Parallel()
+	cfg := map[string]string{"go.mod": "module x\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\nfacts: {tier: 3}\n"}
+	entries := make([]fleet.Entry, 0, 4)
+	for _, name := range []string{"a", "boom", "c", "d"} {
+		entries = append(entries, fleet.Entry{Path: testutil.GitFixture(t, cfg).Root, Name: name})
+	}
+	boom := entries[1].Path
+	mark := func(r *repo.Repo, _ *engine.Run) {
+		if r.Root == boom {
+			panic("rule exploded")
+		}
+	}
+	rep, err := fleet.Run(context.Background(), &fleet.Spec{Version: 1, Repos: entries}, fleet.Options{MarkFixable: mark, Jobs: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]fleet.RepoReport{}
+	for _, rr := range rep.Repos {
+		byName[rr.Name] = rr
+	}
+	if len(byName) != 4 || !strings.Contains(byName["boom"].Err, "rule exploded") {
+		t.Fatalf("the panic is the repository's error: %+v", byName["boom"])
+	}
+	for _, name := range []string{"a", "c", "d"} {
+		if byName[name].Err != "" || len(byName[name].Results) == 0 {
+			t.Errorf("%s is checked: %+v", name, byName[name])
+		}
+	}
+}
+
+// The entry's own team wins; the repository's owner file beats a group's
+// or the defaults' team; without either the group's team stays.
+func TestTeamFromTheRepositoryFiles(t *testing.T) {
+	t.Parallel()
+	cfg := ".fleetlint.yaml"
+	owned := map[string]string{"go.mod": "module x\n", cfg: "version: 1\nextends: [fleetlint:minimal]\n", ".github/CODEOWNERS": "* @acme/payments\n"}
+	plain := map[string]string{"go.mod": "module x\n", cfg: "version: 1\nextends: [fleetlint:minimal]\n"}
+	spec := &fleet.Spec{Version: 1, Groups: map[string]fleet.Settings{"apps": {Team: "apps-team"}}, Repos: []fleet.Entry{
+		{Path: testutil.GitFixture(t, owned).Root, Name: "own", Team: "named"},
+		{Path: testutil.GitFixture(t, owned).Root, Name: "file", Group: "apps"},
+		{Path: testutil.GitFixture(t, plain).Root, Name: "group", Group: "apps"},
+		{Path: testutil.GitFixture(t, plain).Root, Name: "none"},
+	}}
+	rep, err := fleet.Run(context.Background(), spec, fleet.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"own": "named / fleet file", "file": "acme/payments / .github/CODEOWNERS", "group": "apps-team / fleet file", "none": " / "}
+	for _, rr := range rep.Repos {
+		if got := rr.Team + " / " + rr.TeamFrom; got != want[rr.Name] {
+			t.Errorf("%s: team %q, want %q", rr.Name, got, want[rr.Name])
+		}
+	}
+}

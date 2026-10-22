@@ -214,3 +214,16 @@ func TestGoSourcesDoNotMakeNestedProjects(t *testing.T) {
 		t.Fatalf("a directory of Go files is a package, not a project: %v", f.Members)
 	}
 }
+
+// Visibility the forge reported is labelled as such, not as detected.
+func TestForgeVisibilityIsLabelled(t *testing.T) {
+	t.Parallel()
+	r := testutil.Fixture(t, map[string]string{"go.mod": "module x\n"})
+	f := facts.Discover(r, facts.Overrides{DetectedVisibility: facts.VisibilityPrivate})
+	if f.Visibility != facts.VisibilityPrivate || f.Sources["visibility"] != facts.SourceForge {
+		t.Errorf("visibility %s from %s", f.Visibility, f.Sources["visibility"])
+	}
+	if f := facts.Discover(r, facts.Overrides{}); f.Sources["visibility"] != facts.SourceDetected {
+		t.Errorf("without the forge it is detected: %s", f.Sources["visibility"])
+	}
+}

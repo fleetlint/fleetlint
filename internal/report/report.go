@@ -238,7 +238,7 @@ func writeRow(tw *errWriter, r model.Result, verbose bool) {
 		text := r.Evidence
 		if len(r.Findings) > 0 && r.Findings[0].Exception != nil {
 			ex := r.Findings[0].Exception
-			text = "excepted: " + ex.Reason + untilText(ex)
+			text = "excepted: " + ex.Reason + approvedText(ex) + untilText(ex)
 		}
 		tw.printf("%s\t%s\t%s\n", "exc", id, text)
 	case model.StatusBaselined:
@@ -435,6 +435,13 @@ func location(f model.Finding) string {
 		return where + ": " + f.Text()
 	}
 	return f.Text()
+}
+
+func approvedText(ex *model.Exception) string {
+	if ex.ApprovedBy == "" {
+		return ""
+	}
+	return ", approved by " + ex.ApprovedBy
 }
 
 func untilText(ex *model.Exception) string {

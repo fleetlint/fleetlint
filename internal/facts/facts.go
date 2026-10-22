@@ -27,6 +27,8 @@ const (
 	SourceInferred Source = "inferred"
 	// SourceFleet is a value the fleet file set for the repository.
 	SourceFleet Source = "fleet"
+	// SourceForge is a value the forge's API reported.
+	SourceForge Source = "forge"
 )
 
 // Visibility of the repository on its forge.
@@ -68,6 +70,11 @@ type Facts struct {
 	TaskRunner TaskRunner `json:"taskrunner"`
 	Hooks      []string   `json:"hooks"`
 	HasGit     bool       `json:"has_git"`
+	// Owner is who owns the repository by its own files, and OwnerFrom the
+	// file: catalog-info.yaml (Backstage spec.owner) or a CODEOWNERS file
+	// (the default owner). Empty when neither says.
+	Owner     string `json:"owner,omitempty"`
+	OwnerFrom string `json:"owner_from,omitempty"`
 
 	// Sources records provenance per top-level fact name.
 	Sources map[string]Source `json:"sources"`
@@ -193,12 +200,14 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 	}
 	f.Stacks = stacks.Detect(r, defs)
 	f.Sources["stacks"] = SourceDetected
-	f.Forge, f.ForgeHost = detectForge(r.RemoteURL())
+	f.Forge, f.ForgeHost = ForgeOf(r.RemoteURL())
 	f.Sources["forge"] = SourceDetected
-	if f.Visibility = detectVisibility(r); f.Visibility == VisibilityUnknown && ov.DetectedVisibility != "" {
-		f.Visibility = ov.DetectedVisibility
-	}
+	f.Visibility = detectVisibility(r)
 	f.Sources["visibility"] = SourceDetected
+	if f.Visibility == VisibilityUnknown && ov.DetectedVisibility != "" {
+		f.Visibility = ov.DetectedVisibility
+		f.Sources["visibility"] = SourceForge
+	}
 	f.Container = ContainerNone
 	if r.Has(".devcontainer/devcontainer.json") || r.Has(".devcontainer.json") || len(r.Glob(".devcontainer/*/devcontainer.json")) > 0 {
 		f.Container = ContainerDevcontainer
@@ -214,6 +223,7 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 		f.Sources["taskrunner"] = SourceConfigured
 	}
 	f.Hooks = detectHooks(r)
+	f.Owner, f.OwnerFrom = detectOwner(r)
 
 	applyOverrides(&f, ov)
 
@@ -269,7 +279,8 @@ func (f Facts) TierSource() string {
 // Public is a convenience for rules.
 func (f Facts) Public() bool { return f.Visibility == VisibilityPublic }
 
-func detectForge(remote string) (forge, host string) {
+// ForgeOf is the forge a git remote is on and its host.
+func ForgeOf(remote string) (forge, host string) {
 	if remote == "" {
 		return "unknown", ""
 	}

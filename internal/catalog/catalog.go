@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/fleetlint/fleetlint/internal/artifacts"
 	"github.com/fleetlint/fleetlint/internal/yamlsafe"
@@ -170,24 +171,41 @@ func (s *Source) FixTemplates() compose.Templates {
 	return compose.Templates{FS: s.Templates, Stacks: defs}
 }
 
-// FixTemplatesOver serves the source's templates with the given file
-// systems in front: the first that has a file wins.
-func (s *Source) FixTemplatesOver(layers ...fs.FS) compose.Templates {
+// TemplateLayer is a catalog's templates; Name is its reference.
+type TemplateLayer struct {
+	Name string
+	FS   fs.FS
+}
+
+// FixTemplatesOver serves the source's templates with the given layers in
+// front: the first that has a file wins. The result's Origins names the
+// layers that served a file.
+func (s *Source) FixTemplatesOver(layers ...TemplateLayer) compose.Templates {
 	if len(layers) == 0 {
 		return s.FixTemplates()
 	}
 	t := s.FixTemplates()
-	t.FS = overlayFS(append(layers, s.Templates))
+	t.FS = &overlayFS{layers: append(layers, TemplateLayer{FS: s.Templates}), served: map[string]bool{}}
 	return t
 }
 
-// overlayFS reads from the first layer that has the file.
-type overlayFS []fs.FS
+// overlayFS reads from the first layer that has the file and records the
+// named layers that served one.
+type overlayFS struct {
+	layers []TemplateLayer
+	mu     sync.Mutex
+	served map[string]bool
+}
 
-func (o overlayFS) Open(name string) (fs.File, error) {
-	for _, layer := range o {
-		f, err := layer.Open(name)
+func (o *overlayFS) Open(name string) (fs.File, error) {
+	for _, layer := range o.layers {
+		f, err := layer.FS.Open(name)
 		if err == nil {
+			if st, serr := f.Stat(); layer.Name != "" && serr == nil && !st.IsDir() {
+				o.mu.Lock()
+				o.served[layer.Name] = true
+				o.mu.Unlock()
+			}
 			return f, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -195,6 +213,18 @@ func (o overlayFS) Open(name string) (fs.File, error) {
 		}
 	}
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+}
+
+// Served lists the named layers a file was read from, sorted.
+func (o *overlayFS) Served() []string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]string, 0, len(o.served))
+	for name := range o.served {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // PresetNames lists the presets of the source.
@@ -234,6 +264,9 @@ type Catalog struct {
 	// Exceptions are per-finding exceptions the catalog grants to every
 	// repository that extends it, bound by `exceptions: false` set earlier.
 	Exceptions []model.Exception `yaml:"exceptions,omitempty"`
+	// ExceptionPolicy binds the exceptions this catalog and every later one
+	// declare, the repository's and its scopes' among them.
+	ExceptionPolicy *ExceptionPolicy `yaml:"exception_policy,omitempty"`
 	// Ref is how the catalog was referenced; Digest is its sha256 (hex);
 	// Artifact is the manifest digest of the OCI artifact it came in.
 	Ref      string `yaml:"-"`
@@ -301,6 +334,47 @@ type Override struct {
 	Locked      *bool  `yaml:"locked,omitempty"`
 	MinSeverity string `yaml:"min_severity,omitempty"`
 	Exceptions  *bool  `yaml:"exceptions,omitempty"`
+}
+
+// ExceptionPolicy is what an exception must say. Policies of several
+// catalogs add up: a later one can tighten, never loosen.
+type ExceptionPolicy struct {
+	// RequireUntil asks every exception for an expiry date.
+	RequireUntil bool `yaml:"require_until,omitempty" json:"require_until,omitempty"`
+	// MaxDays caps how far in the future, counted from the run, an expiry
+	// may lie; it implies RequireUntil.
+	MaxDays int `yaml:"max_days,omitempty" json:"max_days,omitempty"`
+	// RequireApprover asks every exception for approved_by.
+	RequireApprover bool `yaml:"require_approver,omitempty" json:"require_approver,omitempty"`
+	// By names the catalogs that set the policy; filled by config.
+	By []string `yaml:"-" json:"by,omitempty"`
+}
+
+// Tighten adds a later catalog's policy to this one.
+func (p *ExceptionPolicy) Tighten(q ExceptionPolicy, by string) {
+	p.RequireUntil = p.RequireUntil || q.RequireUntil
+	p.RequireApprover = p.RequireApprover || q.RequireApprover
+	if q.MaxDays > 0 && (p.MaxDays == 0 || q.MaxDays < p.MaxDays) {
+		p.MaxDays = q.MaxDays
+	}
+	p.By = append(p.By, by)
+}
+
+// Check says what an exception lacks under the policy; until is a valid
+// YYYY-MM-DD date or empty.
+func (p ExceptionPolicy) Check(ex model.Exception, now time.Time) error {
+	switch {
+	case p.RequireApprover && strings.TrimSpace(ex.ApprovedBy) == "":
+		return errors.New("approved_by is required")
+	case (p.RequireUntil || p.MaxDays > 0) && ex.Until == "":
+		return errors.New("until is required")
+	case p.MaxDays > 0:
+		until, err := time.Parse("2006-01-02", ex.Until)
+		if err == nil && until.After(now.AddDate(0, 0, p.MaxDays)) {
+			return fmt.Errorf("until %s is more than %d days away", ex.Until, p.MaxDays)
+		}
+	}
+	return nil
 }
 
 // Metadata identifies a catalog.

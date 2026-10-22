@@ -14,7 +14,7 @@ func TestTeamSummaryCountsExpiringExceptions(t *testing.T) {
 	passing := model.Counts{Pass: 1}
 	rep := &Report{GeneratedAt: now, Repos: []RepoReport{
 		{Name: "api", Team: "platform", Summary: passing, Exceptions: []model.Exception{
-			{Rule: "a/soon", Reason: "r", Until: "2026-10-20"},
+			{Rule: "a/soon", Reason: "r", Until: "2026-10-20", ApprovedBy: "@acme/security"},
 			{Rule: "a/later", Reason: "r", Until: "2027-03-31"},
 			{Rule: "a/open", Reason: "r"},
 		}},
@@ -30,9 +30,9 @@ func TestTeamSummaryCountsExpiringExceptions(t *testing.T) {
 		t.Errorf("platform: %+v", p)
 	}
 	var md strings.Builder
-	table{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Until"}, Rows: collectExceptions(rep)}.markdown(&md)
+	table{Title: "Exceptions", Head: []string{"Repository", "Team", "Rule", "Reason", "Approved by", "Until"}, Rows: collectExceptions(rep)}.markdown(&md)
 	rows := md.String()
-	for _, want := range []string{"| api | platform | `a/soon` | r | 2026-10-20 (in 15 days) |", "2027-03-31 |", "no deadline", "2026-09-01 (expired)"} {
+	for _, want := range []string{"| api | platform | `a/soon` | r | &#64;acme/security | 2026-10-20 (in 15 days) |", "2027-03-31 |", "no deadline", "2026-09-01 (expired)"} {
 		if !strings.Contains(rows, want) {
 			t.Errorf("exception rows lack %q:\n%s", want, rows)
 		}

@@ -51,12 +51,12 @@ Interview after 0.7.0. The next minor clears everything that still touches a fro
 Gaps noted on 2026-10-06 against what exists today. The forge client lists repositories and looks up visibility only; the fleet history is a directory of dated JSON files; six stacks are detected; `init --pr` opens a pull request but nothing runs on a schedule.
 
 Running at scale
-- A scheduled central runner: nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries. API-only evaluation for cheap facts so not every repository is cloned.
-- `fix --apply --pr` and `fleet --fix --pr`: when main is protected, commit the fixes on a branch and open a pull request on GitHub, GitLab, Gitea or Forgejo through the forge API (`init --pr` does this for the config only, and only on GitHub and Gitea; GitLab is not in the forge client at all). Detect protection instead of failing on push, reuse an open fleetlint branch, and write the findings into the PR body.
-- Trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
-- Ownership from `CODEOWNERS`, forge teams or a service catalog (Backstage) instead of the hand-kept fleet file; the `repo/codeowners` rule only checks presence.
-- Exception governance: who may grant one, approver recorded, escalation when they expire, policy layers that forbid exceptions per rule (locks cover the rule side, not the human side).
-
+- After 1.0 (decided 2026-10-22): a scheduled central runner (nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries, API-only evaluation for cheap facts so not every repository is cloned).
+- After 1.0, as part of a reporting endpoint (decided 2026-10-22): trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
+- Done (unreleased): `fix --apply --pr` and `fleet --fix --apply --pr`. The fixes of the default branch are made in a temporary worktree, so the checkout is untouched and a protected main does not matter; they are committed on `fleetlint/fixes` with the repository's hooks off, force-pushed, and the open pull request is updated (or one opened) with the changes and the report as its description: through the forge API with `GITHUB_TOKEN`, `GITEA_TOKEN` or `GITLAB_TOKEN`, else with gh, tea or glab. `fleet --pr` covers clones too. `init --pr` uses the same path, so it works on GitLab now.
+- Done (unreleased): GitLab in the forge client: `--from gitlab:<host>/<group>` with subgroups, visibility of a remote (nested namespaces too), merge requests; self-hosted hosts are named in `GITLAB_HOST`, gitlab.com is known.
+- Done (unreleased, decided 2026-10-22: offline, files only): ownership from Backstage `catalog-info.yaml` and the CODEOWNERS default owner, as a fact and as the fleet team when the fleet file names none for the repository. Forge teams stay out: fleetlint runs offline.
+- Done (unreleased): exception governance in the configuration: `exception_policy` (`require_until`, `max_days`, `require_approver`) in a catalog, `approved_by` on an exception. Open: checking that the named approver really agreed. Offline that needs a record fleetlint can verify, such as the commit that added the exception signed by an allowed signer; until then the control is code review of `.fleetlint.yaml` (CODEOWNERS on it).
 Security and supply chain
 - A `forge/*` family for repository settings read through the API: branch protection, required reviews, signed commits, secret scanning and vulnerability alerts enabled, deploy keys, admin list. This is the Scorecard overlap the comparison page exposes.
 - Verification beyond presence: stated SLSA level and attestations checked, lockfile integrity, fork pull-request workflows without write tokens, allowed-actions lists, dependency review on pull requests (`ci/pull-request-target` exists; the rest does not).
@@ -87,20 +87,11 @@ Adoption (since 0.2.0: Homebrew tap, Scoop bucket, Nix flake in `fleetlint/nur`,
 Fleet app without a server
 - A GitHub App ("fleetlint for GitHub") whose only runtime is a scheduled workflow in one repository, the way self-hosted Renovate runs from `renovatebot/github-action`: the workflow mints installation tokens from the App's private key (`actions/create-github-app-token`), lists the installations and their repositories, runs `fleet` with API-only facts where possible, opens or updates fix pull requests and publishes the matrix to Pages. Installing the App is the whole onboarding: no `.fleetlint.yaml` edit, no secret in the target repository, no server. What a server would add and this cannot: reacting to webhooks (push, PR opened) instead of a schedule; a push-to-main re-check can be approximated by the composite action in the target repository. The same shape works on Gitea/Forgejo with a bot account and a cron workflow; GitLab needs a group access token and a scheduled pipeline.
 
-## Low findings from the 0.3 security and architecture review (for later decisions)
+## Low findings from the 0.3 security and architecture review
 
-The review on 2026-10-12 found these; 0.3.0 fixed everything above low, and 0.8 fixed the fetch bounds, exact localhost matching, signers per sources entry with `min_version`, the fleet clone and write safety and the install-script hardening (see "Decided on 2026-10-21", item 3). Each line left is a decision to make, not a commitment.
+The review on 2026-10-12 found these; 0.3.0 fixed everything above low, 0.8 fixed the fetch bounds, exact localhost matching, signers per sources entry with `min_version`, the fleet clone and write safety and the install-script hardening (see "Decided on 2026-10-21", item 3). Decided on 2026-10-22:
 
-Security
-- Fix templates from remote catalogs overlay the built-ins and become hooks and workflows: show each template's catalog in the fix plan.
-- `init` writes workspace member names unescaped into a YAML comment.
-- Exception `re:` patterns are not validated when the config loads; an invalid one never matches. Baseline fingerprints are a set, so a new duplicate of a baselined finding stays hidden.
-- CI and release: repository settings `sha_pinning_required` and an allowed-actions list; rulesets limiting the package repositories' deploy keys to fast-forward pushes; the Homebrew cask removes the quarantine flag (notarize instead?); the image sets `safe.directory=*` (use `/repo`).
-
-Architecture
-- Fleet history stores a full `fleet.json` per run, dry runs included: compact history files or `--keep N`.
-- Fleet runs one repository at a time and a panic in one rule ends the run: a worker pool with per-repository recovery (the CLI no longer holds state that blocks it).
-- A scope re-infers release and CI on its own, so a member of a tier-1 repository with root-only workflows is inferred as tier 3; forge-reported visibility is labelled `detected`.
-- `Repo` keeps the context it was opened with; test seams `requireSCT` and `loadBundle` are package variables.
-- GitLab is missing from the forge client (`--from gitlab:`, visibility, `init --pr`).
-- The top-level `catalog` field means the run's catalog source in the check JSON and the built-in version in `fleet.json` (each repository carries its pin there); left as is on 2026-10-21, a rename is a 1.0 question.
+- Fixed (unreleased): the fix plan names the catalog a template came from when it is not the run's catalog source; `init` replaces control characters in workspace member names it writes into a comment; exception `re:` patterns are compiled when the configuration loads; the baseline counts duplicate fingerprints, so a new copy of a grandfathered finding fails; `fleet --keep-history N`, compact history files, and a `--fix` dry run kept out of history; `fleet --jobs N` checks repositories in parallel, and a panic in one is that repository's error; a scope whose tier nobody set takes the repository's when that is more serious; visibility the forge reported is labelled `forge`.
+- Fixed in the repository settings: every repository requires actions pinned to a full commit SHA and allows GitHub's own actions plus the ten third-party ones in use (a new one is added to the list first); the package repositories (tap, scoop, nur) take fast-forward pushes to main only, and no other branch or tag can be created there, deploy keys included.
+- Accepted: the Homebrew cask removes the quarantine flag until notarizing is worth an Apple developer account; the image keeps `safe.directory=*`, since CI systems mount the repository at their own paths (`/github/workspace`, `/builds/...`) and the container has a single user; `Repo` keeping its context and the package-variable test seams `requireSCT` and `loadBundle` stay.
+- Moved: GitLab in the forge client (`--from gitlab:`, visibility, `init --pr`) is a backlog feature (Running at scale); the meaning of the top-level `catalog` field in the check JSON and `fleet.json` is a 1.0 question.

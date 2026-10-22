@@ -57,3 +57,32 @@ func TestRuleIDReadsBothHistoryFormats(t *testing.T) {
 		t.Errorf("version 1: %q", got)
 	}
 }
+
+// --keep-history drops the oldest runs; a dry run of fixes adds none.
+func TestHistoryKeepAndDryRun(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	rep := triageReport()
+	for i := range 4 {
+		r := *rep
+		r.GeneratedAt = rep.GeneratedAt.AddDate(0, 0, i)
+		if err := WriteWith(dir, &r, WriteOptions{Keep: 2}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "history", "*.json"))
+	if len(files) != 2 || !strings.HasSuffix(files[0], rep.GeneratedAt.AddDate(0, 0, 2).UTC().Format(historyStamp)+".json") {
+		t.Fatalf("the latest two runs stay: %v", files)
+	}
+	if b, _ := os.ReadFile(files[0]); strings.Contains(string(b), "\n  ") {
+		t.Error("history files are compact")
+	}
+	r := *rep
+	r.GeneratedAt = rep.GeneratedAt.AddDate(0, 0, 9)
+	if err := WriteWith(dir, &r, WriteOptions{NoHistory: true}); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := filepath.Glob(filepath.Join(dir, "history", "*.json")); len(after) != 2 {
+		t.Errorf("a dry run is not history: %v", after)
+	}
+}

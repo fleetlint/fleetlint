@@ -92,7 +92,7 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 			return nil, err
 		}
 		sc.Exceptions = eff.RenameExceptions(sc.Exceptions, sc.Path+"/"+config.FileName)
-		if err := eff.CheckExceptions(sc.Path+"/"+config.FileName, sc.Exceptions); err != nil {
+		if err := eff.CheckExceptions(sc.Path+"/"+config.FileName, sc.Exceptions, now(opts)); err != nil {
 			return nil, err
 		}
 		run.Scopes = append(run.Scopes, ScopeRun{Path: sc.Path, Facts: f})
@@ -171,7 +171,21 @@ func prepareScope(r *repo.Repo, root facts.Facts, eff *config.Effective, sc conf
 	ov.FleetTier = opts.Tier
 	f := facts.Discover(sr, ov)
 	f.Artifacts = root.Artifacts // what the repository publishes is decided at the root
+	inheritTier(&f, root)
 	return sr, f, sc, nil
+}
+
+// inheritTier gives a scope whose tier nobody set the repository's when
+// that is more serious: workflows and releases live at the root, so a
+// member of a released repository would otherwise count as an experiment.
+func inheritTier(f *facts.Facts, root facts.Facts) {
+	if src := f.Sources["tier"]; (src != facts.SourceDefault && src != facts.SourceInferred) || root.Tier >= f.Tier {
+		return
+	}
+	f.Tier, f.Sources["tier"], f.TierReason = root.Tier, root.Sources["tier"], ""
+	if root.TierReason != "" {
+		f.TierReason = "the repository (" + root.TierReason + ")"
+	}
 }
 
 func now(opts Options) time.Time {

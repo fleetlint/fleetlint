@@ -1,7 +1,9 @@
 // Package baseline grandfathers existing findings so a repository can adopt
-// rules today and be held to them for new code only. A baseline is a set of
-// finding fingerprints; matching findings are reported as baselined, not as
-// failures. The set may only shrink: writing a baseline never adds entries to
+// rules today and be held to them for new code only. A baseline is a
+// multiset of finding fingerprints: an entry listed n times covers n
+// findings with that fingerprint, so a new copy of a grandfathered finding
+// still fails. Matching findings are reported as baselined, not as
+// failures. The baseline may only shrink: writing a baseline never adds entries to
 // an existing one unless the caller asks to reset it.
 package baseline
 
@@ -29,10 +31,10 @@ type File struct {
 	Entries   []string `json:"entries"`
 }
 
-// Baseline is the loaded set.
+// Baseline is the loaded multiset: fingerprint to how many findings it covers.
 type Baseline struct {
 	Path    string
-	entries map[string]bool
+	entries map[string]int
 	file    File
 }
 
@@ -64,7 +66,7 @@ type Files interface {
 
 // Load reads a baseline; a missing file yields an empty baseline and ok=false.
 func Load(fsys Files, path string) (*Baseline, bool, error) {
-	b := &Baseline{Path: path, entries: map[string]bool{}}
+	b := &Baseline{Path: path, entries: map[string]int{}}
 	data, err := fsys.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return b, false, nil
@@ -79,22 +81,31 @@ func Load(fsys Files, path string) (*Baseline, bool, error) {
 		return nil, false, fmt.Errorf("%s: version must be 1", path)
 	}
 	for _, e := range b.file.Entries {
-		b.entries[e] = true
+		b.entries[e]++
 	}
 	return b, true, nil
 }
 
 // Has reports whether a fingerprint is grandfathered.
-func (b *Baseline) Has(fp string) bool { return b.entries[fp] }
+func (b *Baseline) Has(fp string) bool { return b.entries[fp] > 0 }
 
 // Len is the number of grandfathered findings.
-func (b *Baseline) Len() int { return len(b.entries) }
+func (b *Baseline) Len() int {
+	n := 0
+	for _, c := range b.entries {
+		n += c
+	}
+	return n
+}
 
 // Apply marks findings present in the baseline and downgrades results whose
 // findings are all covered (baselined or excepted). It returns how many
 // entries matched, so the caller can report paid-off debt.
 func (b *Baseline) Apply(results []model.Result) (used int) {
-	seen := map[string]bool{}
+	left := make(map[string]int, len(b.entries))
+	for fp, c := range b.entries {
+		left[fp] = c
+	}
 	for i := range results {
 		res := &results[i]
 		if res.Status != model.StatusFail {
@@ -107,9 +118,10 @@ func (b *Baseline) Apply(results []model.Result) (used int) {
 				covered++
 				continue
 			}
-			if fp := Fingerprint(res.Rule.ID, res.Scope, *f); b.entries[fp] {
+			if fp := Fingerprint(res.Rule.ID, res.Scope, *f); left[fp] > 0 {
 				f.Baselined = true
-				seen[fp] = true
+				left[fp]--
+				used++
 				covered++
 			}
 		}
@@ -117,38 +129,43 @@ func (b *Baseline) Apply(results []model.Result) (used int) {
 			res.Status = model.StatusBaselined
 		}
 	}
-	return len(seen)
+	return used
 }
 
-// Build computes the entries for the current failing findings.
+// Build computes the entries for the current failing findings, one per
+// finding, so duplicates are counted.
 func Build(results []model.Result) []string {
-	set := map[string]bool{}
+	var out []string
 	for _, res := range results {
 		if res.Status != model.StatusFail && res.Status != model.StatusBaselined {
 			continue
 		}
 		for _, f := range res.Findings {
 			if f.Exception == nil {
-				set[Fingerprint(res.Rule.ID, res.Scope, f)] = true
+				out = append(out, Fingerprint(res.Rule.ID, res.Scope, f))
 			}
 		}
-	}
-	out := make([]string, 0, len(set))
-	for fp := range set {
-		out = append(out, fp)
 	}
 	sort.Strings(out)
 	return out
 }
 
-// Write stores entries. Without reset, entries not already in a non-empty
-// existing baseline are refused, so the baseline can only shrink.
+// Write stores entries. Without reset, entries beyond what a non-empty
+// existing baseline holds (a new fingerprint, or one more copy of one) are
+// refused, so the baseline can only shrink.
 func Write(fsys Files, path string, entries []string, existing *Baseline, reset bool, now time.Time) (added, removed int, err error) {
 	fresh := reset || existing == nil
+	left := map[string]int{}
+	if existing != nil {
+		for fp, c := range existing.entries {
+			left[fp] = c
+		}
+	}
 	keep := make([]string, 0, len(entries))
 	for _, e := range entries {
 		switch {
-		case existing != nil && existing.entries[e]:
+		case left[e] > 0:
+			left[e]--
 			keep = append(keep, e)
 		case fresh:
 			keep = append(keep, e)

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -96,10 +97,25 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 		fmt.Fprintf(&b, "# task runners found: %s. %s is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
 	}
 	if len(f.Members) > 0 {
-		fmt.Fprintf(&b, "# scopes (each checked as its own project): %s. List them under `scopes:` to change that.\n", strings.Join(f.Members, ", "))
+		fmt.Fprintf(&b, "# scopes (each checked as its own project): %s. List them under `scopes:` to change that.\n", strings.Join(commentSafe(f.Members), ", "))
 	}
 	b.WriteString("# Facts are re-detected on every run. Pin one only when detection is wrong: tier or visibility under `facts:`,\n# a directory's stacks or task runner under `scopes:` (`- {path: ., stacks: [go]}` for the root).\n")
 	return b.String()
+}
+
+// commentSafe replaces control characters, so a directory name with a
+// newline cannot end the YAML comment it is written into.
+func commentSafe(names []string) []string {
+	out := make([]string, len(names))
+	for i, n := range names {
+		out[i] = strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return '?'
+			}
+			return r
+		}, n)
+	}
+	return out
 }
 
 func writeFacts(w io.Writer, run *engine.Run) error {
@@ -119,6 +135,7 @@ func writeFacts(w io.Writer, run *engine.Run) error {
 		{"artifacts", artifactsText(f), string(f.Sources["artifacts"])},
 		{"taskrunner", f.TaskRunner.Kind + targetsText(f.TaskRunner.Targets), string(f.Sources["taskrunner"])},
 		{"hooks", orNone(strings.Join(f.Hooks, ", ")), "detected"},
+		{"owner", orNone(f.Owner), f.OwnerFrom},
 	}...)
 	scopeSource := "detected"
 	if run.Config != nil && run.Config.File.Scopes != nil {

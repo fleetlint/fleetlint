@@ -206,20 +206,30 @@ func discover(ctx context.Context, source string) ([]Entry, error) {
 		if fr.Archived || fr.Fork {
 			continue
 		}
-		if !onSource(fr.CloneURL, src) {
-			return nil, fmt.Errorf("%s: repository %s: clone URL %q is not on %s", source, fr.Name, fr.CloneURL, src.Host)
-		}
-		e := Entry{Name: fr.Name, URL: fr.CloneURL, Visibility: string(facts.VisibilityPublic)}
-		if strings.HasPrefix(fr.CloneURL, "https://") {
-			e.Token = client.Token(src)
-		}
-		if fr.Private {
-			e.Visibility = string(facts.VisibilityPrivate)
-		}
-		if err := e.Normalize(); err != nil {
+		e, err := discovered(fr, src, client)
+		if err != nil {
 			return nil, fmt.Errorf("%s: repository %s: %w", source, fr.Name, err)
 		}
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// discovered is the fleet entry of a repository the forge listed, with the
+// listing's token for an https clone.
+func discovered(fr forge.Repo, src forge.Source, client forge.Client) (Entry, error) {
+	if !onSource(fr.CloneURL, src) {
+		return Entry{}, fmt.Errorf("clone URL %q is not on %s", fr.CloneURL, src.Host)
+	}
+	e := Entry{Name: fr.Name, URL: fr.CloneURL, Visibility: string(facts.VisibilityPublic)}
+	if strings.HasPrefix(fr.CloneURL, "https://") {
+		e.Token = client.Token(src)
+		if src.Kind == "gitlab" {
+			e.TokenUser = "oauth2"
+		}
+	}
+	if fr.Private {
+		e.Visibility = string(facts.VisibilityPrivate)
+	}
+	return e, e.Normalize()
 }

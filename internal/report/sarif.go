@@ -298,18 +298,31 @@ func toSarifResults(r model.Result, anchors *anchorCache) []sarifResult {
 		}
 		switch {
 		case f.Exception != nil:
-			sup := sarifSuppression{Kind: "external", Status: "accepted", Justification: orText(f.Exception.Reason, "excepted")}
-			if f.Exception.Until != "" {
-				sup.Justification += " (until " + f.Exception.Until + ")"
-				sup.Properties = map[string]any{"until": f.Exception.Until}
-			}
-			res.Suppressions = []sarifSuppression{sup}
+			res.Suppressions = []sarifSuppression{exceptionSuppression(f.Exception)}
 		case f.Baselined:
 			res.Suppressions = []sarifSuppression{{Kind: "external", Status: "accepted", Justification: "baselined: grandfathered by the baseline file"}}
 		}
 		out = append(out, res)
 	}
 	return out
+}
+
+// exceptionSuppression is an exception as SARIF writes it: the reason, and
+// the expiry and approver as properties.
+func exceptionSuppression(ex *model.Exception) sarifSuppression {
+	sup := sarifSuppression{Kind: "external", Status: "accepted", Justification: orText(ex.Reason, "excepted")}
+	props := map[string]any{}
+	if ex.Until != "" {
+		sup.Justification += " (until " + ex.Until + ")"
+		props["until"] = ex.Until
+	}
+	if ex.ApprovedBy != "" {
+		props["approved_by"] = ex.ApprovedBy
+	}
+	if len(props) > 0 {
+		sup.Properties = props
+	}
+	return sup
 }
 
 // toSarifFix is the rule's planned edits, on the first finding only: a

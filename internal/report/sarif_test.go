@@ -51,7 +51,7 @@ func sarifRun(t *testing.T) (*engine.Run, string) {
 			{Rule: sast, Status: model.StatusFail, Severity: model.SeverityError, Findings: []model.Finding{{Message: "no SAST workflow"}}},
 			{Rule: rule("docs/readme", model.SeverityWarning), Scope: "web", Status: model.StatusFail, Severity: model.SeverityWarning, Findings: []model.Finding{{Message: "no README"}}, Fixable: true, Edits: []model.FileEdit{{Path: "web/README.md", New: "# web\n"}}},
 			{Rule: rule("docs/license", model.SeverityInfo), Scope: "lib", Status: model.StatusFail, Severity: model.SeverityInfo, Findings: []model.Finding{{Message: "no LICENSE"}}},
-			{Rule: rule("repo/exc", model.SeverityError), Status: model.StatusExcepted, Severity: model.SeverityError, Findings: []model.Finding{{Path: "vendor/x.go", Message: "vendored", Exception: &model.Exception{Rule: "repo/exc", Reason: "vendored on purpose", Until: "2027-01-01"}}}},
+			{Rule: rule("repo/exc", model.SeverityError), Status: model.StatusExcepted, Severity: model.SeverityError, Findings: []model.Finding{{Path: "vendor/x.go", Message: "vendored", Exception: &model.Exception{Rule: "repo/exc", Reason: "vendored on purpose", Until: "2027-01-01", ApprovedBy: "@acme/security"}}}},
 			{Rule: rule("repo/base", model.SeverityWarning), Status: model.StatusBaselined, Severity: model.SeverityWarning, Findings: []model.Finding{{Message: "old debt", Baselined: true}}},
 			{Rule: rule("repo/err", model.SeverityError), Status: model.StatusError, Severity: model.SeverityError, Err: "boom"},
 			{Rule: rule("repo/ok", model.SeverityError), Status: model.StatusPass, Severity: model.SeverityError},
@@ -188,7 +188,7 @@ func checkSARIFSuppressions(t *testing.T, results []any) {
 		if s["kind"] != "external" || s["status"] != "accepted" || s["justification"] != want[id] {
 			t.Errorf("%s: suppression %v", id, s)
 		}
-		if props, _ := s["properties"].(map[string]any); (id == "repo/exc") != (props["until"] == "2027-01-01") {
+		if props, _ := s["properties"].(map[string]any); (id == "repo/exc") != (props["until"] == "2027-01-01" && props["approved_by"] == "@acme/security") {
 			t.Errorf("%s: an exception's expiry is a suppression property: %v", id, s)
 		}
 	}

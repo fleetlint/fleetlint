@@ -147,6 +147,11 @@
                   "type": "string",
                   "format": "date",
                   "description": "YYYY-MM-DD; after this date the finding returns at full severity."
+                },
+                "approved_by": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Who agreed to the exception, as the organization names people or teams; recorded, not verified."
                 }
               }
             }
@@ -182,6 +187,11 @@
             "type": "string",
             "format": "date",
             "description": "YYYY-MM-DD; after this date the finding returns at full severity."
+          },
+          "approved_by": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Who agreed to the exception, as the organization names people or teams; recorded, not verified."
           }
         }
       }
