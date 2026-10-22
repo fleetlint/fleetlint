@@ -44,7 +44,7 @@ Interview after 0.7.0. The next minor clears everything that still touches a fro
 ## Decided on 2026-10-20: hierarchy and artifacts
 
 - **Catalog order and labels** ([ADR 0006](adr/0006-catalog-order-by-import.md)): the fixed layers are gone; catalogs apply in the order includes and extends list them, labels are free, `fleetlint hierarchy` and every report list the catalogs with their pins, fleet files include fleet files and groups nest by path. Open: nothing before 1.0.
-- **Release checks per artifact** ([ADR 0007](adr/0007-artifacts-as-catalog-data.md)): artifacts are catalog data (`artifacts/<id>.yaml`), the four release capabilities are keyed by artifact (`by: artifact`), engine level 5. Open: step-level `if` guards and reusable workflows (answered by `facts.artifacts` for now). Instances of one kind and the removal of `combine: any` are done for 0.8 ([ADR 0008](adr/0008-artifact-instances.md), engine level 7, catalog 0.5.0).
+- **Release checks per artifact** ([ADR 0007](adr/0007-artifacts-as-catalog-data.md)): artifacts are catalog data (`artifacts/<id>.yaml`), the four release capabilities are keyed by artifact (`by: artifact`), engine level 5. A publish step counts in any workflow not run from a pull request, whatever its `if:` (amendment 2026-10-22, unreleased catalog change). Open: reusable workflows in other repositories (answered by `facts.artifacts` for now). Instances of one kind and the removal of `combine: any` are done for 0.8 ([ADR 0008](adr/0008-artifact-instances.md), engine level 7, catalog 0.5.0).
 
 ## Backlog: what large organisations will ask for
 
