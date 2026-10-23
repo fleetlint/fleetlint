@@ -102,8 +102,8 @@ github.com/dlclark/regexp2 v1.11.0 h1:G/nrcoOa7ZXlpoa/91N3X7mM3r8eIlMBBJZvsz/mxK
 github.com/dlclark/regexp2 v1.11.0/go.mod h1:DHkYz0B9wPfa6wondMfaivmHpzrQ3v9q8cnmRbL6yW8=
 github.com/felixge/httpsnoop v1.0.4 h1:NFTV2Zj1bL4mc9sqWACXbQFVBBg2W3GPvqp8/ESS2Wg=
 github.com/felixge/httpsnoop v1.0.4/go.mod h1:m8KPJKqk1gH5J9DgRY2ASl2lWCfGKXixSwevea8zH2U=
-github.com/fleetlint/catalog v0.5.1-0.20261022145051-3f886ec62520 h1:2nPm5msu01LGibvHyFW1w4ixjvcXVUSUlQmFHDeW1pw=
-github.com/fleetlint/catalog v0.5.1-0.20261022145051-3f886ec62520/go.mod h1:8j1ewDMoAMu+NHhHSq52hXhcACnaBEYBg0yxKHzGByw=
+github.com/fleetlint/catalog v0.5.1-0.20261023082410-0e9f90617682 h1:9W5zwTI4bw3eXzwuK9msxYzNfdHoqAhT1EwIMTK+33k=
+github.com/fleetlint/catalog v0.5.1-0.20261023082410-0e9f90617682/go.mod h1:8j1ewDMoAMu+NHhHSq52hXhcACnaBEYBg0yxKHzGByw=
 github.com/go-chi/chi/v5 v5.3.0 h1:halUjDxhshgXHMrao5bB8eNBXo/rnzwr8m5m36glehM=
 github.com/go-chi/chi/v5 v5.3.0/go.mod h1:R+tYY2hNuVUUjxoPtqUdgBqevM9s9njzkTLutVsOCto=
 github.com/go-jose/go-jose/v4 v4.1.4 h1:moDMcTHmvE6Groj34emNPLs/qtYXRVcd6S7NHbHz3kA=
