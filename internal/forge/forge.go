@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -379,7 +380,52 @@ func checkStatus(resp *http.Response, endpoint string) error {
 		}
 		return fmt.Errorf("%s: %w%s", endpoint, ErrRateLimited, reset)
 	}
-	return fmt.Errorf("%s: HTTP %d", endpoint, resp.StatusCode)
+	return &StatusError{Endpoint: endpoint, Code: resp.StatusCode, Message: forgeMessage(resp.Body)}
+}
+
+// StatusError is a forge's answer that is not a success, a missing
+// repository or a rate limit, with the reason the forge gave.
+type StatusError struct {
+	Endpoint string
+	Code     int
+	Message  string
+}
+
+func (e *StatusError) Error() string {
+	if e.Message == "" {
+		return fmt.Sprintf("%s: HTTP %d", e.Endpoint, e.Code)
+	}
+	return fmt.Sprintf("%s: HTTP %d: %s", e.Endpoint, e.Code, e.Message)
+}
+
+// forgeMessage is the reason in an error response: the `message` field
+// that GitHub, Gitea and GitLab send (GitLab's may be a list or a map),
+// printable and at most 300 characters.
+func forgeMessage(body io.Reader) string {
+	raw, err := io.ReadAll(io.LimitReader(body, 4096))
+	if err != nil {
+		return ""
+	}
+	var parsed struct {
+		Message any `json:"message"`
+	}
+	if json.Unmarshal(raw, &parsed) != nil || parsed.Message == nil {
+		return ""
+	}
+	msg := fmt.Sprint(parsed.Message)
+	if b, err := json.Marshal(parsed.Message); err == nil && !strings.HasPrefix(string(b), `"`) {
+		msg = string(b)
+	}
+	msg = strings.Map(func(r rune) rune {
+		if unicode.IsPrint(r) {
+			return r
+		}
+		return ' '
+	}, msg)
+	if r := []rune(msg); len(r) > 300 {
+		msg = string(r[:300]) + "…"
+	}
+	return msg
 }
 
 func rateLimited(resp *http.Response) bool {

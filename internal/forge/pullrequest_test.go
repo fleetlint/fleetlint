@@ -153,3 +153,25 @@ func TestOpenPullRequestOpensThenUpdates(t *testing.T) {
 		t.Error("no token, no API write")
 	}
 }
+
+// A refused request carries the forge's reason: GitLab sends it as a map.
+func TestForgeErrorsCarryTheReason(t *testing.T) {
+	t.Parallel()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /projects/acme%2Fapp/merge_requests", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("[]"))
+	})
+	mux.HandleFunc("POST /projects/acme%2Fapp/merge_requests", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"message":{"source_branch":["does not exist"]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	env := map[string]string{"GITLAB_TOKEN": "tok", "GITLAB_HOST": "gitlab.example"}
+	c := forge.Client{BaseURL: srv.URL, Getenv: func(k string) string { return env[k] }}
+	_, err := c.OpenPullRequest(context.Background(), "gitlab", "https://gitlab.example/acme/app.git", forge.PullRequest{Head: "fleetlint/fixes", Base: "main", Title: "t"})
+	var se *forge.StatusError
+	if !errors.As(err, &se) || se.Code != http.StatusBadRequest || se.Message != `{"source_branch":["does not exist"]}` {
+		t.Fatalf("the forge's reason is in the error: %v", err)
+	}
+}
