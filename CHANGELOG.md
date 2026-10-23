@@ -27,6 +27,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Changed
 
+- `init --pr` does nothing, and succeeds, when `fleetlint/onboarding` is already on origin: that is its earlier proposal, perhaps edited in the open pull request, or one that was closed. A CI job that runs it on every pipeline of the default branch no longer fails until the onboarding is merged.
+- A forge's refusal names its reason (`HTTP 400: {"source_branch":["does not exist"]}`), not only the status.
 - `init --pr` fails (exit 3) when it cannot push the onboarding branch or open the pull request, as `fix --pr` does, so a CI job that onboards a repository no longer passes without a pull request; the message still says what is left to do.
 - The baseline counts fingerprints: a finding recorded twice covers two findings with that fingerprint, so a new copy of a grandfathered finding fails instead of hiding behind the old one, and `baseline` keeps one entry per copy. Existing baseline files keep working (each entry counts once).
 - A scope whose tier no configuration or fleet file sets takes the repository's tier when that is more serious (`inferred from the repository (release pipeline)`): a workspace member of a released repository was inferred as tier 3 because the workflows live at the root.
@@ -34,6 +36,7 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Fixed
 
+- `fix --pr` pushed nothing after its pull request was merged and `fleetlint/fixes` deleted on the forge, when the checkout still had the branch's remote-tracking ref (a CI runner's cached clone does): it took the fixes for pushed, and opening the pull request failed. The stale ref is dropped before the branch is fetched.
 - The GitLab CI job (`ci/gitlab/fleetlint.yml`) failed on every run: YAML folding put the input file of the Code Quality conversion on a line of its own, so `jq` read nothing and the shell ran `fleetlint.json` as a command. The command is one line again.
 - An exception whose `match: re:...` does not compile is a configuration error; it used to load and never match.
 - `fleetlint init` replaces control characters in the workspace member names it writes into a comment of `.fleetlint.yaml`, so a directory name with a newline cannot add a key.
