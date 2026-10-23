@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fixpr"
 	"github.com/fleetlint/fleetlint/internal/fleet"
+	"github.com/fleetlint/fleetlint/internal/forge"
 )
 
 // fleetFlags are the fleet command's flags.
@@ -21,6 +22,7 @@ type fleetFlags struct {
 	update, fail, fix, apply           bool
 	deepClones, allowDirty, pr         bool
 	keepHistory, jobs                  int
+	forge                              forgeFlags
 }
 
 func fleetCmd(g *globals, code *int) *cobra.Command {
@@ -54,6 +56,7 @@ clones (url entries, --from) run that code only with --deep-clones.`,
 	cmd.Flags().BoolVar(&f.update, "update", false, "git pull cached clones before checking")
 	cmd.Flags().BoolVar(&f.fail, "fail", false, "exit 1 if any repository has errors")
 	cmd.Flags().IntVar(&f.jobs, "jobs", 4, "check this many repositories at once")
+	addForgeFlags(cmd, &f.forge)
 	cmd.Flags().IntVar(&f.keepHistory, "keep-history", 0, "keep only the latest N runs in history/ (0 keeps all)")
 	cmd.Flags().BoolVar(&f.fix, "fix", false, "plan the mechanical fixes in every local repository (dry run)")
 	cmd.Flags().BoolVar(&f.apply, "apply", false, "with --fix: write the changes; nothing is committed")
@@ -66,16 +69,16 @@ clones (url entries, --from) run that code only with --deep-clones.`,
 }
 
 func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []string) error {
-	spec, err := fleetSpec(cmd.Context(), g, f, args)
+	spec, client, err := fleetInputs(cmd.Context(), g, f, args)
 	if err != nil {
-		return &configError{err}
+		return err
 	}
-	asked := &fleet.ForgeLookup{}
+	asked := &fleet.ForgeLookup{Client: client}
 	opts := fleet.Options{
 		Deep: g.deep, DeepClones: f.deepClones, Update: f.update, Cache: f.cache, Require: g.require, Version: Version,
 		MarkFixable: fixplan.MarkFixable, Visibility: asked.Lookup, Jobs: f.jobs,
 	}
-	fixer := &fleet.Fixer{W: cmd.OutOrStdout(), Apply: f.apply, AllowDirty: f.allowDirty, Rules: f.rule, Require: g.require, Version: Version}
+	fixer := &fleet.Fixer{W: cmd.OutOrStdout(), Apply: f.apply, AllowDirty: f.allowDirty, Rules: f.rule, Require: g.require, Version: Version, Client: client}
 	switch {
 	case f.pr:
 		opts.PullRequest = fixer.PullRequest
@@ -113,7 +116,7 @@ func runFleet(cmd *cobra.Command, g *globals, code *int, f fleetFlags, args []st
 
 // fleetSpec assembles the repositories from the fleet file, the arguments,
 // --discover and --from.
-func fleetSpec(ctx context.Context, g *globals, f fleetFlags, args []string) (*fleet.Spec, error) {
+func fleetSpec(ctx context.Context, g *globals, f fleetFlags, args []string, client forge.Client) (*fleet.Spec, error) {
 	if !f.fix && (f.apply || len(f.rule) > 0) {
 		return nil, errors.New("--apply and --rule need --fix")
 	}
@@ -126,7 +129,32 @@ func fleetSpec(ctx context.Context, g *globals, f fleetFlags, args []string) (*f
 	if f.deepClones && !g.deep {
 		return nil, errors.New("--deep-clones needs --deep")
 	}
-	return fleet.Assemble(ctx, fleet.Sources{SpecPath: f.specPath, Paths: args, Discover: f.discoverRoots, Exclude: f.exclude, From: f.from})
+	return fleet.Assemble(ctx, fleet.Sources{SpecPath: f.specPath, Paths: args, Discover: f.discoverRoots, Exclude: f.exclude, From: f.from, Client: client})
+}
+
+// fleetInputs are the run's repositories and its forge client.
+func fleetInputs(ctx context.Context, g *globals, f fleetFlags, args []string) (*fleet.Spec, forge.Client, error) {
+	client, err := fleetClient(f)
+	if err != nil {
+		return nil, client, err
+	}
+	spec, err := fleetSpec(ctx, g, f, args, client)
+	if err != nil {
+		return nil, client, &configError{err}
+	}
+	return spec, client, nil
+}
+
+// fleetClient is the forge client of the run: --forge and --token, and
+// the hosts of the --from sources, which the user named.
+func fleetClient(f fleetFlags) (forge.Client, error) {
+	hosts := make([]string, 0, len(f.from))
+	for _, s := range f.from {
+		if src, err := forge.ParseSource(s); err == nil {
+			hosts = append(hosts, src.Host)
+		}
+	}
+	return f.forge.client(hosts...)
 }
 
 // tally counts repositories with error findings and repositories that could not be checked.

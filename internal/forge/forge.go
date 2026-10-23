@@ -80,6 +80,10 @@ type Client struct {
 	// Hosts are Gitea or GitLab hosts the user named besides GITEA_HOST and
 	// GITLAB_HOST, such as the host of a --from source.
 	Hosts []string
+	// Forge is the forge named with --forge; GivenToken, from --token,
+	// replaces the environment's token for it and the named hosts.
+	Forge      Named
+	GivenToken string
 }
 
 // ErrUnknownHost means a Gitea or GitLab host the user did not name:
@@ -96,6 +100,7 @@ func (c Client) Trusted(host string) bool {
 		return true
 	}
 	named := append(strings.Split(c.getenv("GITEA_HOST"), ","), strings.Split(c.getenv("GITLAB_HOST"), ",")...)
+	named = append(named, c.Forge.Host, c.actionsServer(), c.gitlabCIServer())
 	for _, h := range append(named, c.Hosts...) {
 		if h = strings.TrimSpace(h); h != "" && strings.EqualFold(h, host) {
 			return true
@@ -336,11 +341,20 @@ func (c Client) apiBase(kind, host string) (string, error) {
 	if c.BaseURL != "" {
 		return c.BaseURL, nil
 	}
+	switch {
+	case c.Forge.Host != "" && strings.EqualFold(host, c.Forge.Host):
+		return c.Forge.api(kind), nil
+	case kind == "gitea" && strings.EqualFold(host, c.actionsServer()) && c.getenv("GITHUB_API_URL") != "":
+		return c.getenv("GITHUB_API_URL"), nil
+	case kind == "gitlab" && strings.EqualFold(host, c.gitlabCIServer()) && c.getenv("CI_API_V4_URL") != "":
+		return c.getenv("CI_API_V4_URL"), nil
+	}
 	switch kind {
 	case "github":
 		// GITHUB_API_URL is GitHub's own variable: set in Actions and
-		// pointed at the instance on GitHub Enterprise Server.
-		if base := c.getenv("GITHUB_API_URL"); base != "" {
+		// pointed at the instance on GitHub Enterprise Server; in Gitea and
+		// Forgejo Actions it points at that instance instead.
+		if base := c.getenv("GITHUB_API_URL"); base != "" && c.actionsServer() == "" {
 			return base, nil
 		}
 		return "https://api.github.com", nil
@@ -385,18 +399,25 @@ func (c Client) Token(src Source) string { return c.token(src.Kind, src.Host) }
 // HasToken reports whether a token is set for the forge of a host.
 func (c Client) HasToken(kind, host string) bool { return c.token(kind, host) != "" }
 
-// token returns the forge's token from the environment: GITHUB_TOKEN or
-// GH_TOKEN for GitHub (sent to its API only), GITEA_TOKEN for a Gitea host
-// and GITLAB_TOKEN for a GitLab host the user named.
+// token returns the forge's token: --token for the forge it belongs to,
+// else from the environment: GITHUB_TOKEN or GH_TOKEN for GitHub (sent to
+// its API only), GITEA_TOKEN for a Gitea host (or GITHUB_TOKEN inside that
+// host's own Actions run) and GITLAB_TOKEN for a GitLab host the user
+// named.
 func (c Client) token(kind, host string) string {
 	switch {
+	case c.GivenToken != "" && c.tokenGoesTo(kind, host):
+		return c.GivenToken
 	case kind == "github":
 		if t := c.getenv("GITHUB_TOKEN"); t != "" {
 			return t
 		}
 		return c.getenv("GH_TOKEN")
 	case kind == "gitea" && c.Trusted(host):
-		return c.getenv("GITEA_TOKEN")
+		if t := c.getenv("GITEA_TOKEN"); t != "" || !strings.EqualFold(host, c.actionsServer()) {
+			return t
+		}
+		return c.getenv("GITHUB_TOKEN")
 	case kind == "gitlab" && c.Trusted(host):
 		return c.getenv("GITLAB_TOKEN")
 	}

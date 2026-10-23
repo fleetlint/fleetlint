@@ -45,7 +45,8 @@ type Options struct {
 	// Version names the binary in the description.
 	Version string
 	// GitEnv is added to git's environment, such as the credentials a
-	// fleet clone was made with.
+	// fleet clone was made with; nil pushes to an https remote with the
+	// client's token for it, if there is one.
 	GitEnv []string
 	// Client reaches the forge; the zero value reads tokens from the
 	// environment.
@@ -70,11 +71,10 @@ type Result struct {
 // there are any, commits them on Branch and opens or updates the pull
 // request.
 func Open(ctx context.Context, r *repo.Repo, opts Options) (Result, error) {
-	remote := r.RemoteURL() //nolint:contextcheck // git runs under the repository's own bounded context
-	if !r.HasGit() || remote == "" {
-		return Result{}, errors.New("--pr needs a git repository with a remote named origin")
+	remote, kind, opts, err := target(r, opts) //nolint:contextcheck // git runs under the repository's own bounded context
+	if err != nil {
+		return Result{}, err
 	}
-	kind := forgeKind(r, remote)
 	base, err := defaultBranch(ctx, r, opts, kind, remote)
 	if err != nil {
 		return Result{}, err
@@ -125,6 +125,21 @@ func Open(ctx context.Context, r *repo.Repo, opts Options) (Result, error) {
 		return res, fmt.Errorf("branch %s is pushed, but the pull request could not be opened: %w", Branch, err)
 	}
 	return res, nil
+}
+
+// target is the remote, its forge and the options for it: the client
+// names the remote's host, and the push carries its token.
+func target(r *repo.Repo, opts Options) (remote, kind string, _ Options, _ error) {
+	remote = r.RemoteURL()
+	if !r.HasGit() || remote == "" {
+		return "", "", opts, errors.New("--pr needs a git repository with a remote named origin")
+	}
+	kind = opts.Client.KindOf(remote, forgeKind(r, remote))
+	opts.Client = opts.Client.ForRemote(kind, remote)
+	if opts.GitEnv == nil {
+		opts.GitEnv = opts.Client.GitAuth(kind, remote)
+	}
+	return remote, kind, opts, nil
 }
 
 // forgeKind is the forge the remote is on: the configured one, else detected.

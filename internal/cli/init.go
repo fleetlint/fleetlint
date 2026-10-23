@@ -27,25 +27,31 @@ func initCmd(g *globals, code *int) *cobra.Command {
 	var preset string
 	var tier int
 	var force, pr bool
+	var ff forgeFlags
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write a minimal .fleetlint.yaml with the discovered facts as comments",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runInit(cmd, g, code, initOptions{preset: preset, tier: tier, force: force, pr: pr})
+			c, err := ff.client()
+			if err != nil {
+				return err
+			}
+			return runInit(cmd, g, code, initOptions{preset: preset, tier: tier, force: force, pr: pr, forge: c})
 		},
 	}
+	addForgeFlags(cmd, &ff)
 	cmd.Flags().StringVar(&preset, "preset", "recommended", "preset to extend: minimal, recommended")
 	cmd.Flags().IntVar(&tier, "tier", 0, "pin the tier (1 production/public, 2 personal tool, 3 experiment); default: keep auto-detection")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing .fleetlint.yaml")
-	cmd.Flags().BoolVar(&pr, "pr", false, "commit the config on a branch and open a pull request with the report (needs gh or tea)")
+	cmd.Flags().BoolVar(&pr, "pr", false, "commit the config on a branch and open a pull request with the report (a token for the forge, or gh, tea or glab)")
 	return cmd
 }
 
 // forgeVisibility asks the forge whether the repository is public when
 // nothing local says so. It returns "" when there is nothing to ask or the
 // forge does not answer; the reason goes to stderr.
-func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visibility {
-	vis, host, err := lookupVisibility(cmd.Context(), r, f)
+func forgeVisibility(cmd *cobra.Command, c forge.Client, r *repo.Repo, f facts.Facts) facts.Visibility {
+	vis, host, err := lookupVisibility(cmd.Context(), c, r, f)
 	switch {
 	case errors.Is(err, forge.ErrUnknownHost):
 		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s was not asked; left undetected (set GITEA_HOST=%s to let fleetlint ask it, or pin facts.visibility)\n", host, host) //nolint:errcheck // a note on stderr
@@ -59,11 +65,12 @@ func forgeVisibility(cmd *cobra.Command, r *repo.Repo, f facts.Facts) facts.Visi
 
 // lookupVisibility asks the forge of the repository's remote whether it is
 // public. It returns "" and no error when there is nothing to ask.
-func lookupVisibility(ctx context.Context, r *repo.Repo, f facts.Facts) (facts.Visibility, string, error) {
+func lookupVisibility(ctx context.Context, c forge.Client, r *repo.Repo, f facts.Facts) (facts.Visibility, string, error) {
 	if f.Visibility != facts.VisibilityUnknown {
 		return "", "", nil
 	}
-	public, asked, host, err := forge.Client{}.RemoteVisibility(ctx, f.Forge, r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
+	remote := r.RemoteURL() //nolint:contextcheck // git lookups run under the repository's own bounded context
+	public, asked, host, err := c.RemoteVisibility(ctx, c.KindOf(remote, f.Forge), remote)
 	switch {
 	case !asked:
 		return "", "", nil
@@ -280,6 +287,7 @@ type initOptions struct {
 	preset    string
 	tier      int
 	force, pr bool
+	forge     forge.Client
 }
 
 func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
@@ -302,7 +310,7 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	}
 	// Decide from what the repository itself says, not from the file being
 	// replaced: with --force the old file's pins would otherwise be lost.
-	looked := forgeVisibility(cmd, r, facts.Discover(r, facts.Overrides{StackDefs: eff.Stacks}))
+	looked := forgeVisibility(cmd, o.forge, r, facts.Discover(r, facts.Overrides{StackDefs: eff.Stacks}))
 	// The header describes the facts as they will be under the file written.
 	run.Facts = facts.Discover(r, facts.Overrides{Visibility: looked, Tier: o.tier, StackDefs: eff.Stacks})
 	content := renderInit(run, o.preset, o.tier, looked, r.RunnersFound())
@@ -323,7 +331,7 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	if !o.pr {
 		return nil
 	}
-	err = onboard.Open(cmd.Context(), cmd.OutOrStdout(), r, run, Version)
+	err = onboard.Open(cmd.Context(), cmd.OutOrStdout(), r, run, Version, o.forge)
 	if errors.Is(err, onboard.ErrNotReady) {
 		return &configError{err}
 	}

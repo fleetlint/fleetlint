@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/fleetlint/fleetlint/internal/forge"
 )
 
 // Discovered repositories are cloned from the forge's own host only, with
@@ -34,7 +36,7 @@ func TestDiscoverTakesCloneURLsOnTheSourceOnly(t *testing.T) { // not parallel: 
 		{"name": "ssh", "clone_url": "git@github.com:acme/ssh.git"},
 		{"name": "api", "clone_url": api + "/acme/api.git"},
 	}
-	entries, err := discover(context.Background(), "github:acme")
+	entries, err := discover(context.Background(), "github:acme", forge.Client{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +51,7 @@ func TestDiscoverTakesCloneURLsOnTheSourceOnly(t *testing.T) { // not parallel: 
 	}
 	for _, bad := range []string{"/srv/git/acme/x", "https://evil.example/acme/x.git", "git@evil.example:acme/x.git", "ssh://git@evil.example/acme/x", "ftp://github.com/acme/x"} {
 		repos = []map[string]any{{"name": "x", "clone_url": bad}}
-		_, err := discover(context.Background(), "github:acme")
+		_, err := discover(context.Background(), "github:acme", forge.Client{})
 		if err == nil || !strings.Contains(err.Error(), "repository x: clone URL "+`"`+bad+`"`+" is not on github.com") {
 			t.Errorf("clone URL %q: %v; want a refusal naming the repository", bad, err)
 		}

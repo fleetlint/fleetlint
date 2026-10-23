@@ -31,7 +31,8 @@ func (v *ForgeLookup) Lookup(ctx context.Context, r *repo.Repo, f facts.Facts) f
 	if f.Visibility != facts.VisibilityUnknown {
 		return ""
 	}
-	public, asked, host, err := v.Client.RemoteVisibility(ctx, f.Forge, r.RemoteURL()) //nolint:contextcheck // git lookups run under the repository's own bounded context
+	remote := r.RemoteURL() //nolint:contextcheck // git lookups run under the repository's own bounded context
+	public, asked, host, err := v.Client.RemoteVisibility(ctx, v.Client.KindOf(remote, f.Forge), remote)
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	switch {

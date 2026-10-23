@@ -10,6 +10,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fixpr"
+	"github.com/fleetlint/fleetlint/internal/forge"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
@@ -22,9 +23,11 @@ type Fixer struct {
 	Apply, AllowDirty       bool
 	Rules                   []string
 	changes, repos, refused int
-	// Require and Version go to the pull requests of PullRequest.
+	// Require and Version go to the pull requests of PullRequest; Client
+	// opens them, knowing the --from hosts and --forge and --token.
 	Require []string
 	Version string
+	Client  forge.Client
 	opened  int
 }
 
@@ -33,7 +36,7 @@ type Fixer struct {
 // credentials the clone was made with. Its PullRequest method is an
 // Options.PullRequest.
 func (f *Fixer) PullRequest(ctx context.Context, e Entry, r *repo.Repo) (string, error) {
-	res, err := fixpr.Open(ctx, r, fixpr.Options{Rules: f.Rules, Require: f.Require, Version: f.Version, GitEnv: cloneAuth(e)})
+	res, err := fixpr.Open(ctx, r, fixpr.Options{Rules: f.Rules, Require: f.Require, Version: f.Version, GitEnv: cloneAuth(e), Client: f.Client})
 	if err != nil {
 		fmt.Fprintf(f.W, "%s: %v\n", e.Name, err) //nolint:errcheck // the listing; the note carries the error too
 		return "", err

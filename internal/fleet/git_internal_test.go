@@ -12,14 +12,14 @@ import (
 func TestCloneAuth(t *testing.T) {
 	t.Parallel()
 	env := cloneAuth(Entry{URL: "https://github.com/acme/x.git", Token: "tok"})
-	if len(env) != 3 || env[1] != "GIT_CONFIG_KEY_0=http.https://github.com/.extraheader" {
+	if len(env) != 5 || env[3] != "GIT_CONFIG_KEY_1=http.https://github.com/.extraheader" {
 		t.Fatalf("env: %q", env)
 	}
-	if !strings.HasPrefix(env[2], "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic ") || strings.Contains(env[2], "tok") {
-		t.Errorf("the token is sent base64-encoded, never raw: %q", env[2])
+	if !strings.HasPrefix(env[4], "GIT_CONFIG_VALUE_1=AUTHORIZATION: basic ") || strings.Contains(env[4], "tok") {
+		t.Errorf("the token is sent base64-encoded, never raw: %q", env[4])
 	}
 	gl := cloneAuth(Entry{URL: "https://gitlab.com/acme/x.git", Token: "tok", TokenUser: "oauth2"})
-	if want := base64.StdEncoding.EncodeToString([]byte("oauth2:tok")); len(gl) != 3 || !strings.HasSuffix(gl[2], want) {
+	if want := base64.StdEncoding.EncodeToString([]byte("oauth2:tok")); len(gl) != 5 || !strings.HasSuffix(gl[4], want) {
 		t.Errorf("GitLab takes the token with the user oauth2: %q", gl)
 	}
 	for _, e := range []Entry{{URL: "https://github.com/acme/x.git"}, {URL: "git@github.com:acme/x.git", Token: "tok"}, {Path: "/tmp/x", Token: "tok"}} {

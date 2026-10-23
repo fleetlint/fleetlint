@@ -94,3 +94,19 @@ func TestPrintPlanNamesTheTemplateCatalog(t *testing.T) {
 		t.Errorf("plan:\n%s", out)
 	}
 }
+
+// The fleet's forge client names the --from hosts, so the pull request
+// step reaches them with the token the listing used.
+func TestFleetClientNamesTheFromHosts(t *testing.T) {
+	t.Parallel()
+	c, err := fleetClient(fleetFlags{from: []string{"gitea:codeberg.org/acme", "github:acme"}, forge: forgeFlags{token: "tok"}})
+	if err != nil || len(c.Hosts) != 2 || c.Hosts[0] != "codeberg.org" || c.GivenToken != "tok" {
+		t.Fatalf("client %+v %v", c, err)
+	}
+	if !c.CanOpen("gitea", "https://codeberg.org/acme/app.git") {
+		t.Error("a --from host takes the given token for pull requests")
+	}
+	if _, err := (forgeFlags{forge: "bitbucket:x"}).client(); err == nil {
+		t.Error("an unknown forge is a usage error")
+	}
+}

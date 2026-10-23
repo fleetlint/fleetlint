@@ -21,8 +21,10 @@ type Sources struct {
 	// Discover are directories walked for git repositories; Exclude are
 	// globs, relative to them, to skip.
 	Discover, Exclude []string
-	// From are forge owners: github:<owner> or gitea:<host>/<owner>.
-	From []string
+	// From are forge owners: github:<owner>, gitea:<host>/<owner> or
+	// gitlab:<host>/<group>; Client lists them (its --forge and --token).
+	From   []string
+	Client forge.Client
 }
 
 // Assemble builds the fleet from its sources. A fleet file entry for a
@@ -36,7 +38,7 @@ func Assemble(ctx context.Context, s Sources) (*Spec, error) {
 	if err := addWalked(spec, s.Discover, s.Exclude); err != nil {
 		return nil, err
 	}
-	if err := addDiscovered(ctx, spec, s.From); err != nil {
+	if err := addDiscovered(ctx, spec, s.From, s.Client); err != nil {
 		return nil, err
 	}
 	return spec, normalizeAll(spec)
@@ -134,13 +136,13 @@ func absPath(p string) string {
 
 // addDiscovered appends the repositories of each --from source and makes
 // sure the run has something to check and somewhere to clone into.
-func addDiscovered(ctx context.Context, spec *Spec, from []string) error {
+func addDiscovered(ctx context.Context, spec *Spec, from []string, client forge.Client) error {
 	names := map[string]bool{}
 	for _, e := range spec.Repos {
 		names[e.Name] = true
 	}
 	for _, s := range from {
-		entries, err := discover(ctx, s)
+		entries, err := discover(ctx, s, client)
 		if err != nil {
 			return err
 		}
@@ -191,12 +193,12 @@ func hostname(host string) string {
 
 // discover lists one forge source as fleet entries, without archived
 // repositories and forks.
-func discover(ctx context.Context, source string) ([]Entry, error) {
+func discover(ctx context.Context, source string, client forge.Client) ([]Entry, error) {
 	src, err := forge.ParseSource(source)
 	if err != nil {
 		return nil, err
 	}
-	client := forge.Client{Hosts: []string{src.Host}}
+	client.Hosts = append(append([]string{}, client.Hosts...), src.Host)
 	repos, err := client.List(ctx, src)
 	if err != nil {
 		return nil, err

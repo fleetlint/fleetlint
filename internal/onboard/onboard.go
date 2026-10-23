@@ -35,7 +35,7 @@ var ErrNotReady = errors.New("cannot open the onboarding pull request")
 // authored by whoever runs it; nothing identifies the tool as an author. If
 // no forge CLI is available, the branch and commit remain and the user is
 // told on out how to open the PR.
-func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, version string) error {
+func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, version string, c forge.Client) error {
 	if !r.HasGit() {
 		return fmt.Errorf("%w: --pr needs a git repository", ErrNotReady)
 	}
@@ -65,11 +65,14 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 	body.WriteString("\n---\nOpened by `fleetlint init --pr`. Merge to adopt the configuration; findings are informational until the hook or CI enforces them.\n")
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	if err := push(ctx, r.Root); err != nil {
+	remote := r.RemoteURL() //nolint:contextcheck // git runs under the repository's own bounded context
+	kind := c.KindOf(remote, run.Facts.Forge)
+	c = c.ForRemote(kind, remote)
+	if err := push(ctx, r.Root, c.GitAuth(kind, remote)); err != nil {
 		_, werr := fmt.Fprintf(out, "the commit is on branch %s, which is checked out, but pushing it failed (%v).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description.\n", Branch, err, Branch)
 		return werr
 	}
-	if _, err := pullreq.Open(ctx, forge.Client{}, r.Root, run.Facts.Forge, r.RemoteURL(), forge.PullRequest{Head: Branch, Title: "Add fleetlint configuration", Body: body.String()}); err != nil { //nolint:contextcheck // the remote is read under the repository's own bounded context
+	if _, err := pullreq.Open(ctx, c, r.Root, kind, remote, forge.PullRequest{Head: Branch, Title: "Add fleetlint configuration", Body: body.String()}); err != nil {
 		_, werr := fmt.Fprintf(out, "branch %s is pushed to origin and checked out here, but the pull request could not be opened (%v).\nOpen it on the forge from %s, with the report as its description.\n", Branch, err, Branch)
 		return werr
 	}
@@ -77,9 +80,9 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 	return err
 }
 
-func push(ctx context.Context, dir string) error {
+func push(ctx context.Context, dir string, auth []string) error {
 	cmd := proc.Command(ctx, "git", "-C", dir, "push", "-q", "-u", "origin", Branch)
-	cmd.Env = proc.GitEnv()
+	cmd.Env = proc.GitEnv(auth...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}

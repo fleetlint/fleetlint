@@ -91,7 +91,7 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 	}{
 		{"tea is used when gh is missing", map[string]int{"tea": 0}, "opened a pull request"},
 		{"a failing gh leaves the branch", map[string]int{"gh": 1}, "branch fleetlint/onboarding is pushed to origin and checked out here, but the pull request could not be opened (gh: exit status 1: boom)"},
-		{"no forge cli", nil, "is pushed to origin and checked out here, but the pull request could not be opened (no token for the forge (GITHUB_TOKEN, GITEA_TOKEN, GITLAB_TOKEN) and neither gh, tea nor glab is installed)"},
+		{"no forge cli", nil, "is pushed to origin and checked out here, but the pull request could not be opened (no token for the forge (--token, FLEETLINT_TOKEN, GITHUB_TOKEN, GITEA_TOKEN, GITLAB_TOKEN) and neither gh, tea nor glab is installed)"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

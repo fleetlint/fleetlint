@@ -7,6 +7,11 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Added
 
+- `--forge` and `--token` on `init`, `fix` and `fleet` (or `FLEETLINT_FORGE` and `FLEETLINT_TOKEN`, which keep the token out of the process list). `--forge` takes the `--from` forms without the owner: `github`, `github:<host>`, `gitea:<host>`, `gitlab:<host>`, an https URL with a path prefix (`gitlab:https://git.example/scm`), or a bare https URL whose kind the remote decides. Naming a forge trusts its host and sets its kind and API root; the token goes to the named forge (and the `--from` hosts) only, and also authenticates the push to an https remote, as an Authorization header scoped to the host.
+- CI servers are known without naming them: in Gitea and Forgejo Actions the job's server is a Gitea forge with the API of `GITHUB_API_URL` and the job's `GITHUB_TOKEN`; in GitLab CI the job's server is a GitLab forge with the API of `CI_API_V4_URL` (merge requests need `GITLAB_TOKEN` or `--token`: the job token cannot open them).
+- `--pr` names the remote's own host, so a pull request on Codeberg or a self-hosted forge needs a token but no `GITEA_HOST` or `GITLAB_HOST`; `fleet --pr` names the hosts of its `--from` sources the same way.
+
+
 - **Ownership from the repository's files.** `fleetlint facts` and the JSON name the owner (`owner`, `owner_from`): Backstage `catalog-info.yaml` `spec.owner` (`group:default/payments` is `payments`), else the default owner of CODEOWNERS (the first owner of the last `*` rule, in `.github/`, the root, `docs/`, `.gitea/` or `.gitlab/`). In fleet mode a repository without a `team:` of its own in the fleet file gets that owner as its team, before a group's or the defaults' team; `team_from` in `fleet.json` says which. Read from files only, no forge call.
 - **Exception policy.** A catalog's `exception_policy: {require_until, max_days, require_approver}` binds the exceptions it and every later catalog declare, the repository's and its scopes' included; policies add up (a later one can tighten, never loosen), and an exception that breaks one is a configuration error naming the catalogs that set it. `max_days` counts from the day of the run.
 - `approved_by` on an exception names who agreed to it. It is shown in the table, the fleet report's exceptions and SARIF (`properties.approved_by`); fleetlint records it and does not verify it.

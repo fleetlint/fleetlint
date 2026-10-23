@@ -7,7 +7,6 @@ package fleet
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -30,6 +29,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/facts"
+	"github.com/fleetlint/fleetlint/internal/forge"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
@@ -667,12 +667,7 @@ func cloneAuth(e Entry) []string {
 	if user == "" {
 		user = "x-access-token"
 	}
-	basic := base64.StdEncoding.EncodeToString([]byte(user + ":" + e.Token))
-	return []string{
-		"GIT_CONFIG_COUNT=1",
-		"GIT_CONFIG_KEY_0=http." + u.Scheme + "://" + u.Host + "/.extraheader",
-		"GIT_CONFIG_VALUE_0=AUTHORIZATION: basic " + basic,
-	}
+	return forge.AuthEnv(u.String(), user, e.Token)
 }
 
 // hasCredentials reports a URL with a password or an https user name.

@@ -19,6 +19,7 @@ import (
 // branch. Without a token, the CLI opens a new one only: one already open
 // for the branch keeps its description.
 func Open(ctx context.Context, c forge.Client, dir, kind, remote string, pr forge.PullRequest) (forge.Opened, error) {
+	c = c.ForRemote(kind, remote)
 	if c.CanOpen(kind, remote) {
 		if pr.Base == "" {
 			base, err := c.DefaultBranch(ctx, kind, remote)
@@ -36,7 +37,7 @@ func Open(ctx context.Context, c forge.Client, dir, kind, remote string, pr forg
 		out, err := run(ctx, dir, cli, cliArgs(cli, pr)...)
 		return forge.Opened{URL: lastURL(out)}, err
 	}
-	return forge.Opened{}, errors.New("no token for the forge (GITHUB_TOKEN, GITEA_TOKEN, GITLAB_TOKEN) and neither gh, tea nor glab is installed")
+	return forge.Opened{}, errors.New("no token for the forge (--token, FLEETLINT_TOKEN, GITHUB_TOKEN, GITEA_TOKEN, GITLAB_TOKEN) and neither gh, tea nor glab is installed")
 }
 
 // clis are the forge CLIs to try, the remote's own first.

@@ -12,12 +12,14 @@ import (
 	"github.com/fleetlint/fleetlint/internal/fix"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fixpr"
+	"github.com/fleetlint/fleetlint/internal/forge"
 	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
 func fixCmd(g *globals, code *int) *cobra.Command {
 	var apply, allowDirty, pr bool
+	var ff forgeFlags
 	cmd := &cobra.Command{
 		Use:   "fix [rule-id...]",
 		Short: "Show (or with --apply, perform) the mechanical fixes for failing rules",
@@ -29,14 +31,20 @@ without actions print their instruction instead.
 
 --apply --pr leaves the working tree alone: it fixes the default branch in a
 temporary worktree, commits on fleetlint/fixes, force-pushes that branch and
-opens or updates its pull request, through the forge's API with GITHUB_TOKEN,
-GITEA_TOKEN or GITLAB_TOKEN, else with gh, tea or glab.`,
+opens or updates its pull request, through the forge's API with --token
+(FLEETLINT_TOKEN), GITHUB_TOKEN, GITEA_TOKEN or GITLAB_TOKEN, else with gh, tea
+or glab. --forge (FLEETLINT_FORGE) names a self-hosted forge or its kind; in
+GitHub, Gitea, Forgejo or GitLab CI the job's own server is known.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if pr {
 				if !apply || allowDirty {
 					return &configError{errors.New("--pr needs --apply and works without --allow-dirty (the working tree is not touched)")}
 				}
-				return runFixPR(cmd, g, code, args)
+				c, err := ff.client()
+				if err != nil {
+					return err
+				}
+				return runFixPR(cmd, g, code, args, c)
 			}
 			return runFix(cmd, g, code, args, apply, allowDirty)
 		},
@@ -44,15 +52,16 @@ GITEA_TOKEN or GITLAB_TOKEN, else with gh, tea or glab.`,
 	cmd.Flags().BoolVar(&apply, "apply", false, "write the changes (default is a dry run)")
 	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "with --apply: write although the working tree has uncommitted changes")
 	cmd.Flags().BoolVar(&pr, "pr", false, "with --apply: commit the fixes of the default branch on "+fixpr.Branch+" and open a pull request")
+	addForgeFlags(cmd, &ff)
 	return cmd
 }
 
-func runFixPR(cmd *cobra.Command, g *globals, code *int, rules []string) error {
+func runFixPR(cmd *cobra.Command, g *globals, code *int, rules []string, c forge.Client) error {
 	r, err := repo.Open(cmd.Context(), g.path)
 	if err != nil {
 		return &configError{err}
 	}
-	res, err := fixpr.Open(cmd.Context(), r, fixpr.Options{Rules: rules, Require: g.require, Version: Version})
+	res, err := fixpr.Open(cmd.Context(), r, fixpr.Options{Rules: rules, Require: g.require, Version: Version, Client: c})
 	out := cmd.OutOrStdout()
 	if err != nil {
 		return err
