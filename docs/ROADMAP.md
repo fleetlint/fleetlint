@@ -48,17 +48,14 @@ Interview after 0.7.0. The next minor clears everything that still touches a fro
 
 ## Backlog: what large organisations will ask for
 
-Gaps noted on 2026-10-06 against what exists today. The forge client lists repositories and looks up visibility only; the fleet history is a directory of dated JSON files; six stacks are detected; `init --pr` opens a pull request but nothing runs on a schedule.
+Gaps noted on 2026-10-06, brought up to date on 2026-10-23. fleetlint runs offline: everything a check needs comes from the repository and the catalogs (decided 2026-10-22). The forge is contacted only where the user asks for it (`--from`, a visibility lookup, `--pr`), and features that need online forge access or a server come after 1.0 (below).
 
 Running at scale
-- After 1.0 (decided 2026-10-22): a scheduled central runner (nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries, API-only evaluation for cheap facts so not every repository is cloned).
-- After 1.0, as part of a reporting endpoint (decided 2026-10-22): trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
 - Done (unreleased): `fix --apply --pr` and `fleet --fix --apply --pr`. The fixes of the default branch are made in a temporary worktree, so the checkout is untouched and a protected main does not matter; they are committed on `fleetlint/fixes` with the repository's hooks off, force-pushed, and the open pull request is updated (or one opened) with the changes and the report as its description: through the forge API with `GITHUB_TOKEN`, `GITEA_TOKEN` or `GITLAB_TOKEN`, else with gh, tea or glab. `fleet --pr` covers clones too. `init --pr` uses the same path, so it works on GitLab now.
 - Done (unreleased): GitLab in the forge client: `--from gitlab:<host>/<group>` with subgroups, visibility of a remote (nested namespaces too), merge requests; self-hosted hosts are named in `GITLAB_HOST`, gitlab.com is known.
 - Done (unreleased, decided 2026-10-22: offline, files only): ownership from Backstage `catalog-info.yaml` and the CODEOWNERS default owner, as a fact and as the fleet team when the fleet file names none for the repository. Forge teams stay out: fleetlint runs offline.
-- Done (unreleased): exception governance in the configuration: `exception_policy` (`require_until`, `max_days`, `require_approver`) in a catalog, `approved_by` on an exception. Open: checking that the named approver really agreed. Offline that needs a record fleetlint can verify, such as the commit that added the exception signed by an allowed signer; until then the control is code review of `.fleetlint.yaml` (CODEOWNERS on it).
+- Done (unreleased): exception governance in the configuration: `exception_policy` (`require_until`, `max_days`, `require_approver`) in a catalog, `approved_by` on an exception. Open: checking that the named approver really agreed. Offline that needs a record fleetlint can verify, such as the commit that added the exception signed by an allowed signer; until then the control is code review of `.fleetlint.yaml` (CODEOWNERS on it). Checking it against the pull request's reviews is online, after 1.0.
 Security and supply chain
-- A `forge/*` family for repository settings read through the API: branch protection, required reviews, signed commits, secret scanning and vulnerability alerts enabled, deploy keys, admin list. This is the Scorecard overlap the comparison page exposes.
 - Verification beyond presence: stated SLSA level and attestations checked, lockfile integrity, fork pull-request workflows without write tokens, allowed-actions lists, dependency review on pull requests (`ci/pull-request-target` exists; the rest does not).
 - Signed catalogs with provenance verified before a catalog may write files (0.7.2 covers OCI; git sources have no signature check).
 - Key-based verification as an alternative to keyless OIDC: verify git catalog commits and tags (SSH or GPG signatures against allowed signers) and OCI catalog images (cosign public keys) with signing keys listed in the sources file, for registries and forges without a sigstore OIDC issuer and for air-gapped setups.
@@ -66,26 +63,31 @@ Security and supply chain
 Integration
 - Pull-request annotations or review comments, incremental against the base branch (the action only runs `check`).
 - Scorecard-compatible JSON, Backstage tech-insights facts, Slack or e-mail digest of the fleet summary (SARIF and Markdown exist).
-- A read-only policy endpoint answering "does repository X pass policy Y" from the latest fleet run, for merge or creation gates.
 
 Repository shapes
 - Build graphs: Bazel, Nx, Turborepo (`taskrunner` knows make, just, task, npm scripts, gradle).
-- Stacks: Java/Maven, .NET, C/C++, Ruby, PHP; hygiene rules for Terraform, Helm, Kustomize, protobuf and OpenAPI.
+- Stacks: twelve are catalog data (`stacks/` in the catalog repository): cpp, dotnet, flutter, go, hugo, java (Maven and Gradle), kotlin, node, php, python, ruby, rust, each with its check template and implementations of the per-stack capabilities. Open: further stacks (Swift and Xcode projects beyond the `apple-app` artifact, Elixir, Scala), and hygiene rules for infrastructure and interface files, which no rule covers yet: Terraform, Helm charts, Kustomize, protobuf and OpenAPI.
 
 Governance of fleetlint
 - Deprecation policy, schema version in every output, conformance tests for third-party catalogs (1.0 row above).
 - Kubernetes-project conventions: `OWNERS`, `SECURITY_CONTACTS`, DCO or CLA check, published support matrix.
 
-Adoption (since 0.2.0: Homebrew tap, Scoop bucket, Nix flake in `fleetlint/nur`, `.deb`/`.rpm`/`.apk`/Arch packages, the signed image `ghcr.io/fleetlint/fleetlint`, `fleetlint/action` (unreleased), `scripts/install.sh` and a GitLab CI job in `ci/gitlab/`. Still open below: AUR, Winget, the aqua registry entry, the first action release and its Marketplace listing, a GitLab CI/CD catalog component)
-- Package managers from GoReleaser: Homebrew tap (`brew install fleetlint/tap/fleetlint`), Scoop and Winget for Windows, `.deb`/`.rpm`/`.apk` via nfpm, AUR, a Nix flake, and a `mise`/`aqua` registry entry so `mise use fleetlint` works.
-- A published GitHub Action (`fleetlint/action` on the Marketplace) and a GitLab CI component that install a pinned release, run `check`, upload SARIF to code scanning and annotate pull requests; a Gitea/Forgejo variant of the same.
-- A pre-commit / prek hook definition in the fleetlint repository so `repo: https://github.com/fleetlint/fleetlint` works in `.pre-commit-config.yaml`.
-- Container image (`ghcr.io/fleetlint/fleetlint`, distroless, signed, SBOM attached) for CI systems that run everything in containers.
-- Renovate and Dependabot know the install paths (Homebrew formula, action tag, image tag, `install.sh` version pin) so adopters' pins stay current.
-- `fleetlint init` as the five-minute path: `curl … | sh && fleetlint init --pr` should be the whole quick start on the home page, with a copy button.
+Adoption
+- Done: Homebrew tap (`brew install fleetlint/tap/fleetlint`, a cask), Scoop bucket, Nix flake (`fleetlint/nur`), `.deb`, `.rpm`, `.apk` and Arch packages (nfpm), `mise use github:fleetlint/fleetlint`, `install.sh` served from fleetlint.org (checksums, provenance with cosign or gh), the pre-commit/prek hook definition (`.pre-commit-hooks.yaml`), the signed image `ghcr.io/fleetlint/fleetlint` with SBOM, and a GitLab CI job (`ci/gitlab/fleetlint.yml`); the home page's quick start installs with Homebrew.
+- Open, the user's call: make the image public (a package setting in the GitHub UI); the first release of `fleetlint/action` and its Marketplace listing (v1.0.0 was rejected on 2026-10-12; the docs pin a commit SHA until then).
+- Open: a GitLab CI/CD catalog component in place of the copied job; a Gitea/Forgejo variant of the action (today it runs as `uses: https://github.com/fleetlint/action@<SHA>` without the SARIF upload); Renovate and Dependabot presets that keep adopters' pins current (Homebrew formula, action SHA, image tag, `install.sh` version); the five-minute path on the home page, `curl … | sh && fleetlint init --pr` with a copy button.
+- Left out for now (decided 2026-10-12): AUR, Winget, the aqua registry entry.
 
-Fleet app without a server
-- A GitHub App ("fleetlint for GitHub") whose only runtime is a scheduled workflow in one repository, the way self-hosted Renovate runs from `renovatebot/github-action`: the workflow mints installation tokens from the App's private key (`actions/create-github-app-token`), lists the installations and their repositories, runs `fleet` with API-only facts where possible, opens or updates fix pull requests and publishes the matrix to Pages. Installing the App is the whole onboarding: no `.fleetlint.yaml` edit, no secret in the target repository, no server. What a server would add and this cannot: reacting to webhooks (push, PR opened) instead of a schedule; a push-to-main re-check can be approximated by the composite action in the target repository. The same shape works on Gitea/Forgejo with a bot account and a cron workflow; GitLab needs a group access token and a scheduled pipeline.
+## After 1.0: online forge access and servers
+
+Decided on 2026-10-22: fleetlint runs offline, so what needs a forge's API beyond the asked-for lookups, or a running service, waits for 1.0 and stays opt-in.
+
+- A scheduled central runner: nightly `fleet` over an owner, durable results, pull requests for fixable findings, retries, API-only evaluation for cheap facts so not every repository is cloned.
+- A reporting endpoint: trend output per team and rule (time series or a stable export for a warehouse), built on the dated history files.
+- A read-only policy endpoint answering "does repository X pass policy Y" from the latest fleet run, for merge or creation gates.
+- A `forge/*` family for repository settings read through the API: branch protection, required reviews, signed commits, secret scanning and vulnerability alerts enabled, deploy keys, admin list. This is the Scorecard overlap the comparison page exposes.
+- Exception approvals checked against the forge: the pull request that added the exception was approved by the person in `approved_by`.
+- A fleet app without a server: a GitHub App ("fleetlint for GitHub") whose only runtime is a scheduled workflow in one repository, the way self-hosted Renovate runs from `renovatebot/github-action`: the workflow mints installation tokens from the App's private key (`actions/create-github-app-token`), lists the installations and their repositories, runs `fleet` with API-only facts where possible, opens or updates fix pull requests and publishes the matrix to Pages. Installing the App is the whole onboarding: no `.fleetlint.yaml` edit, no secret in the target repository, no server. What a server would add and this cannot: reacting to webhooks (push, PR opened) instead of a schedule; a push-to-main re-check can be approximated by the composite action in the target repository. The same shape works on Gitea/Forgejo with a bot account and a cron workflow; GitLab needs a group access token and a scheduled pipeline.
 
 ## Low findings from the 0.3 security and architecture review
 
