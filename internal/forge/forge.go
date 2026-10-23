@@ -402,18 +402,16 @@ func (e *StatusError) Error() string {
 // that GitHub, Gitea and GitLab send (GitLab's may be a list or a map),
 // printable and at most 300 characters.
 func forgeMessage(body io.Reader) string {
-	raw, err := io.ReadAll(io.LimitReader(body, 4096))
-	if err != nil {
-		return ""
-	}
+	raw, _ := io.ReadAll(io.LimitReader(body, 4096)) // a short read leaves JSON that does not parse
 	var parsed struct {
 		Message any `json:"message"`
 	}
 	if json.Unmarshal(raw, &parsed) != nil || parsed.Message == nil {
 		return ""
 	}
-	msg := fmt.Sprint(parsed.Message)
-	if b, err := json.Marshal(parsed.Message); err == nil && !strings.HasPrefix(string(b), `"`) {
+	msg, ok := parsed.Message.(string)
+	if !ok {
+		b, _ := json.Marshal(parsed.Message) // it was just decoded from JSON
 		msg = string(b)
 	}
 	msg = strings.Map(func(r rune) rune {
@@ -423,7 +421,7 @@ func forgeMessage(body io.Reader) string {
 		return ' '
 	}, msg)
 	if r := []rune(msg); len(r) > 300 {
-		msg = string(r[:300]) + "…"
+		msg = string(r[:300]) + "..."
 	}
 	return msg
 }
