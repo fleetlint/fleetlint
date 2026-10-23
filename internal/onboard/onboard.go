@@ -32,9 +32,9 @@ var ErrNotReady = errors.New("cannot open the onboarding pull request")
 
 // Open commits the new config on a branch and opens a pull request whose
 // body is the Markdown report, the way Renovate onboards. The commit is
-// authored by whoever runs it; nothing identifies the tool as an author. If
-// no forge CLI is available, the branch and commit remain and the user is
-// told on out how to open the PR.
+// authored by whoever runs it; nothing identifies the tool as an author. A
+// failed push or pull request is an error that says what is left to do; the
+// branch and commit remain.
 func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, version string, c forge.Client) error {
 	if !r.HasGit() {
 		return fmt.Errorf("%w: --pr needs a git repository", ErrNotReady)
@@ -69,12 +69,10 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 	kind := c.KindOf(remote, run.Facts.Forge)
 	c = c.ForRemote(kind, remote)
 	if err := push(ctx, r.Root, c.GitAuth(kind, remote)); err != nil {
-		_, werr := fmt.Fprintf(out, "the commit is on branch %s, which is checked out, but pushing it failed (%v).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description.\n", Branch, err, Branch)
-		return werr
+		return fmt.Errorf("the commit is on branch %s, which is checked out, but pushing it failed (%w).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description", Branch, err, Branch)
 	}
 	if _, err := pullreq.Open(ctx, c, r.Root, kind, remote, forge.PullRequest{Head: Branch, Title: "Add fleetlint configuration", Body: body.String()}); err != nil {
-		_, werr := fmt.Fprintf(out, "branch %s is pushed to origin and checked out here, but the pull request could not be opened (%v).\nOpen it on the forge from %s, with the report as its description.\n", Branch, err, Branch)
-		return werr
+		return fmt.Errorf("branch %s is pushed to origin and checked out here, but the pull request could not be opened (%w).\nOpen it on the forge from %s, with the report as its description", Branch, err, Branch)
 	}
 	_, err = fmt.Fprintf(out, "pushed %s and opened a pull request from it\n", Branch)
 	return err

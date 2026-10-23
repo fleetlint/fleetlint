@@ -89,7 +89,7 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 		fakes map[string]int
 		want  string
 	}{
-		{"tea is used when gh is missing", map[string]int{"tea": 0}, "opened a pull request"},
+		{"tea is used when gh is missing", map[string]int{"tea": 0}, ""},
 		{"a failing gh leaves the branch", map[string]int{"gh": 1}, "branch fleetlint/onboarding is pushed to origin and checked out here, but the pull request could not be opened (gh: exit status 1: boom)"},
 		{"no forge cli", nil, "is pushed to origin and checked out here, but the pull request could not be opened (no token for the forge (--token, FLEETLINT_TOKEN, GITHUB_TOKEN, GITEA_TOKEN, GITLAB_TOKEN) and neither gh, tea nor glab is installed)"},
 	}
@@ -98,8 +98,11 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 			bin := toolbox(t, c.fakes)
 			dir, remote := onboardingRepo(t)
 			code, out, errOut := runCLI(t, dir, "init", "--pr")
-			if code != cli.ExitOK || !strings.Contains(out, c.want) {
+			switch {
+			case c.want == "" && (code != cli.ExitOK || !strings.Contains(out, "opened a pull request")):
 				t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+			case c.want != "" && (code != cli.ExitInternal || !strings.Contains(errOut, c.want)):
+				t.Fatalf("a pull request that could not be opened fails the run: exit %d\n%s\n%s", code, out, errOut)
 			}
 			if testutil.Git(t, remote, "rev-parse", "--verify", "refs/heads/"+onboardingBranch) == "" {
 				t.Error("the branch is pushed before the PR is attempted")
@@ -114,8 +117,8 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 	}
 }
 
-// A push that fails is named as such, so it is clear the branch exists
-// only locally and still has to be pushed.
+// A push that fails is named as such and fails the run, so it is clear the
+// branch exists only locally and still has to be pushed.
 func TestInitPRSaysWhenThePushFailed(t *testing.T) { // not parallel: toolbox sets the environment
 	toolbox(t, map[string]int{"gh": 0})
 	dir, remote := onboardingRepo(t)
@@ -123,7 +126,7 @@ func TestInitPRSaysWhenThePushFailed(t *testing.T) { // not parallel: toolbox se
 		t.Fatal(err)
 	}
 	code, out, errOut := runCLI(t, dir, "init", "--pr")
-	if code != cli.ExitOK || !strings.Contains(out, "pushing it failed") || !strings.Contains(out, "git push -u origin "+onboardingBranch) {
+	if code != cli.ExitInternal || !strings.Contains(errOut, "pushing it failed") || !strings.Contains(errOut, "git push -u origin "+onboardingBranch) {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
 	if strings.Contains(out, "opened a pull request") {
