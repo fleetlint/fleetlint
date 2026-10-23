@@ -1,4 +1,5 @@
-# GitLab CI job for fleetlint. Include it from a release tag:
+# GitLab CI job for fleetlint; the components in github.com/fleetlint/gitlab-components
+# supersede it (inputs, merge requests). Include it from a release tag:
 #
 #   include:
 #     - remote: https://raw.githubusercontent.com/fleetlint/fleetlint/v0.8.1/ci/gitlab/fleetlint.yml
@@ -21,14 +22,13 @@ fleetlint:
   script:
     - fleetlint check --format json --fail-on never > fleetlint.json
     # GitLab's Code Quality format: one entry per finding, located when the finding has a path.
-    - >-
+    - |
       jq '[.results[] | select(.status == "fail") | . as $r
         | (if (.findings // []) | length > 0 then .findings[] else {message: $r.rule.title} end)
         | {description: "\($r.rule.id): \(.message)", check_name: $r.rule.id,
            fingerprint: ("\($r.rule.id)|\(.path // "")|\(.line // 0)|\(.message)" | @base64),
            severity: ({"error": "major", "warning": "minor"}[$r.severity] // "info"),
-           location: {path: (.path // ".fleetlint.yaml"), lines: {begin: ((.line // 0) | if . > 0 then . else 1 end)}}}]'
-      fleetlint.json > gl-code-quality-report.json
+           location: {path: (.path // ".fleetlint.yaml"), lines: {begin: ((.line // 0) | if . > 0 then . else 1 end)}}}]' fleetlint.json > gl-code-quality-report.json
     - fleetlint check --fail-on "$FLEETLINT_FAIL_ON"
   artifacts:
     when: always
