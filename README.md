@@ -19,7 +19,7 @@ docker run --rm -v "$PWD:/repo" ghcr.io/fleetlint/fleetlint check
 go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
 ```
 
-The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archives for Linux, macOS and Windows and `.deb`, `.rpm`, `.apk` and Arch packages. Each release has `checksums.txt`, a signature bundle for it and one SBOM per archive and package; the release notes show the `cosign verify-blob` command. The container image is signed with cosign as well. In CI, use the [GitHub Action](https://github.com/fleetlint/action) or the GitLab job in `ci/gitlab/fleetlint.yml`.
+The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archives for Linux, macOS and Windows and `.deb`, `.rpm`, `.apk` and Arch packages. Each release has `checksums.txt`, a signature bundle for it and one SBOM per archive and package; the release notes show the `cosign verify-blob` command. The container image is signed with cosign as well. In CI, use the [GitHub Action](https://github.com/fleetlint/action) (also on Gitea and Forgejo) or the [GitLab components](https://github.com/fleetlint/gitlab-components).
 
 ## Quickstart
 
