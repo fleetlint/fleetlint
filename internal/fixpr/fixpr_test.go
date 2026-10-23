@@ -77,6 +77,14 @@ func TestOpenProposesTheFixesOfTheDefaultBranch(t *testing.T) {
 	if err != nil || !again.Unchanged || !again.Updated || len(got) != 2 {
 		t.Fatalf("a second run finds the branch as it is and updates the pull request: %+v %v", again, err)
 	}
+
+	// The pull request was merged and its branch deleted on the forge; the
+	// checkout still has the remote-tracking ref, as a CI runner's cached clone does.
+	testutil.Git(t, remote, "branch", "-D", fixpr.Branch)
+	after, err := fixpr.Open(context.Background(), r, opts)
+	if err != nil || after.Unchanged || testutil.Git(t, remote, "rev-parse", "--verify", "refs/heads/"+fixpr.Branch) == "" {
+		t.Fatalf("a branch deleted on the forge is pushed again: %+v %v", after, err)
+	}
 }
 
 func TestOpenWithNothingToFix(t *testing.T) {

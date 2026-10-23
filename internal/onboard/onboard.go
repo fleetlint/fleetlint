@@ -46,6 +46,16 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 	if status != "" {
 		return fmt.Errorf("%w: --pr needs a clean working tree (uncommitted changes present)", ErrNotReady)
 	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	remote := r.RemoteURL() //nolint:contextcheck // git runs under the repository's own bounded context
+	kind := c.KindOf(remote, run.Facts.Forge)
+	c = c.ForRemote(kind, remote)
+	auth := c.GitAuth(kind, remote)
+	if onOrigin(ctx, r.Root, auth) {
+		_, err := fmt.Fprintf(out, "branch %s is already on origin, so its onboarding pull request is open or was closed: nothing to do. Delete the branch on the forge to onboard again.\n", Branch)
+		return err
+	}
 	if _, err := r.Git("rev-parse", "-q", "--verify", "refs/heads/"+Branch); err == nil { //nolint:contextcheck // git runs under the repository's own bounded context
 		return fmt.Errorf("%w: branch %s already exists; delete it or finish the earlier onboarding first", ErrNotReady, Branch)
 	}
@@ -63,12 +73,7 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 		return err
 	}
 	body.WriteString("\n---\nOpened by `fleetlint init --pr`. Merge to adopt the configuration; findings are informational until the hook or CI enforces them.\n")
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	remote := r.RemoteURL() //nolint:contextcheck // git runs under the repository's own bounded context
-	kind := c.KindOf(remote, run.Facts.Forge)
-	c = c.ForRemote(kind, remote)
-	if err := push(ctx, r.Root, c.GitAuth(kind, remote)); err != nil {
+	if err := push(ctx, r.Root, auth); err != nil {
 		return fmt.Errorf("the commit is on branch %s, which is checked out, but pushing it failed (%w).\nPush it with `git push -u origin %s`, then open a pull request with the report as its description", Branch, err, Branch)
 	}
 	if _, err := pullreq.Open(ctx, c, r.Root, kind, remote, forge.PullRequest{Head: Branch, Title: "Add fleetlint configuration", Body: body.String()}); err != nil {
@@ -76,6 +81,15 @@ func Open(ctx context.Context, out io.Writer, r *repo.Repo, run *engine.Run, ver
 	}
 	_, err = fmt.Fprintf(out, "pushed %s and opened a pull request from it\n", Branch)
 	return err
+}
+
+// onOrigin reports whether the onboarding branch is on origin. It is
+// fleetlint's earlier proposal, perhaps edited in its pull request, so it is
+// never overwritten; an unreachable origin reads as no branch, and the push says why.
+func onOrigin(ctx context.Context, dir string, auth []string) bool {
+	cmd := proc.Command(ctx, "git", "-C", dir, "ls-remote", "--exit-code", "origin", "refs/heads/"+Branch)
+	cmd.Env = proc.GitEnv(auth...)
+	return cmd.Run() == nil
 }
 
 func push(ctx context.Context, dir string, auth []string) error {

@@ -83,6 +83,9 @@ func Open(ctx context.Context, r *repo.Repo, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	// The branch from an earlier run, if any, for the lease and the no-op check.
+	// A ref left from a branch since deleted on the forge (the pull request
+	// was merged) goes first, or the run would think the fixes are pushed.
+	_ = gitIn(ctx, r.Root, opts.GitEnv, "update-ref", "-d", "refs/remotes/origin/"+Branch)
 	_ = gitIn(ctx, r.Root, opts.GitEnv, "fetch", "-q", "origin", "+refs/heads/"+Branch+":refs/remotes/origin/"+Branch)
 	dir, err := os.MkdirTemp("", "fleetlint-fix-")
 	if err != nil {

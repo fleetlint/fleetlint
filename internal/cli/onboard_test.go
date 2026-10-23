@@ -117,6 +117,27 @@ func TestInitPRFallsBackWithoutAForgeCLI(t *testing.T) { // not parallel: toolbo
 	}
 }
 
+// An onboarding branch already on origin is fleetlint's earlier proposal,
+// perhaps edited in its pull request: a later run, from a fresh clone as in
+// CI, leaves it alone and succeeds.
+func TestInitPRLeavesAnEarlierOnboardingAlone(t *testing.T) { // not parallel: toolbox sets the environment
+	bin := toolbox(t, map[string]int{"gh": 0})
+	dir, remote := onboardingRepo(t)
+	testutil.Git(t, dir, "push", "-q", "origin", "HEAD:refs/heads/"+onboardingBranch)
+	before := testutil.Git(t, remote, "rev-parse", onboardingBranch)
+
+	code, out, errOut := runCLI(t, dir, "init", "--pr")
+	if code != cli.ExitOK || !strings.Contains(out, "already on origin") {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	if testutil.Git(t, remote, "rev-parse", onboardingBranch) != before {
+		t.Error("the branch on origin is not overwritten")
+	}
+	if _, err := os.Stat(filepath.Join(bin, "gh.log")); err == nil {
+		t.Error("no pull request is opened")
+	}
+}
+
 // A push that fails is named as such and fails the run, so it is clear the
 // branch exists only locally and still has to be pushed.
 func TestInitPRSaysWhenThePushFailed(t *testing.T) { // not parallel: toolbox sets the environment
