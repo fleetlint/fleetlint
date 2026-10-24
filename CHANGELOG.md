@@ -27,6 +27,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ### Changed
 
+- Catalog 0.6.0: a publish step counts in any workflow not run from a pull request, whatever its `if:`.
+- Packages keep fleetlint's version; the action and the GitLab component are versioned on their own and pin a fleetlint release ([ADR 0009](docs/adr/0009-versions-of-packages-and-integrations.md)).
 - `init --pr` does nothing, and succeeds, when `fleetlint/onboarding` is already on origin: that is its earlier proposal, perhaps edited in the open pull request, or one that was closed. A CI job that runs it on every pipeline of the default branch no longer fails until the onboarding is merged.
 - A forge's refusal names its reason (`HTTP 400: {"source_branch":["does not exist"]}`), not only the status.
 - `init --pr` fails (exit 3) when it cannot push the onboarding branch or open the pull request, as `fix --pr` does, so a CI job that onboards a repository no longer passes without a pull request; the message still says what is left to do.
