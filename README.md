@@ -8,13 +8,20 @@ It does not lint code. It checks that the things which lint, test, build and rel
 
 ## Install
 
+On Linux and macOS, the install script puts the latest release into `~/.local/bin`, after checking its checksum, and its signature when `cosign` is installed:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL https://fleetlint.org/install.sh | sh
+```
+
+`sh -s -- v0.9.0 ~/bin` picks a version and a directory ([`scripts/install.sh`](scripts/install.sh)). With a package manager or a container:
+
 ```sh
 brew install fleetlint/tap/fleetlint                     # macOS, Linux
 scoop bucket add fleetlint https://github.com/fleetlint/scoop-bucket
 scoop install fleetlint/fleetlint                        # Windows
 nix profile install github:fleetlint/nur#fleetlint      # Nix
 mise use github:fleetlint/fleetlint                      # mise
-curl --proto '=https' --tlsv1.2 -fsSL https://fleetlint.org/install.sh | sh   # ~/.local/bin
 docker run --rm -v "$PWD:/repo" ghcr.io/fleetlint/fleetlint check
 go install github.com/fleetlint/fleetlint/cmd/fleetlint@latest
 ```
