@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-24
+
 ### Added
 
 - `--forge` and `--token` on `init`, `fix` and `fleet` (or `FLEETLINT_FORGE` and `FLEETLINT_TOKEN`, which keep the token out of the process list). `--forge` takes the `--from` forms without the owner: `github`, `github:<host>`, `gitea:<host>`, `gitlab:<host>`, an https URL with a path prefix (`gitlab:https://git.example/scm`), or a bare https URL whose kind the remote decides. Naming a forge trusts its host and sets its kind and API root; the token goes to the named forge (and the `--from` hosts) only, and also authenticates the push to an https remote, as an Authorization header scoped to the host.
