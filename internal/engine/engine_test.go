@@ -728,3 +728,49 @@ func TestScopeInheritsTheRepositoryTier(t *testing.T) {
 		t.Errorf("a configured scope tier stays: %d (%s)", w.Tier, w.TierSource())
 	}
 }
+
+// A configured stack list or artifact pin replaces detection; what detection
+// finds beyond it is a note, so the configuration is kept honest. A pinned
+// kind without a name covers its instances; a pin that detection cannot
+// confirm (its purpose) is no note.
+func TestNotesSayWhatConfigurationLeavesOut(t *testing.T) {
+	t.Parallel()
+	image := tagWorkflow("      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          tags: ghcr.io/x/y:latest\n")
+	files := func() map[string]string {
+		return map[string]string{"go.mod": "module x\n", "package.json": "{}", ".github/workflows/release.yml": image}
+	}
+	none := run(t, files(), tier1Public)
+	if len(none.Notes) != 0 {
+		t.Errorf("detection alone has nothing to note: %q", none.Notes)
+	}
+	stacks := run(t, files(), "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public}\nscopes: [{path: ., stacks: [go]}]\n")
+	if want := "scopes .: stacks [go] are configured; detection also finds node. List it there, or leave it out on purpose"; len(stacks.Notes) != 1 || stacks.Notes[0] != want {
+		t.Errorf("stacks note = %q, want %q", stacks.Notes, want)
+	}
+	pinned := run(t, files(), "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [npm]}\n")
+	if want := "facts.artifacts lists npm; detection also finds image ghcr.io/x/y (.github/workflows/release.yml). List it there, or leave it out on purpose"; len(pinned.Notes) != 1 || pinned.Notes[0] != want {
+		t.Errorf("artifacts note = %q, want %q", pinned.Notes, want)
+	}
+	empty := run(t, files(), "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: []}\n")
+	if len(empty.Notes) != 1 || !strings.HasPrefix(empty.Notes[0], "facts.artifacts says nothing is published; detection also finds image ghcr.io/x/y") {
+		t.Errorf("empty list note = %q", empty.Notes)
+	}
+	kind := run(t, files(), "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [image]}\n")
+	if len(kind.Notes) != 0 {
+		t.Errorf("a bare kind covers its instances: %q", kind.Notes)
+	}
+	exact := run(t, files(), "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [{kind: image, name: ghcr.io/x/y, workflows: [.github/workflows/release.yml]}]}\n")
+	if len(exact.Notes) != 0 {
+		t.Errorf("a pin that matches detection has nothing to note: %q", exact.Notes)
+	}
+	files2 := files()
+	files2[".github/workflows/nightly.yml"] = strings.Replace(image, "tags: ['v*']", "branches: [main]", 1)
+	workflow := run(t, files2, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [{kind: image, name: ghcr.io/x/y, workflows: [.github/workflows/release.yml]}]}\n")
+	if want := "facts.artifacts lists image ghcr.io/x/y; detection also finds image ghcr.io/x/y from .github/workflows/nightly.yml. List it there, or leave it out on purpose"; len(workflow.Notes) != 1 || workflow.Notes[0] != want {
+		t.Errorf("workflow note = %q, want %q", workflow.Notes, want)
+	}
+	hidden := run(t, map[string]string{"go.mod": "module x\n"}, "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, artifacts: [image]}\n")
+	if len(hidden.Notes) != 0 {
+		t.Errorf("a pin detection cannot confirm is what pins are for: %q", hidden.Notes)
+	}
+}

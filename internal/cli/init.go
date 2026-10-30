@@ -8,8 +8,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -30,7 +30,7 @@ func initCmd(g *globals, code *int) *cobra.Command {
 	var ff forgeFlags
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Write a minimal .fleetlint.yaml with the discovered facts as comments",
+		Short: "Write a .fleetlint.yaml that lists the discovered stacks and artifacts",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, err := ff.client()
 			if err != nil {
@@ -89,7 +89,7 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 	b.WriteString("version: 1\n")
 	b.WriteString("extends:\n")
 	fmt.Fprintf(&b, "  - fleetlint:%s\n", preset)
-	if tier != 0 || looked != "" {
+	if tier != 0 || looked != "" || len(f.Artifacts) > 0 {
 		b.WriteString("facts:\n")
 	}
 	if tier != 0 {
@@ -98,31 +98,88 @@ func renderInit(run *engine.Run, preset string, tier int, looked facts.Visibilit
 	if looked != "" {
 		fmt.Fprintf(&b, "  visibility: %s   # as the forge reported it at init; update it if the repository changes hands\n", looked)
 	}
-	fmt.Fprintf(&b, "# discovered: stacks=[%s] artifacts=[%s] forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
-		strings.Join(f.Stacks, ","), strings.Join(f.ArtifactKinds(), ","), f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
+	writeArtifacts(&b, f.Artifacts)
+	writeScopes(&b, run)
+	fmt.Fprintf(&b, "# discovered: forge=%s visibility=%s tier=%d (%s) layout=%s release=%s taskrunner=%s container=%s\n",
+		f.Forge, f.Visibility, f.Tier, f.TierSource(), f.Layout, yesNo(f.Release.Exists), f.TaskRunner.Kind, f.Container)
 	if len(runners) > 1 {
-		fmt.Fprintf(&b, "# task runners found: %s. %s is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
+		fmt.Fprintf(&b, "# task runners found: %s. %s is used; to choose another, set `taskrunner: <kind>` on the `path: .` entry of `scopes:`.\n", strings.Join(runners, ", "), f.TaskRunner.Kind)
 	}
-	if len(f.Members) > 0 {
-		fmt.Fprintf(&b, "# scopes (each checked as its own project): %s. List them under `scopes:` to change that.\n", strings.Join(commentSafe(f.Members), ", "))
-	}
-	b.WriteString("# Facts are re-detected on every run. Pin one only when detection is wrong: tier or visibility under `facts:`,\n# a directory's stacks or task runner under `scopes:` (`- {path: ., stacks: [go]}` for the root).\n")
+	b.WriteString("# The stacks and artifacts listed above are what fleetlint checks: the lists replace detection, and `fleetlint check`\n# notes what detection finds beyond them. Everything else is re-detected on every run; pin tier or visibility under\n# `facts:` when detection is wrong.\n")
 	return b.String()
 }
 
-// commentSafe replaces control characters, so a directory name with a
-// newline cannot end the YAML comment it is written into.
-func commentSafe(names []string) []string {
-	out := make([]string, len(names))
-	for i, n := range names {
-		out[i] = strings.Map(func(r rune) rune {
-			if unicode.IsControl(r) {
-				return '?'
-			}
-			return r
-		}, n)
+// writeArtifacts lists what the release publishes under facts.artifacts,
+// so the file says what the release rules check. Nothing detected is a
+// comment, not an empty list: the list would say nothing is ever published.
+func writeArtifacts(b *strings.Builder, found []facts.Artifact) {
+	if len(found) == 0 {
+		b.WriteString("# artifacts: none detected. When a publish step hides in a reusable workflow, list it under `facts.artifacts`\n# as `{kind, name, workflows}`.\n")
+		return
 	}
-	return out
+	b.WriteString("  artifacts:   # what the release publishes, as detected at init\n")
+	for _, a := range found {
+		fmt.Fprintf(b, "    - kind: %s\n", a.Kind)
+		if a.Name != "" {
+			fmt.Fprintf(b, "      name: %s\n", yamlScalar(a.Name))
+		}
+		if len(a.Workflows) > 0 {
+			fmt.Fprintf(b, "      workflows: [%s]\n", yamlScalars(a.Workflows))
+		}
+	}
+}
+
+// writeScopes lists the root's stacks and each workspace member with its
+// stacks under scopes, so the file says which stack rules apply where. A
+// root without a stack is a comment; members are listed even then.
+func writeScopes(b *strings.Builder, run *engine.Run) {
+	root := run.Facts
+	members := run.Scopes[1:]
+	if len(root.Stacks) == 0 {
+		b.WriteString("# stacks: none detected at the root, so no stack rules apply there. Pin one under `scopes:` (`- {path: ., stacks: [go]}`)\n# when detection is wrong.\n")
+	}
+	if len(root.Stacks) == 0 && len(members) == 0 {
+		return
+	}
+	b.WriteString("scopes:   # each directory is checked as a project of the stacks listed, as detected at init\n")
+	if len(root.Stacks) > 0 {
+		fmt.Fprintf(b, "  - path: .\n    stacks: [%s]\n", strings.Join(root.Stacks, ", "))
+	}
+	for _, s := range members {
+		fmt.Fprintf(b, "  - path: %s\n", yamlScalar(s.Path))
+		if len(s.Facts.Stacks) > 0 {
+			fmt.Fprintf(b, "    stacks: [%s]\n", strings.Join(s.Facts.Stacks, ", "))
+		}
+	}
+}
+
+// yamlString quotes a value as a YAML double-quoted scalar (JSON is one),
+// so an image reference with `${{ }}` or a path with odd characters stays
+// one value.
+func yamlString(s string) string {
+	b, _ := json.Marshal(s) //nolint:errchkjson // a string always marshals
+	return string(b)
+}
+
+// plainScalar is a value YAML reads as the same string unquoted: no quotes,
+// no indicator characters, nothing a 1.1 reader takes for a bool or null.
+var plainScalar = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/-]*$`)
+
+var yamlWords = regexp.MustCompile(`^(?i:true|false|yes|no|on|off|null|y|n)$`)
+
+func yamlScalar(p string) string {
+	if plainScalar.MatchString(p) && !yamlWords.MatchString(p) {
+		return p
+	}
+	return yamlString(p)
+}
+
+func yamlScalars(items []string) string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = yamlScalar(it)
+	}
+	return strings.Join(out, ", ")
 }
 
 func writeFacts(w io.Writer, run *engine.Run) error {
@@ -304,15 +361,17 @@ func runInit(cmd *cobra.Command, g *globals, code *int, o initOptions) error {
 	if _, err := (catalog.Loader{}).Load("fleetlint:" + o.preset); err != nil {
 		return &configError{err}
 	}
-	run, err := engine.Evaluate(cmd.Context(), r, eff)
+	looked := forgeVisibility(cmd, o.forge, r, facts.Discover(r, facts.Overrides{StackDefs: eff.Stacks}))
+	// Write what the repository itself says, not what the file being
+	// replaced pinned: with --force the old file's pins would otherwise be
+	// copied. Detection runs under the tier and visibility the file will set.
+	det := *eff
+	det.File.Facts = config.FactOverrides{Tier: o.tier, Visibility: string(looked)}
+	det.File.Scopes, det.Root = nil, config.Scope{}
+	run, err := engine.Evaluate(cmd.Context(), r, &det)
 	if err != nil {
 		return err
 	}
-	// Decide from what the repository itself says, not from the file being
-	// replaced: with --force the old file's pins would otherwise be lost.
-	looked := forgeVisibility(cmd, o.forge, r, facts.Discover(r, facts.Overrides{StackDefs: eff.Stacks}))
-	// The header describes the facts as they will be under the file written.
-	run.Facts = facts.Discover(r, facts.Overrides{Visibility: looked, Tier: o.tier, StackDefs: eff.Stacks})
 	content := renderInit(run, o.preset, o.tier, looked, r.RunnersFound())
 	target := filepath.Join(r.Root, config.FileName)
 	if err := os.WriteFile(target, []byte(content), 0o644); err != nil { //nolint:gosec // a config file must be readable by other tools

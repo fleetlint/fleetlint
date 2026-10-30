@@ -33,7 +33,7 @@ The [releases](https://github.com/fleetlint/fleetlint/releases) also carry archi
 ```sh
 cd your-repo
 fleetlint                 # zero config: discovers stack, forge, tier; applies fleetlint:recommended
-fleetlint init            # writes a two-line .fleetlint.yaml with the discovered facts as comments
+fleetlint init            # writes a .fleetlint.yaml that lists the detected stacks and published artifacts
 fleetlint explain taskrunner/targets
 fleetlint                 # findings marked * are the ones `fix` can repair
 fleetlint fix             # dry run: files it would create, patterns it would add, files it would untrack

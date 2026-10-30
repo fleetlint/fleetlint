@@ -146,6 +146,9 @@ func checkCmd(g *globals, code *int) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			for _, n := range run.Notes {
+				fmt.Fprintf(g.stderr, "fleetlint: %s: %s\n", config.FileName, n) //nolint:errcheck // a note on stderr
+			}
 			fixplan.MarkFixable(r, run)
 			if err = report.Write(cmd.OutOrStdout(), run, report.Format(g.format), report.Options{Color: g.color && g.format == "table", Verbose: g.verbose, Version: Version, Catalog: eff.Source.Describe(), Root: r.Root}); err != nil {
 				return &configError{err}
