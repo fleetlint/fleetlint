@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
 ### Changed
 
 - `fleetlint init` writes the detected stacks and published artifacts into `.fleetlint.yaml` instead of a comment: the root's stacks and each workspace member with its stacks under `scopes:`, and what the release publishes under `facts.artifacts` with the workflows that publish it, so a reader sees what is checked without running `fleetlint facts`. The lists replace detection, as pins always have; `check` and `fleet` now note what detection finds beyond a configured stack list or artifact pin (`detection also finds node`), on stderr and in the fleet report's Notes, so a stack or an image added later is not missed in silence. A pinned kind without a name covers its instances, and a pin detection cannot confirm is no note. Nothing detected stays a comment: an empty `artifacts: []` would say nothing is ever published. The task runner, the container and the other facts are still detected on every run.
