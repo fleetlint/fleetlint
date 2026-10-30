@@ -497,6 +497,15 @@ func checkOne(ctx context.Context, e Entry, spec *Spec, opts Options) RepoReport
 	return rr
 }
 
+// withRunNotes adds what the engine noted about the configuration: stacks
+// and artifacts detection finds beyond the pinned ones.
+func withRunNotes(notes []string, run *engine.Run) []string {
+	if run == nil {
+		return notes
+	}
+	return append(notes, run.Notes...)
+}
+
 // propose runs Options.PullRequest; its note or its failure is a note of
 // the report, not an error of the repository.
 func propose(ctx context.Context, e Entry, r *repo.Repo, opts Options) []string {
@@ -535,6 +544,7 @@ func evaluate(ctx context.Context, e Entry, path string, r *repo.Repo, eff *conf
 		return run, err
 	}
 	run, err := once(r)
+	notes = withRunNotes(notes, run)
 	switch {
 	case err != nil:
 		return r, run, notes, err

@@ -114,7 +114,7 @@ func TestInitWritesConfigAndRefusesOverwrite(t *testing.T) {
 		t.Fatalf("init: code=%d out=%s err=%s", code, out, errOut)
 	}
 	b, err := os.ReadFile(filepath.Join(dir, ".fleetlint.yaml"))
-	if err != nil || !strings.Contains(string(b), "tier: 2") || !strings.Contains(string(b), "# discovered:") {
+	if err != nil || !strings.Contains(string(b), "tier: 2") || !strings.Contains(string(b), "# discovered:") || !strings.Contains(string(b), "scopes:") || !strings.Contains(string(b), "  - path: .\n    stacks: [go]\n") {
 		t.Fatalf("config content: %s %v", b, err)
 	}
 	code, _, errOut = runCLI(t, dir, "init")
@@ -468,7 +468,8 @@ func TestFixWritesForTheConfiguredTools(t *testing.T) {
 
 // init reports everything it will act on without being told: stacks, the
 // nested project, the task runner (and that there are two), the container.
-// Nothing of it needs pinning for check and fix to use it.
+// The stacks and the nested project are written as scopes, so the file says
+// what is checked; the task runner and the container stay detected.
 func TestInitPicksUpTheSetup(t *testing.T) {
 	t.Parallel()
 	dir := testutil.GitFixture(t, map[string]string{
@@ -483,17 +484,18 @@ func TestInitPicksUpTheSetup(t *testing.T) {
 		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
 	}
 	for _, want := range []string{
-		"stacks=[go]", "layout=nested", "taskrunner=just", "container=devcontainer",
-		"# scopes (each checked as its own project): frontend.",
-		"# task runners found: just, task. just is used; to choose another, add `scopes: [{path: ., taskrunner: <kind>}]`.",
+		"layout=nested", "taskrunner=just", "container=devcontainer",
+		"scopes:", "  - path: .\n    stacks: [go]\n  - path: frontend\n    stacks: [node]\n",
+		"# artifacts: none detected.",
+		"# task runners found: just, task. just is used; to choose another, set `taskrunner: <kind>` on the `path: .` entry of `scopes:`.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init output lacks %q:\n%s", want, out)
 		}
 	}
 	for _, line := range strings.Split(out, "\n") {
-		if !strings.HasPrefix(line, "#") && (strings.Contains(line, "taskrunner:") || strings.Contains(line, "container:") || strings.Contains(line, "scopes:")) {
-			t.Errorf("detected facts are not pinned: %q", line)
+		if !strings.HasPrefix(line, "#") && (strings.Contains(line, "taskrunner:") || strings.Contains(line, "container:") || strings.Contains(line, "artifacts:")) {
+			t.Errorf("the task runner, the container and an empty artifact list are not pinned: %q", line)
 		}
 	}
 	_, facts, _ := runCLI(t, dir, "facts")
@@ -593,5 +595,44 @@ func TestFixWithoutAStack(t *testing.T) {
 		if err := yaml.Unmarshal(body, &doc); err != nil {
 			t.Errorf("%s is not valid YAML: %v", name, err)
 		}
+	}
+}
+
+// init lists what the release publishes under facts.artifacts, with the
+// workflows, so a reader sees what the release rules check; the list
+// replaces detection, and check notes an image that appears later.
+func TestInitListsArtifactsAndCheckNotesDrift(t *testing.T) {
+	t.Parallel()
+	build := func(image string) string {
+		return "on:\n  push:\n    tags: ['v*']\njobs:\n  r:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: docker/build-push-action@v6\n        with:\n          push: true\n          tags: " + image + ":latest\n"
+	}
+	dir := testutil.GitFixture(t, map[string]string{
+		"go.mod":                          "module x\n\ngo 1.26.0\n",
+		".github/workflows/release.yml":   build("ghcr.io/x/${{ github.repository }}"),
+		".github/workflows/release-2.yml": build("ghcr.io/x/b"),
+	}).Root
+	code, out, errOut := runCLI(t, dir, "init", "--tier", "1")
+	if code != cli.ExitOK {
+		t.Fatalf("exit %d\n%s\n%s", code, out, errOut)
+	}
+	want := "  artifacts:   # what the release publishes, as detected at init\n" +
+		"    - kind: image\n      name: ghcr.io/x/b\n      workflows: [.github/workflows/release-2.yml]\n" +
+		"    - kind: image\n      name: \"ghcr.io/x/${{ github.repository }}\"\n      workflows: [.github/workflows/release.yml]\n"
+	if !strings.Contains(out, want) {
+		t.Errorf("init output lacks\n%s\ngot:\n%s", want, out)
+	}
+	if _, facts, _ := runCLI(t, dir, "facts"); !strings.Contains(facts, "configured") || !strings.Contains(facts, "image ghcr.io/x/b (.github/workflows/release-2.yml)") {
+		t.Errorf("facts must show the pinned artifacts:\n%s", facts)
+	}
+	_, _, errOut = runCLI(t, dir, "check")
+	if strings.Contains(errOut, "detection also finds") {
+		t.Errorf("the list init wrote matches detection; no note expected:\n%s", errOut)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".github/workflows/release-3.yml"), []byte(build("ghcr.io/x/c")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, errOut = runCLI(t, dir, "check")
+	if !strings.Contains(errOut, "fleetlint: .fleetlint.yaml: facts.artifacts lists image ghcr.io/x/b, image ghcr.io/x/${{ github.repository }}; detection also finds image ghcr.io/x/c (.github/workflows/release-3.yml). List it there, or leave it out on purpose") {
+		t.Errorf("check must note the image the list lacks:\n%s", errOut)
 	}
 }

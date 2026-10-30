@@ -35,6 +35,10 @@ type Run struct {
 	ScopeExceptions []model.Exception
 	// Baseline describes the ratchet file, when one is configured.
 	Baseline *BaselineInfo
+	// Notes say what detection finds beyond the configured stacks and
+	// artifacts: a pin replaces detection, so the configuration should
+	// list them or leave them out knowingly.
+	Notes []string
 }
 
 // BaselineInfo summarizes how the baseline applied to this run.
@@ -76,10 +80,11 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 	ov.DetectedVisibility = opts.Visibility
 	ov.FleetTier = opts.Tier
 	root := facts.Discover(r, ov)
-	if err := detectArtifacts(ctx, r, &root, eff, ov.Artifacts); err != nil {
+	notes, err := detectArtifacts(ctx, r, &root, eff, ov.Artifacts)
+	if err != nil {
 		return nil, err
 	}
-	run := &Run{Facts: root, Config: eff}
+	run := &Run{Facts: root, Config: eff, Notes: notes}
 
 	sub := resolveScopes(root, eff)
 	scopes := make([]config.Scope, 0, 1+len(sub))
@@ -96,6 +101,7 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 			return nil, err
 		}
 		run.Scopes = append(run.Scopes, ScopeRun{Path: sc.Path, Facts: f})
+		run.Notes = append(run.Notes, stackNotes(sc.Path, f)...)
 		run.ScopeExceptions = append(run.ScopeExceptions, sc.Exceptions...)
 		results, err := evaluateScope(ctx, sr, f, eff, sc, hostsMembers, opts)
 		if err != nil {
@@ -112,24 +118,95 @@ func EvaluateWith(ctx context.Context, r *repo.Repo, eff *config.Effective, opts
 // detectArtifacts fills the root's published artifacts from the catalog's
 // definitions, or from the pinned list. Detection needs the rule environment
 // (workflows, steps), so it runs after the other facts.
-func detectArtifacts(ctx context.Context, r *repo.Repo, root *facts.Facts, eff *config.Effective, pinned *[]facts.Artifact) error {
+// detectArtifacts sets the root's artifacts from detection or the pin.
+// With a pin, detection still runs, and what it finds beyond the pin is
+// returned as notes; a detection error is a note too, since the pin is
+// what the run goes by.
+func detectArtifacts(ctx context.Context, r *repo.Repo, root *facts.Facts, eff *config.Effective, pinned *[]facts.Artifact) ([]string, error) {
 	if len(eff.Artifacts) == 0 && pinned == nil {
-		return nil
+		return nil, nil
 	}
 	env, err := celenv.New(ctx, r, *root)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	found, err := artifacts.Detect(env, eff.Artifacts, pinned)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	root.Artifacts = found
 	root.Sources["artifacts"] = facts.SourceDetected
-	if pinned != nil {
-		root.Sources["artifacts"] = facts.SourceConfigured
+	if pinned == nil {
+		return nil, nil
 	}
-	return nil
+	root.Sources["artifacts"] = facts.SourceConfigured
+	detected, err := artifacts.Detect(env, eff.Artifacts, nil)
+	if err != nil {
+		return []string{fmt.Sprintf("facts.artifacts is used as written; detection failed: %v", err)}, nil
+	}
+	return artifactNotes(found, detected), nil
+}
+
+// artifactNotes says which detected artifacts the pin does not cover: a
+// kind and name the pin lacks, or a workflow it does not list for a named
+// artifact. A pinned kind without a name covers every instance of the kind.
+func artifactNotes(pinned, detected []facts.Artifact) []string {
+	var extra []string
+	for _, d := range detected {
+		p, ok := covering(pinned, d)
+		switch {
+		case !ok:
+			extra = append(extra, d.String()+" ("+strings.Join(d.Workflows, ", ")+")")
+		case p.Name != "":
+			for _, w := range d.Workflows {
+				if !slices.Contains(p.Workflows, w) {
+					extra = append(extra, d.String()+" from "+w)
+				}
+			}
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	listed := "says nothing is published"
+	if len(pinned) > 0 {
+		names := make([]string, 0, len(pinned))
+		for _, p := range pinned {
+			names = append(names, p.String())
+		}
+		listed = "lists " + strings.Join(names, ", ")
+	}
+	return []string{fmt.Sprintf("facts.artifacts %s; detection also finds %s. List it there, or leave it out on purpose", listed, strings.Join(extra, ", "))}
+}
+
+func covering(pinned []facts.Artifact, d facts.Artifact) (facts.Artifact, bool) {
+	for _, p := range pinned {
+		if p.Kind == d.Kind && (p.Name == "" || p.Name == d.Name) {
+			return p, true
+		}
+	}
+	return facts.Artifact{}, false
+}
+
+// stackNotes says which detected stacks a directory's configured list
+// leaves out.
+func stackNotes(scope string, f facts.Facts) []string {
+	if f.Sources["stacks"] != facts.SourceConfigured {
+		return nil
+	}
+	var extra []string
+	for _, s := range f.DetectedStacks {
+		if !slices.Contains(f.Stacks, s) {
+			extra = append(extra, s)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	if scope == "" {
+		scope = "."
+	}
+	return []string{fmt.Sprintf("scopes %s: stacks [%s] are configured; detection also finds %s. List it there, or leave it out on purpose", scope, strings.Join(f.Stacks, ", "), strings.Join(extra, ", "))}
 }
 
 func applyBaseline(run *Run, r *repo.Repo, eff *config.Effective) error {

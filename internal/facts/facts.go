@@ -43,11 +43,14 @@ const (
 
 // Facts is the repo model rules evaluate against.
 type Facts struct {
-	Name       string     `json:"name"`
-	Stacks     []string   `json:"stacks"`
-	Forge      string     `json:"forge"`
-	ForgeHost  string     `json:"forge_host,omitempty"`
-	Visibility Visibility `json:"visibility"`
+	Name   string   `json:"name"`
+	Stacks []string `json:"stacks"`
+	// DetectedStacks is what detection found when Stacks is configured, so
+	// the engine can say what the configuration leaves out.
+	DetectedStacks []string   `json:"-"`
+	Forge          string     `json:"forge"`
+	ForgeHost      string     `json:"forge_host,omitempty"`
+	Visibility     Visibility `json:"visibility"`
 	// Container says where the task runner's targets run: `none` is the
 	// machine; `devcontainer` the repository's dev container (detected when a
 	// devcontainer.json exists); `docker` and `podman` an image run with that
@@ -243,7 +246,7 @@ func Discover(r *repo.Repo, ov Overrides) Facts {
 
 func applyOverrides(f *Facts, ov Overrides) {
 	if len(ov.Stacks) > 0 {
-		f.Stacks = ov.Stacks
+		f.DetectedStacks, f.Stacks = f.Stacks, ov.Stacks
 		f.Sources["stacks"] = SourceConfigured
 	}
 	if ov.Visibility != "" {
