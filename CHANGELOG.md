@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Configurations loaded in parallel (`fleet --jobs`) type-checked their rules' expressions concurrently, which raced inside cel-go's checker on its lazily built symbol catalog. Type-checking is serialized; each expression is still checked once per process.
+
 ## [0.10.1] - 2026-11-13
 
 ### Changed
