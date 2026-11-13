@@ -106,6 +106,9 @@ const interruptEvery = 100
 // per scope and repository. Every Env declares the same functions.
 var checked sync.Map
 
+// checkMu serializes type-checking: cel-go's checker copies its lazily built symbol catalog unsynchronized (v0.33).
+var checkMu sync.Mutex
+
 // checker is an Env without a repository, for type-checking only.
 var checker = sync.OnceValues(func() (*Env, error) { return New(context.Background(), nil, facts.Facts{}) })
 
@@ -206,6 +209,11 @@ func (e *Env) compile(expr string, want *cel.Type) (cel.Program, error) {
 }
 
 func (e *Env) check(key, expr string, want *cel.Type) (*cel.Ast, error) {
+	if ast, ok := checked.Load(key); ok {
+		return ast.(*cel.Ast), nil
+	}
+	checkMu.Lock()
+	defer checkMu.Unlock()
 	if ast, ok := checked.Load(key); ok {
 		return ast.(*cel.Ast), nil
 	}
