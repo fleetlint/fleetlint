@@ -5,9 +5,16 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-13
+
 ### Changed
 
 - Security updates of Go modules and the Go toolchain are released as a patch as soon as they are merged, without waiting for a maintainer ([ADR 0010](docs/adr/0010-security-patch-releases.md)). Release notes list them under Security.
+
+### Security
+
+- Update go toolchain directive to v1.27.4 (CVE-2026-97054, GO-2026-6859)
+- Update module golang.org/x/crypto to v0.59.0 (GO-2026-5932)
 
 ## [0.10.0] - 2026-10-30
 
