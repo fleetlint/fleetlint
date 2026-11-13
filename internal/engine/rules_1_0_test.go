@@ -223,6 +223,41 @@ func TestDevEnvironmentVersionVariables(t *testing.T) {
 	}
 }
 
+// A Nix environment counts with its lock file; without one it is an info
+// partial, and in a container mode the container is still required.
+func TestDevEnvironmentNix(t *testing.T) {
+	t.Parallel()
+	for files, want := range map[string]string{
+		"devbox.json devbox.lock": "satisfied by devbox",
+		"flake.nix flake.lock":    "satisfied by nix",
+		"devenv.yaml devenv.lock": "satisfied by nix",
+		"devenv.nix devenv.lock":  "satisfied by nix",
+		"shell.nix":               "satisfied by nix",
+		"devbox.json flake.lock":  "nix-unlocked",
+		"flake.nix devbox.lock":   "nix-unlocked",
+		"devenv.nix devenv.yaml":  "nix-unlocked",
+	} {
+		repo := map[string]string{"go.mod": "module x\n"}
+		for _, f := range strings.Fields(files) {
+			repo[f] = "{}\n"
+		}
+		s := status(t, run(t, repo, tier1Public), "repo/dev-environment")
+		switch {
+		case strings.HasPrefix(want, "satisfied"):
+			if s.Status != model.StatusPass || s.Evidence != want {
+				t.Errorf("%s: want %s, got %s %q %+v", files, want, s.Status, s.Evidence, s.Findings)
+			}
+		case s.Status != model.StatusFail || s.Severity != model.SeverityInfo || s.Findings[0].Evidence != want:
+			t.Errorf("%s: want info %s, got %s %s %+v", files, want, s.Status, s.Severity, s.Findings)
+		}
+	}
+	container := "version: 1\nextends: [fleetlint:recommended]\nfacts: {tier: 1, visibility: public, container: devcontainer}\n"
+	s := status(t, run(t, map[string]string{"go.mod": "module x\n", "flake.nix": "{}\n"}, container), "repo/dev-environment")
+	if s.Status != model.StatusFail || s.Severity != model.SeverityWarning || s.Findings[0].Evidence != "unsatisfied" {
+		t.Errorf("devcontainer mode needs the container, not a flake lock: %s %s %+v", s.Status, s.Severity, s.Findings)
+	}
+}
+
 // A Go module with a main package is an application: the API rule does not
 // apply. A library without the check fails; one with a documented fork via
 // docs/FORKS.md passes the forks rule however the replace line looks; a

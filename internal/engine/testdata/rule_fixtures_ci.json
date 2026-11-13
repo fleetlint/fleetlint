@@ -182,6 +182,16 @@
     ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: ./scripts/check.sh\n",
     "go.mod": "module x\n"
    }
+  },
+  {
+   "fail": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: devbox run check-fast\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".github/workflows/ci.yml": "on:\n  push:\n    branches: [main]\n  pull_request:\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: devbox run check\n",
+    "go.mod": "module x\n"
+   }
   }
  ],
  "ci/checkout-no-persist-credentials": [
@@ -727,6 +737,16 @@
    "pass": {
     "go.mod": "module x\n",
     "lefthook.yaml": "pre-push:\n  jobs:\n    - run: task check\n"
+   }
+  },
+  {
+   "fail": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: devbox run check-fast\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
+   },
+   "pass": {
+    ".pre-commit-config.yaml": "repos:\n  - repo: local\n    hooks:\n      - id: check\n        entry: devbox run check\n        language: system\n        pass_filenames: false\n        stages: [pre-push]\n",
+    "go.mod": "module x\n"
    }
   }
  ],

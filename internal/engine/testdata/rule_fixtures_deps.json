@@ -1373,6 +1373,16 @@
     ".devcontainer/devcontainer.json": "{\"image\": \"mcr.microsoft.com/devcontainers/cpp@sha256:abc\"}\n",
     "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n"
    }
+  },
+  {
+   "fail": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "devbox.json": "{\"packages\": [\"cmake@latest\", \"ninja\"]}\n"
+   },
+   "pass": {
+    "CMakeLists.txt": "cmake_minimum_required(VERSION 3.28)\nproject(x)\n",
+    "devbox.json": "{\"packages\": [\"gcc14\", \"cmake@latest\"]}\n"
+   }
   }
  ],
  "repo/toolchain-pinned/dotnet": [
@@ -1383,6 +1393,16 @@
    },
    "pass": {
     "global.json": "{\"sdk\": {\"version\": \"9.0.100\"}}\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"dotnet-sdk@latest\"]}\n",
+    "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"dotnet-sdk_9\"]}\n",
     "x.csproj": "<Project Sdk=\"Microsoft.NET.Sdk\"><ItemGroup><PackageReference Include=\"A\" Version=\"1.0.0\" /></ItemGroup></Project>\n"
    }
   }
@@ -1403,6 +1423,16 @@
    },
    "pass": {
     "pubspec.yaml": "name: x\nenvironment:\n  sdk: ^3.5.0\n  flutter: 3.27.1\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"flutter@latest\"]}\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"flutter@3.32.0\"]}\n",
+    "pubspec.yaml": "name: x\ndependencies:\n  http: ^1.0.0\n"
    }
   }
  ],
@@ -1435,6 +1465,36 @@
     ".mise.toml": "[tools]\ngo = \"1.24\"\n",
     "go.mod": "module x\n\ngo 1.24\n"
    }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"go@latest\", \"gopls@0.20.0\"]}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"go@1.27.4\", \"golangci-lint@latest\"]}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": {\"go\": \"latest\"}}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": {\"go\": {\"version\": \"1.27.4\", \"platforms\": [\"x86_64-linux\"]}}}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"go\"]}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"go_1_27\"]}\n",
+    "go.mod": "module x\n\ngo 1.24\n"
+   }
   }
  ],
  "repo/toolchain-pinned/hugo": [
@@ -1455,6 +1515,16 @@
    },
    "pass": {
     ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - uses: peaceiris/actions-hugo@v3\n        with:\n          hugo-version: '0.140.0'\n",
+    "hugo.toml": "baseURL = 'https://example.org/'\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": {\"hugo\": \"latest\"}}\n",
+    "hugo.toml": "baseURL = 'https://example.org/'\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": {\"hugo\": \"0.152.2\"}}\n",
     "hugo.toml": "baseURL = 'https://example.org/'\n"
    }
   }
@@ -1488,6 +1558,26 @@
     ".tool-versions": "java temurin-21.0.2+13.0.LTS\n",
     "pom.xml": "<project><modelVersion>4.0.0</modelVersion></project>\n"
    }
+  },
+  {
+   "fail": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "devbox.json": "{\"packages\": [\"jdk@latest\", \"gradle@8.10\"]}\n"
+   },
+   "pass": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "devbox.json": "{\"packages\": [\"jdk@21\"]}\n"
+   }
+  },
+  {
+   "fail": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "devbox.json": "{\"packages\": [\"temurin-bin\"]}\n"
+   },
+   "pass": {
+    "build.gradle": "plugins { id 'java' }\n",
+    "devbox.json": "{\"packages\": [\"temurin-bin-21\"]}\n"
+   }
   }
  ],
  "repo/toolchain-pinned/kotlin": [
@@ -1498,6 +1588,16 @@
    },
    "pass": {
     "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\nkotlin { jvmToolchain(21) }\n"
+   }
+  },
+  {
+   "fail": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "devbox.json": "{\"packages\": [\"jdk\"]}\n"
+   },
+   "pass": {
+    "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n",
+    "devbox.json": "{\"packages\": [\"jdk21\"]}\n"
    }
   }
  ],
@@ -1520,6 +1620,26 @@
     "mise.toml": "[tools]\nnode = \"22.11\"\n",
     "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
    }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"nodejs@latest\", \"nodePackages.pnpm@9.15.0\"]}\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"nodejs@22.11.0\"]}\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": {\"nodejs\": \"\"}}\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": {\"nodejs_22\": \"latest\"}}\n",
+    "package.json": "{\"name\": \"x\", \"dependencies\": {\"a\": \"1\"}}\n"
+   }
   }
  ],
  "repo/toolchain-pinned/php": [
@@ -1530,6 +1650,16 @@
    "pass": {
     ".php-version": "8.4\n",
     "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n"
+   }
+  },
+  {
+   "fail": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n",
+    "devbox.json": "{\"packages\": [\"php@latest\", \"php84Packages.composer@latest\"]}\n"
+   },
+   "pass": {
+    "composer.json": "{\"require\": {\"a/b\": \"^1\"}}\n",
+    "devbox.json": "{\"packages\": [\"php@8.4\"]}\n"
    }
   }
  ],
@@ -1554,6 +1684,26 @@
     ".tool-versions": "python 3.13.1\n",
     "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
    }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": [\"python3@latest\", \"python313Packages.pip@24.0\"]}\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": [\"python313\", \"uv@latest\"]}\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
+  },
+  {
+   "fail": {
+    "devbox.json": "{\"packages\": {\"python\": {\"version\": \"latest\"}}}\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   },
+   "pass": {
+    "devbox.json": "{\"packages\": {\"python\": \"3.13\"}}\n",
+    "pyproject.toml": "[project]\nname = \"x\"\ndependencies = [\"requests\"]\n"
+   }
   }
  ],
  "repo/toolchain-pinned/ruby": [
@@ -1574,6 +1724,26 @@
    "pass": {
     "Gemfile": "source 'https://rubygems.org'\nruby '3.4.1'\n"
    }
+  },
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "devbox.json": "{\"packages\": [\"ruby@latest\"]}\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "devbox.json": "{\"packages\": [\"ruby_3_4\"]}\n"
+   }
+  },
+  {
+   "fail": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "devbox.json": "{\"packages\": [\"rubyPackages_3_4.rake@13\"]}\n"
+   },
+   "pass": {
+    "Gemfile": "source 'https://rubygems.org'\ngem 'rails'\n",
+    "devbox.json": "{\"packages\": [\"ruby@3.4\"]}\n"
+   }
   }
  ],
  "repo/toolchain-pinned/rust": [
@@ -1584,6 +1754,16 @@
    "pass": {
     "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
     "rust-toolchain.toml": "[toolchain]\nchannel = \"1.90.0\"\n"
+   }
+  },
+  {
+   "fail": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "devbox.json": "{\"packages\": [\"rustup@1.28.2\"]}\n"
+   },
+   "pass": {
+    "Cargo.toml": "[package]\nname = \"x\"\n\n[dependencies]\nserde = \"1\"\n",
+    "devbox.json": "{\"packages\": {\"rustc\": \"1.86.0\", \"cargo\": \"1.86.0\"}}\n"
    }
   }
  ]

@@ -140,7 +140,7 @@ func TestAlteredTemplatesStillPass(t *testing.T) {
 		"bumped versions": {repo.RunnerMake, facts.ContainerNone, "", []func(*testing.T, map[string]string){
 			replace(workflow, "3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1", "0123456789abcdef0123456789abcdef01234567 # v8.0.0"),
 			replace(hooks, "rev: v8.30.1", "rev: v9.0.0"),
-			replace(hooks, "rev: v4.4.0", "rev: v5.1.0"),
+			replace(hooks, "rev: v4.5.0", "rev: v5.1.0"),
 		}},
 		"no shell hooks, own hooks added": {repo.RunnerMake, facts.ContainerNone, "", []func(*testing.T, map[string]string){
 			cut(hooks, "  # Shell scripts (drop if the repo has none)", "  # Repository setup policy"),
