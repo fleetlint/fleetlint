@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-13
+
 ### Changed
 
 - Catalog 0.7.0: devbox counts as a development environment with `devbox.lock`, and `devbox.json` naming a stack's package with a version pins its toolchain (`go@1.27.4`, `nodejs_22`; `@latest` does not count); `devbox run check` counts in CI and the pre-push hook. A Nix flake or devenv counts only with its lock file; without one `repo/dev-environment` reports the info `nix-unlocked`.
