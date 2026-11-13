@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Security updates of Go modules and the Go toolchain are released as a patch as soon as they are merged, without waiting for a maintainer ([ADR 0010](docs/adr/0010-security-patch-releases.md)). Release notes list them under Security.
+
 ## [0.10.0] - 2026-10-30
 
 ### Changed

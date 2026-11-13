@@ -12,7 +12,7 @@ fleetlint:
   stage: test
   image: alpine:3.22
   variables:
-    FLEETLINT_VERSION: v0.10.0     # set by `make release` to the tag this file is part of
+    FLEETLINT_VERSION: v0.10.0     # set by scripts/release.sh to the tag this file is part of
     FLEETLINT_FAIL_ON: error
     FLEETLINT_VERIFY: cosign
   before_script:

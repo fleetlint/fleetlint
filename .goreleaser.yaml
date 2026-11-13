@@ -153,16 +153,20 @@ changelog:
   use: git
   sort: asc
   groups:
+    - title: Security
+      regexp: '(?i)\[security\]'
+      order: 0
     - title: Features
       regexp: '^feat(\(.*\))?!?:'
-      order: 0
+      order: 1
     - title: Fixes
       regexp: '^fix(\(.*\))?!?:'
-      order: 1
+      order: 2
     - title: Other
       order: 999
   filters:
-    exclude: ['^chore', '^docs', '^test', '^ci', '^style', '^refactor']
+    # include, not exclude: security updates are chore(deps) commits
+    include: ['(?i)\[security\]', '^feat', '^fix', '^perf']
 
 release:
   draft: false

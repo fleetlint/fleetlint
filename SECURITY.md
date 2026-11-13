@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The latest minor release. Older releases do not receive fixes.
+The latest minor release. Older releases do not receive fixes. Security updates of Go modules and the Go toolchain are released as a patch automatically once they are merged ([ADR 0010](docs/adr/0010-security-patch-releases.md)).
 
 ## Reporting a vulnerability
 

@@ -15,6 +15,8 @@ conventional_commits = true
 filter_unconventional = true
 protect_breaking_commits = true
 commit_parsers = [
+  # Renovate's security updates are mostly chore(deps); they still bump the patch version.
+  { message = "(?i)\\[security\\]", group = "<!-- 5 -->Security" },
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
   { message = "^perf", group = "<!-- 2 -->Performance" },

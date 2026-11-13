@@ -1,0 +1,73 @@
+# A security update of go.mod or go.sum on main becomes a patch release (ADR 0010):
+# release commit + tag signed by the release bot, which release.yml publishes without review.
+# Actions are pinned to commit SHAs with `pinact run` (Renovate keeps the pins current).
+name: security-release
+on:
+  push:
+    branches: [main]
+    paths: [go.mod, go.sum]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-bot          # RELEASE_BOT_KEY: deploy key that may create v* tags; main only
+    permissions:
+      contents: read
+      pull-requests: read             # advisory IDs from the Renovate pull requests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main                   # the tip, not the pushed commit: a later push may already be there
+          fetch-depth: 0
+          persist-credentials: false
+      - name: git-cliff, pinned
+        env:
+          # renovate: datasource=pypi depName=git-cliff
+          GIT_CLIFF_VERSION: 2.14.2
+        run: pipx install "git-cliff==${GIT_CLIFF_VERSION}"
+      - name: Next version
+        id: next
+        run: |
+          set -euo pipefail
+          last=$(git describe --tags --abbrev=0 --match 'v*')
+          if [ -z "$(git log -i --grep='\[security\]' --format=%H "$last"..HEAD -- go.mod go.sum)" ]; then
+            echo "no security update of go.mod or go.sum since $last"
+            exit 0
+          fi
+          next=$(git-cliff --bumped-version 2>/dev/null)
+          if [ "${next%.*}" != "${last%.*}" ]; then
+            echo "::error::security updates since $last wait for a release, but main also has changes for $next: release it with make release"
+            exit 1
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+      - name: Release commit and signed tag, pushed with the release bot's key
+        if: steps.next.outputs.version != ''
+        env:
+          VERSION: ${{ steps.next.outputs.version }}
+          RELEASE_BOT_KEY: ${{ secrets.RELEASE_BOT_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          # https://api.github.com/meta ssh_keys
+          GITHUB_HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/release-bot"
+          (umask 077 && printf '%s\n' "$RELEASE_BOT_KEY" >"$key")
+          printf 'github.com %s\n' "$GITHUB_HOST_KEY" >"$RUNNER_TEMP/known_hosts"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config gpg.format ssh
+          git config user.signingkey "$key"
+          git config commit.gpgsign true
+          scripts/release.sh --security "$VERSION"
+          GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts" \
+            git push --atomic "git@github.com:${GITHUB_REPOSITORY}.git" HEAD:refs/heads/main "refs/tags/$VERSION"

@@ -14,6 +14,18 @@
     "enabled": true
   },
   "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "description": "merged when check passes; a go.mod/go.sum update then becomes a patch release (security-release.yml)",
+    "schedule": [
+      "at any time"
+    ],
+    "minimumReleaseAge": null,
+    "labels": [
+      "security"
+    ],
+    "automerge": true,
+    "platformAutomerge": false
+  },
   "packageRules": [
     {
       "description": "x/ modules carry the HTTP/2 and crypto fixes; govulncheck in CI fails on them even when indirect",

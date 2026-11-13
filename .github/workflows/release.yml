@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      bot: ${{ steps.signer.outputs.bot }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,12 +52,31 @@ jobs:
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "tag not on main"; exit 1; }
           make tools
           make check
+      - name: Signed by the release bot (security-release.yml)?
+        id: signer
+        run: |
+          # checkout may leave the tag lightweight; fetch the tag object itself
+          git fetch --force origin "+refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          if git -c gpg.ssh.allowedSignersFile=.github/release-bot.allowed_signers verify-tag "$GITHUB_REF_NAME"; then
+            echo "bot=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # A maintainer approves every release except the release bot's security patches (ADR 0010).
+  approve:
+    needs: verify
+    if: needs.verify.outputs.bot != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: release-approval   # GitHub: v* tags only, required reviewer; ignored on Gitea
+    steps:
+      - run: echo "approved"
 
   release:
-    needs: verify
+    needs: [verify, approve]
+    if: ${{ !cancelled() && needs.verify.result == 'success' && (needs.approve.result == 'success' || needs.approve.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    environment: release            # GitHub: v* tags only, required reviewer; ignored on Gitea
+    environment: release            # GitHub: v* tags only, holds the deploy keys; ignored on Gitea
     permissions:
       contents: write               # create the release and upload assets
       id-token: write               # GitHub only: keyless cosign + attestations (ignored on Gitea)
