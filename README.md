@@ -47,7 +47,7 @@ fleetlint fleet --discover ~/src --fix --apply --rule hooks/config-present   # o
 fleetlint baseline        # grandfather today's findings; from now on only new ones fail
 ```
 
-Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 configuration error, 3 internal error.
+Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 configuration or usage error, 3 internal error.
 
 Documentation: **[fleetlint.org](https://fleetlint.org/)** (source: [fleetlint/docs](https://github.com/fleetlint/docs)). The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it, and `fleetlint version` and every report say which; `fleetlint catalog version` shows the one a repository runs with. What the presets check and why is in [the baseline](https://fleetlint.org/baseline/), the tools per stack in [the stack profiles](https://fleetlint.org/stacks/), and the catalog behind the `slop/*` rules in [the slop catalog](https://fleetlint.org/slop/).
 

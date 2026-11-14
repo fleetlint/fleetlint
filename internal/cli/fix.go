@@ -63,6 +63,10 @@ func runFixPR(cmd *cobra.Command, g *globals, code *int, rules []string, c forge
 	}
 	res, err := fixpr.Open(cmd.Context(), r, fixpr.Options{Rules: rules, Require: g.require, Version: Version, Client: c})
 	out := cmd.OutOrStdout()
+	var ce *fixpr.ConfigError
+	if errors.As(err, &ce) {
+		return &configError{err}
+	}
 	if err != nil {
 		return err
 	}

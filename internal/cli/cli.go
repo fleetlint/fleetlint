@@ -88,7 +88,25 @@ func newRoot(g *globals, code *int, stdout, stderr io.Writer) *cobra.Command {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.AddCommand(checkCmd(g, code), factsCmd(g), explainCmd(g), hierarchyCmd(g), initCmd(g, code), fixCmd(g, code), fleetCmd(g, code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
+	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &configError{err} })
+	usageErrors(root)
 	return root
+}
+
+// usageErrors makes wrong arguments a configuration error, as an unknown
+// flag is, rather than an internal one.
+func usageErrors(cmd *cobra.Command) {
+	if valid := cmd.Args; valid != nil {
+		cmd.Args = func(c *cobra.Command, args []string) error {
+			if err := valid(c, args); err != nil {
+				return &configError{err}
+			}
+			return nil
+		}
+	}
+	for _, sub := range cmd.Commands() {
+		usageErrors(sub)
+	}
 }
 
 func classify(err error) int {

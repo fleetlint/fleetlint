@@ -2,6 +2,7 @@ package fixpr_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,5 +103,22 @@ func TestOpenWithNothingToFix(t *testing.T) {
 	})
 	if err != nil || res.Changes != 0 || opened {
 		t.Fatalf("a rule that is not loaded fixes nothing and opens nothing: %+v %v", res, err)
+	}
+}
+
+// A run refused for its configuration says so, so the CLI exits as for
+// any configuration error.
+func TestOpenRefusesConfigurationErrors(t *testing.T) {
+	t.Parallel()
+	dir, _ := published(t)
+	r, _ := repo.Open(context.Background(), dir)
+	_, err := fixpr.Open(context.Background(), r, fixpr.Options{Require: []string{"acme-baseline"}, GitEnv: testutil.GitEnv()[len(os.Environ()):]})
+	var ce *fixpr.ConfigError
+	if !errors.As(err, &ce) || !strings.Contains(err.Error(), "acme-baseline") {
+		t.Errorf("a missing required catalog: %v", err)
+	}
+	local := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"})
+	if _, err := fixpr.Open(context.Background(), local, fixpr.Options{}); !errors.As(err, &ce) {
+		t.Errorf("no remote: %v", err)
 	}
 }

@@ -55,6 +55,14 @@ type Options struct {
 	Open func(ctx context.Context, c forge.Client, dir, kind, remote string, pr forge.PullRequest) (forge.Opened, error)
 }
 
+// ConfigError is a run refused for its configuration: no remote to open the
+// pull request on, or a default branch whose configuration does not load
+// or lacks a required catalog.
+type ConfigError struct{ Err error }
+
+func (e *ConfigError) Error() string { return e.Err.Error() }
+func (e *ConfigError) Unwrap() error { return e.Err }
+
 // Result says what a run did.
 type Result struct {
 	// Changes is how many changes the commit holds; 0 means nothing was
@@ -135,7 +143,7 @@ func Open(ctx context.Context, r *repo.Repo, opts Options) (Result, error) {
 func target(r *repo.Repo, opts Options) (remote, kind string, _ Options, _ error) {
 	remote = r.RemoteURL()
 	if !r.HasGit() || remote == "" {
-		return "", "", opts, errors.New("--pr needs a git repository with a remote named origin")
+		return "", "", opts, &ConfigError{errors.New("--pr needs a git repository with a remote named origin")}
 	}
 	kind = opts.Client.KindOf(remote, forgeKind(r, remote))
 	opts.Client = opts.Client.ForRemote(kind, remote)
@@ -182,7 +190,7 @@ func plan(ctx context.Context, wt *repo.Repo, opts Options) (*engine.Run, []fix.
 		err = eff.Requires(opts.Require)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, &ConfigError{err}
 	}
 	run, err := engine.Evaluate(ctx, wt, eff)
 	if err != nil {

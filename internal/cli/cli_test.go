@@ -328,6 +328,18 @@ func TestRequireFlag(t *testing.T) {
 	}
 }
 
+// Unknown flags, wrong arguments and a fix --pr refused for its
+// configuration are configuration errors, not internal ones.
+func TestUsageErrorsAreConfigErrors(t *testing.T) {
+	t.Parallel()
+	dir := messyRepo(t)
+	for _, args := range [][]string{{"--bogus"}, {"check", "--bogus"}, {"explain"}, {"schema", "config", "extra"}, {"fix", "--apply", "--pr"}} {
+		if code, _, errOut := runCLI(t, dir, args...); code != cli.ExitConfig {
+			t.Errorf("%v: exit %d, want %d (%s)", args, code, cli.ExitConfig, errOut)
+		}
+	}
+}
+
 // A finding is starred only when fix can repair it in this repository: a
 // tracked junk file can be untracked, a Makefile that exists is not replaced.
 func TestCheckMarksFixableFindings(t *testing.T) {
