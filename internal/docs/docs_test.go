@@ -65,6 +65,22 @@ func TestCapabilityPagesHaveNoCombine(t *testing.T) {
 	}
 }
 
+// A computed locate is never raw CEL inside a sentence.
+func TestLocateIsProse(t *testing.T) {
+	t.Parallel()
+	pages := generated(t)
+	for path, text := range pages {
+		for _, line := range strings.Split(text, "\n") {
+			if strings.HasPrefix(line, "A finding") && strings.ContainsAny(line, "()[]?") {
+				t.Errorf("%s: %s", path, line)
+			}
+		}
+	}
+	if page := pages["rules/hooks--secret-scan.md"]; !strings.Contains(page, "points at the first existing file of `.pre-commit-config.yaml`, `lefthook.yml`") {
+		t.Errorf("hooks/secret-scan:\n%s", page)
+	}
+}
+
 // The CEL reference lists the extension functions the environment enables.
 func TestCELReferenceListsExtensions(t *testing.T) {
 	t.Parallel()

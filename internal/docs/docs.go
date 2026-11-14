@@ -79,20 +79,25 @@ func prose(text string) string {
 	return strings.Join(parts, "`")
 }
 
-// writeSources is the end of a rule page: where a finding points, and the
-// sources the rule cites.
-func writeSources(b *bytes.Buffer, r model.Rule) {
-	switch lit := strings.Trim(r.Locate, `"`); {
-	case r.Locate == "":
-	case `"`+lit+`"` == r.Locate && !strings.Contains(lit, `"`):
-		fmt.Fprintf(b, "A finding of this rule points at `%s`.\n\n", lit)
-	default:
-		fmt.Fprintf(b, "A finding of this rule points at the file `%s` yields.\n\n", r.Locate)
+// writeLocate says where a finding without a file of its own points.
+func writeLocate(b *bytes.Buffer, r model.Rule) {
+	if r.Locate == "" {
+		return
 	}
-	fmt.Fprintf(b, "## Sources\n\n%s\n", strings.Join(refLinks(r.Refs), "\n"))
+	if text, ok := locateText(r.Locate, r.Params); ok {
+		fmt.Fprintf(b, "A finding that names no file points at %s.\n\n", text)
+		return
+	}
+	fmt.Fprintf(b, "A finding that names no file points at the file this expression yields:\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.Locate))
 }
 
-// refLinks writes URLs so that Markdown renders them as links.
+// writeSources lists the sources the rule cites.
+func writeSources(b *bytes.Buffer, refs []model.Ref) {
+	if len(refs) > 0 {
+		fmt.Fprintf(b, "## Sources\n\n%s\n", strings.Join(refLinks(refs), "\n"))
+	}
+}
+
 // refLinks renders the sources as Markdown list items: the link, then
 // the kind and the section where the rule states them.
 func refLinks(refs []model.Ref) []string {
@@ -315,9 +320,8 @@ func rulePage(r model.Rule) []byte {
 	if len(r.Fix.Actions) > 0 {
 		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
 	}
-	if len(r.Refs) > 0 {
-		writeSources(&b, r)
-	}
+	writeLocate(&b, r)
+	writeSources(&b, r.Refs)
 	// Exactly one trailing newline, whichever section came last.
 	return append(bytes.TrimRight(b.Bytes(), "\n"), '\n')
 }
