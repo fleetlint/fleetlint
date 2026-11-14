@@ -17,8 +17,9 @@ import (
 // lists its catalogs in the order they applied, with their pins. 5: a rule's
 // refs are objects {url, kind, section}. 6: a published artifact in
 // facts.artifacts carries its name, a finding its anchor and artifact, a
-// repository its notes.
-const jsonFormat = 6
+// repository its notes. 7: a repository says where its team came from
+// (team_from) and names the catalog version it pinned (catalog).
+const jsonFormat = 7
 
 type reportOut struct {
 	Version     int                   `json:"version"`
@@ -36,8 +37,10 @@ type reportOut struct {
 type repoOut struct {
 	Name       string            `json:"name"`
 	Team       string            `json:"team,omitempty"`
+	TeamFrom   string            `json:"team_from,omitempty"`
 	Group      string            `json:"group,omitempty"`
 	Source     string            `json:"source"`
+	Catalog    string            `json:"catalog,omitempty"`
 	Git        *GitState         `json:"git,omitempty"`
 	Facts      facts.Facts       `json:"facts"`
 	Compliance float64           `json:"compliance"`
@@ -79,7 +82,7 @@ func (rep *Report) MarshalJSON() ([]byte, error) {
 	variants := map[string][]string{} // id -> keys in definitions, first is the id itself
 	for _, r := range rep.Repos {
 		ro := repoOut{
-			Name: r.Name, Team: r.Team, Group: r.Group, Source: r.Source, Git: r.Git, Facts: r.Facts,
+			Name: r.Name, Team: r.Team, TeamFrom: r.TeamFrom, Group: r.Group, Source: r.Source, Catalog: r.Catalog, Git: r.Git, Facts: r.Facts,
 			Compliance: r.Compliance(), Fixable: r.Fixable(), Summary: r.Summary,
 			Disabled: r.Disabled, Weakened: r.Weakened, Exceptions: r.Exceptions, Catalogs: r.Catalogs, Notes: r.Notes, Err: r.Err,
 			Results: make([]resultOut, 0, len(r.Results)),

@@ -140,6 +140,27 @@ func TestJSONStoresDefinitionsOnce(t *testing.T) {
 	}
 }
 
+func TestJSONNamesPinnedCatalog(t *testing.T) {
+	t.Parallel()
+	rep := triageReport()
+	rep.Repos[0].Catalog = "v0.7.0"
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Repos []struct {
+			Catalog *string `json:"catalog"`
+		} `json:"repos"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	if c := out.Repos[0].Catalog; c == nil || *c != "v0.7.0" || out.Repos[1].Catalog != nil {
+		t.Fatalf("only the repository that pinned a catalog names it: %s", b)
+	}
+}
+
 func TestGitStateStale(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)

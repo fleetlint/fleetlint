@@ -2,6 +2,7 @@ package fleet_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -505,6 +506,26 @@ func TestTeamFromTheRepositoryFiles(t *testing.T) {
 	for _, rr := range rep.Repos {
 		if got := rr.Team + " / " + rr.TeamFrom; got != want[rr.Name] {
 			t.Errorf("%s: team %q, want %q", rr.Name, got, want[rr.Name])
+		}
+	}
+	// fleet.json says the same.
+	b, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		Repos []struct {
+			Name     string `json:"name"`
+			Team     string `json:"team"`
+			TeamFrom string `json:"team_from"`
+		} `json:"repos"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range out.Repos {
+		if got := r.Team + " / " + r.TeamFrom; got != want[r.Name] {
+			t.Errorf("fleet.json %s: team %q, want %q", r.Name, got, want[r.Name])
 		}
 	}
 }

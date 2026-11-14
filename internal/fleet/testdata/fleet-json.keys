@@ -66,6 +66,7 @@
 .repos[].summary.rule_errors
 .repos[].summary.warnings
 .repos[].team
+.repos[].team_from
 .rules
 .teams
 .teams[].compliance
