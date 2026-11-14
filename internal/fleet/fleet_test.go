@@ -186,6 +186,35 @@ func TestURLEntryDefaultsToTheUserCache(t *testing.T) {
 	}
 }
 
+// A relative cache: resolves against its fleet file, like path entries; an
+// included file's against the included file.
+func TestSpecCacheIsRelativeToTheFleetFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "teams"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"fleet.yaml":   "version: 1\ninclude: [teams/a.yaml]\nrepos:\n  - path: ../x\n",
+		"teams/a.yaml": "version: 1\ncache: .clones\nrepos:\n  - url: https://example.com/org/a.git\n",
+		"home.yaml":    "version: 1\ncache: ~/clones\nrepos:\n  - path: x\n",
+		"top.yaml":     "version: 1\ncache: clones\nrepos:\n  - path: x\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for file, want := range map[string]string{"fleet.yaml": filepath.Join(dir, "teams", ".clones"), "top.yaml": filepath.Join(dir, "clones"), "home.yaml": "~/clones"} {
+		spec, err := fleet.LoadSpec(filepath.Join(dir, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Cache != want {
+			t.Errorf("%s: cache %q, want %q", file, spec.Cache, want)
+		}
+	}
+}
+
 func TestSpecNamesAreSafeAndUnique(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -36,9 +36,10 @@ import (
 
 // Spec is the fleet file: which repositories to check.
 type Spec struct {
-	Version int     `yaml:"version"`
-	Cache   string  `yaml:"cache,omitempty"`
-	Repos   []Entry `yaml:"repos"`
+	Version int `yaml:"version"`
+	// Cache is where url entries are cloned, relative to the fleet file.
+	Cache string  `yaml:"cache,omitempty"`
+	Repos []Entry `yaml:"repos"`
 	// Include names other fleet files, relative to this one: a team's fleet
 	// inside the organisation's. Their repositories are added with their own
 	// defaults and groups settled first; this file's defaults fill what
@@ -159,6 +160,7 @@ func loadSpecFrom(path string, seen map[string]bool) (*Spec, error) {
 		}
 	}
 	base := filepath.Dir(path)
+	s.resolveCache(base)
 	names := map[string]bool{}
 	for i := range s.Repos {
 		e := &s.Repos[i]
@@ -174,6 +176,14 @@ func loadSpecFrom(path string, seen map[string]bool) (*Spec, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+// resolveCache reads a relative cache: against the fleet file's directory,
+// as path entries are.
+func (s *Spec) resolveCache(base string) {
+	if s.Cache != "" && !filepath.IsAbs(s.Cache) && !strings.HasPrefix(s.Cache, "~/") {
+		s.Cache = filepath.Join(base, s.Cache)
+	}
 }
 
 // loadIncludes reads each included fleet file and takes its repositories,
