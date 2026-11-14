@@ -2,7 +2,7 @@
 
 # fleetlint
 
-Policy for a fleet of repositories. fleetlint checks how a repository is set up (hooks, task runner, lint configuration, CI, release pipeline) against a catalog of rules, reports how far it is from compliant, and tells you or your coding agent exactly how to close each gap.
+Policy for a fleet of repositories. fleetlint checks how a repository is set up (hooks, task runner, lint configuration, CI, release pipeline) against a catalog of rules, reports how far it is from compliant, and tells you or your coding agent how to close each gap.
 
 It does not lint code. It checks that the things which lint, test, build and release the code are present, wired together and configured the way you decided they should be, in every repository, the same way.
 
@@ -51,32 +51,29 @@ Exit codes: 0 clean, 1 findings at or above `--fail-on` (default `error`), 2 con
 
 Documentation: **[fleetlint.org](https://fleetlint.org/)** (source: [fleetlint/docs](https://github.com/fleetlint/docs)). The presets and the templates live in their own repository, [fleetlint/catalog](https://github.com/fleetlint/catalog); every binary embeds one version of it, and `fleetlint version` and every report say which; `fleetlint catalog version` shows the one a repository runs with. What the presets check and why is in [the baseline](https://fleetlint.org/baseline/), the tools per stack in [the stack profiles](https://fleetlint.org/stacks/), and the catalog behind the `slop/*` rules in [the slop catalog](https://fleetlint.org/slop/).
 
-Organizations: a baseline catalog builds on the presets and adjusts them with `overrides:` (lock a rule, set a `min_severity` floor, forbid `exceptions`, change severity or parameters) without restating them; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs the names `org` and `team/<name>`, and reports say which layer defined or weakened each rule. See [organisations](https://fleetlint.org/organisations/) and [fleet mode](https://fleetlint.org/fleet/). Hooks, CI and editors: [integrations](https://fleetlint.org/integrations/).
+Organizations: a baseline catalog builds on the presets and adjusts them with `overrides:` (lock a rule, set a `min_severity` floor, forbid exceptions and disabling with `exceptions: false`, change severity or parameters) without restating them; CI and fleet runs pass `--require <catalog>` so a repository cannot drop the baseline unnoticed. A sources file gives catalogs names such as `org` and `team/<name>`; catalogs apply in the order they are listed, and reports name the catalog, by its label, that defined or weakened each rule. See [organisations](https://fleetlint.org/organisations/) and [fleet mode](https://fleetlint.org/fleet/). Hooks, CI and editors: [integrations](https://fleetlint.org/integrations/).
 
 ## Configuration
 
-`.fleetlint.yaml` at the repository root (`fleetlint.yaml` is also accepted). Everything is optional; the whole policy is in this one file. Monorepos need nothing extra: workspace members from `go.work`, `pnpm-workspace.yaml`, `package.json` workspaces, Cargo `[workspace]`, `melos.yaml` and Gradle `settings.gradle` are discovered and evaluated as scopes, and so is a top-level directory with its own tracked manifest (a `frontend/` with a `package.json` next to a Go module); `scopes:` overrides the list, `scopes: []` disables it.
+`.fleetlint.yaml` at the repository root (`fleetlint.yaml` is also accepted). Only `version: 1` is required; everything else is optional, and an unknown key is a configuration error (exit 2). The whole policy of a repository is in this one file. Monorepos need nothing extra: workspace members from `go.work`, `pnpm-workspace.yaml`, `package.json` workspaces, Cargo `[workspace]`, `melos.yaml` and Gradle `settings.gradle` are discovered and evaluated as scopes, and so is a top-level directory with its own tracked manifest (a `frontend/` with a `package.json` next to a Go module); `scopes:` overrides the list, `scopes: []` disables it.
 
 ```yaml
 version: 1
-catalog: { version: v0.2.0 }                           # optional: another catalog version than the built-in one
 extends:
-  - fleetlint:recommended                              # built-in preset
-  - https://example.com/catalog.yaml#sha256-<digest>    # your own catalog, pinned
-  - git+https://git.example.com/org/standards.git//catalog.yaml@<commit>   # or from a git repository
+  - fleetlint:recommended          # built-in preset
 facts:
-  tier: 1            # 1 production/public, 2 personal tool, 3 experiment
+  tier: 1                          # 1 production or public, 2 a tool you rely on, 3 experiment
   visibility: public
-  taskrunner: just   # make, just, task, npm-scripts, gradle; default: the first one found
-  container: podman  # none, devcontainer, docker, podman; default: devcontainer if one exists, else none
-scopes:              # polyglot repositories: each path is evaluated as its own repo
-  - path: web/
-    facts: { stacks: [node] }
-rules:
+scopes:                            # each path is checked as a project of its stacks
+  - { path: ., stacks: [go], taskrunner: just }
+  - { path: web, stacks: [node] }
+overrides:                         # adjust rules the catalogs brought in
   hooks/pre-push-check: { enabled: false, reason: "CI runs the full check" }
   taskrunner/targets: { params: { required: [fmt, lint, test, check] } }
-  repo/arch-doc:     # inline rule
+rules:                             # the repository's own rules
+  - id: repo/arch-doc
     kind: expr
+    severity: warning
     expr: file("docs/ARCHITECTURE.md")
     message: "architecture doc missing"
     fix: { human: "write docs/ARCHITECTURE.md" }
@@ -87,7 +84,7 @@ exceptions:
     until: 2027-03-31
 ```
 
-Disabling a rule or lowering its severity requires a `reason`; both appear in the report. Exceptions cover individual findings, keep the rule running, and expire. Rule predicates are [CEL](https://cel.dev) over discovered facts and file accessors; see [writing rules](https://fleetlint.org/writing-rules/). The full reference for this file is [configuration](https://fleetlint.org/configuration/).
+`extends` also takes your own catalogs (https with a digest, git, oci), and `catalog: { version: v0.7.0 }` runs another version of the catalog than the built-in one. Disabling a rule or lowering its severity requires a `reason`; both appear in the report. Exceptions cover individual findings, keep the rule running, and expire. Rule predicates are [CEL](https://cel.dev) over discovered facts and file accessors; see [writing rules](https://fleetlint.org/writing-rules/). The full reference for this file is [configuration](https://fleetlint.org/configuration/).
 
 ## Development
 
