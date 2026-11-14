@@ -2,12 +2,9 @@ package engine_test
 
 import (
 	"context"
-	"io/fs"
 	"slices"
 	"strings"
 	"testing"
-
-	data "github.com/fleetlint/catalog"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
@@ -19,25 +16,10 @@ import (
 
 // A repository that pins a catalog version runs with that version's stacks,
 // artifacts and renamed ids: the whole catalog is fetched with git, cached
-// and checked against, here the built-in catalog served as a tag.
+// and checked against, here the built-in catalog module served as a tag.
 func TestPinnedCatalogVersionRunsEndToEnd(t *testing.T) {
 	t.Parallel()
-	files := map[string]string{"aliases.yaml": string(data.Aliases)}
-	for _, fsys := range []fs.FS{data.Presets, data.Rules, data.Stacks, data.Artifacts, data.Templates} {
-		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
-			b, err := fs.ReadFile(fsys, p)
-			files[p] = string(b)
-			return err
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	src := testutil.GitFixture(t, files).Root
-	testutil.Git(t, src, "tag", "v9.9.9")
+	src := testutil.BuiltinCatalogRepo(t, "v9.9.9")
 	pin := fetch.PinFetch(context.Background(), t.TempDir())
 	loader := catalog.Loader{FetchCatalog: func(_, rev string) (string, string, error) { return pin(src, rev) }}
 
