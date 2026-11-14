@@ -227,3 +227,24 @@ func TestForgeVisibilityIsLabelled(t *testing.T) {
 		t.Errorf("without the forge it is detected: %s", f.Sources["visibility"])
 	}
 }
+
+// The forge is read from the remote's host: github.com or a host named for
+// GitHub, a host named for GitLab, any other host Gitea; no remote, unknown.
+func TestForgeOf(t *testing.T) {
+	t.Parallel()
+	for remote, want := range map[string]string{
+		"https://github.com/acme/app.git":        "github",
+		"git@github.com:acme/app.git":            "github",
+		"https://github.acme.example/acme/app":   "github",
+		"git@GitHub.Acme.Example:acme/app.git":   "github",
+		"https://gitlab.com/acme/app.git":        "gitlab",
+		"ssh://git@gitlab.acme.example/acme/app": "gitlab",
+		"https://codeberg.org/acme/app.git":      "gitea",
+		"https://git.acme.example/acme/app.git":  "gitea",
+		"":                                       "unknown",
+	} {
+		if got, _ := facts.ForgeOf(remote); got != want {
+			t.Errorf("%q: %s, want %s", remote, got, want)
+		}
+	}
+}

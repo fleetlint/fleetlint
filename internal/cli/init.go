@@ -52,11 +52,12 @@ func initCmd(g *globals, code *int) *cobra.Command {
 // forge does not answer; the reason goes to stderr.
 func forgeVisibility(cmd *cobra.Command, c forge.Client, r *repo.Repo, f facts.Facts) facts.Visibility {
 	vis, host, err := lookupVisibility(cmd.Context(), c, r, f)
+	kind := c.KindOf(r.RemoteURL(), f.Forge)
 	switch {
 	case errors.Is(err, forge.ErrUnknownHost):
-		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s was not asked; left undetected (set GITEA_HOST=%s to let fleetlint ask it, or pin facts.visibility)\n", host, host) //nolint:errcheck // a note on stderr
+		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s was not asked; left undetected (%s to let fleetlint ask it, or pin facts.visibility)\n", host, forge.NameHint(kind, host)) //nolint:errcheck // a note on stderr
 	case errors.Is(err, forge.ErrNotFound):
-		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s does not show this repository without a token; left undetected (set GITHUB_TOKEN or GITEA_TOKEN, or pin facts.visibility)\n", host) //nolint:errcheck // a note on stderr
+		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: %s does not show this repository without a token; left undetected (set %s, or pin facts.visibility)\n", host, forge.TokenVar(kind)) //nolint:errcheck // a note on stderr
 	case err != nil:
 		fmt.Fprintf(cmd.ErrOrStderr(), "visibility: lookup on %s failed (%v); left undetected\n", host, err) //nolint:errcheck // a note on stderr
 	}

@@ -289,9 +289,10 @@ func ForgeOf(remote string) (forge, host string) {
 	}
 	host = remoteHost(remote)
 	switch {
-	case host == "github.com":
+	case strings.Contains(strings.ToLower(host), "github"):
+		// github.com or GitHub Enterprise Server on a host named for it.
 		return "github", host
-	case strings.Contains(host, "gitlab"):
+	case strings.Contains(strings.ToLower(host), "gitlab"):
 		return "gitlab", host
 	case host != "":
 		// Self-hosted without a reachable API check: assume Gitea/Forgejo,

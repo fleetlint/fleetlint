@@ -64,6 +64,15 @@ func (c Client) actionsServer() string {
 	return urlHost(c.getenv("GITHUB_SERVER_URL"))
 }
 
+// githubActionsServer is the host of the GitHub instance whose Actions run
+// this job: github.com or GitHub Enterprise Server.
+func (c Client) githubActionsServer() string {
+	if c.getenv("GITHUB_ACTIONS") != "true" || c.actionsServer() != "" {
+		return ""
+	}
+	return urlHost(c.getenv("GITHUB_SERVER_URL"))
+}
+
 // gitlabCIServer is the host of the GitLab instance running this CI job.
 func (c Client) gitlabCIServer() string {
 	if c.getenv("GITLAB_CI") != "true" {

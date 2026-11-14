@@ -1,10 +1,11 @@
 // Package forge talks to GitHub, Gitea (and Forgejo) and GitLab over their
 // REST APIs: which repositories an owner has, whether one is public, and,
 // the only write, opening or updating a pull request from a pushed branch.
-// A Gitea or self-hosted GitLab host is contacted only when the user named
-// it (GITEA_HOST, GITLAB_HOST or a --from source), since a repository's
-// remote, not the user, says which host that is; tokens go to those hosts
-// only. github.com and gitlab.com are always known.
+// A Gitea, self-hosted GitLab or GitHub Enterprise host is contacted only
+// when the user named it (GITEA_HOST, GITLAB_HOST, --forge or a --from
+// source) or the CI job runs on it, since a repository's remote, not the
+// user, says which host that is; tokens go to those hosts only. github.com
+// and gitlab.com are always known.
 package forge
 
 import (
@@ -87,21 +88,43 @@ type Client struct {
 	GivenToken string
 }
 
-// ErrUnknownHost means a Gitea or GitLab host the user did not name:
+// ErrUnknownHost means a self-hosted forge the user did not name:
 // fleetlint does not contact it, and never sends it a token.
-var ErrUnknownHost = errors.New("not contacted: name the host in GITEA_HOST (or GITLAB_HOST) to let fleetlint ask it")
+var ErrUnknownHost = errors.New("not contacted: name the host in GITEA_HOST, GITLAB_HOST or --forge to let fleetlint ask it")
+
+// NameHint says how the user names a self-hosted forge so fleetlint asks it.
+func NameHint(kind, host string) string {
+	switch kind {
+	case "github":
+		return "pass --forge github:" + host
+	case "gitlab":
+		return "set GITLAB_HOST=" + host
+	}
+	return "set GITEA_HOST=" + host
+}
+
+// TokenVar is the environment variable that holds the token for a forge kind.
+func TokenVar(kind string) string {
+	switch kind {
+	case "github":
+		return "GITHUB_TOKEN"
+	case "gitlab":
+		return "GITLAB_TOKEN"
+	}
+	return "GITEA_TOKEN"
+}
 
 // ErrRateLimited means the forge refused the request for its rate limit.
 var ErrRateLimited = errors.New("rate limited by the forge; a token raises the limit")
 
-// Trusted reports whether a Gitea or GitLab host was named by the user;
-// gitlab.com always is.
+// Trusted reports whether a self-hosted forge's host was named by the user
+// or runs this CI job; gitlab.com always is.
 func (c Client) Trusted(host string) bool {
 	if strings.EqualFold(host, gitlabHost) {
 		return true
 	}
 	named := append(strings.Split(c.getenv("GITEA_HOST"), ","), strings.Split(c.getenv("GITLAB_HOST"), ",")...)
-	named = append(named, c.Forge.Host, c.actionsServer(), c.gitlabCIServer())
+	named = append(named, c.Forge.Host, c.actionsServer(), c.githubActionsServer(), c.gitlabCIServer())
 	for _, h := range append(named, c.Hosts...) {
 		if h = strings.TrimSpace(h); h != "" && strings.EqualFold(h, host) {
 			return true
@@ -269,6 +292,12 @@ func (c Client) RemoteVisibility(ctx context.Context, kind, remote string) (publ
 
 func hasAPI(kind string) bool { return kind == "github" || kind == "gitea" || kind == "gitlab" }
 
+// known reports whether fleetlint may contact the host and send it a token:
+// github.com, gitlab.com and the hosts the user named.
+func (c Client) known(kind, host string) bool {
+	return (kind == "github" && strings.EqualFold(host, githubHost)) || c.Trusted(host)
+}
+
 func (c Client) get(ctx context.Context, kind, host, path string, into any) (http.Header, error) {
 	return c.do(ctx, http.MethodGet, kind, host, path, nil, into)
 }
@@ -276,7 +305,7 @@ func (c Client) get(ctx context.Context, kind, host, path string, into any) (htt
 // do sends one API request, with send as its JSON body, and decodes the
 // answer into into.
 func (c Client) do(ctx context.Context, method, kind, host, path string, send, into any) (http.Header, error) {
-	if (kind == "gitea" || kind == "gitlab") && !c.Trusted(host) {
+	if !c.known(kind, host) {
 		return nil, fmt.Errorf("%s: %w", host, ErrUnknownHost)
 	}
 	base, err := c.apiBase(kind, host)
@@ -355,8 +384,12 @@ func (c Client) apiBase(kind, host string) (string, error) {
 		// GITHUB_API_URL is GitHub's own variable: set in Actions and
 		// pointed at the instance on GitHub Enterprise Server; in Gitea and
 		// Forgejo Actions it points at that instance instead.
-		if base := c.getenv("GITHUB_API_URL"); base != "" && c.actionsServer() == "" {
+		onGitHub := strings.EqualFold(host, githubHost) || strings.EqualFold(host, c.githubActionsServer())
+		if base := c.getenv("GITHUB_API_URL"); base != "" && c.actionsServer() == "" && onGitHub {
 			return base, nil
+		}
+		if !strings.EqualFold(host, githubHost) {
+			return "https://" + host + "/api/v3", nil
 		}
 		return "https://api.github.com", nil
 	case "gitea":
@@ -444,15 +477,15 @@ func (c Client) Token(src Source) string { return c.token(src.Kind, src.Host) }
 func (c Client) HasToken(kind, host string) bool { return c.token(kind, host) != "" }
 
 // token returns the forge's token: --token for the forge it belongs to,
-// else from the environment: GITHUB_TOKEN or GH_TOKEN for GitHub (sent to
-// its API only), GITEA_TOKEN for a Gitea host (or GITHUB_TOKEN inside that
+// else from the environment: GITHUB_TOKEN or GH_TOKEN for github.com or a
+// GitHub Enterprise host the user named (sent to its API only), GITEA_TOKEN for a Gitea host (or GITHUB_TOKEN inside that
 // host's own Actions run) and GITLAB_TOKEN for a GitLab host the user
 // named.
 func (c Client) token(kind, host string) string {
 	switch {
 	case c.GivenToken != "" && c.tokenGoesTo(kind, host):
 		return c.GivenToken
-	case kind == "github":
+	case kind == "github" && c.known(kind, host):
 		if t := c.getenv("GITHUB_TOKEN"); t != "" {
 			return t
 		}

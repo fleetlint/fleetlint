@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,5 +107,49 @@ func TestForRemoteNamesTheHost(t *testing.T) {
 	}
 	if !c.ForRemote("gitea", remote).CanOpen("gitea", remote) {
 		t.Error("the remote's own host is named by the request")
+	}
+}
+
+// A GitHub Enterprise host is self-hosted: not contacted and sent no token
+// until named, then asked at its own API; in its own Actions run it is known.
+func TestGitHubEnterpriseHostIsContactedOnlyWhenNamed(t *testing.T) {
+	t.Parallel()
+	remote := "https://github.acme.example/acme/app.git"
+	env := map[string]string{"GITHUB_TOKEN": "gh"}
+	c := forge.Client{Getenv: func(k string) string { return env[k] }}
+	if _, _, _, err := c.RemoteVisibility(context.Background(), "github", remote); !errors.Is(err, forge.ErrUnknownHost) {
+		t.Errorf("an unnamed GitHub Enterprise host is not asked: %v", err)
+	}
+	if c.CanOpen("github", remote) || c.GitAuth("github", remote) != nil {
+		t.Error("GITHUB_TOKEN does not go to an unnamed host")
+	}
+	if !c.CanOpen("github", "https://github.com/acme/app.git") {
+		t.Error("github.com is always known")
+	}
+	if !c.ForRemote("github", remote).CanOpen("github", remote) {
+		t.Error("a pull request on the remote names its host")
+	}
+
+	var path string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": "app", "private": true})
+	}))
+	t.Cleanup(srv.Close)
+	host := strings.TrimPrefix(srv.URL, "https://")
+	named, err := forge.ParseNamed("github:" + srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nc := forge.Client{HTTP: srv.Client(), Forge: named, Getenv: c.Getenv}
+	if public, asked, _, err := nc.RemoteVisibility(context.Background(), "github", "https://"+host+"/acme/app.git"); err != nil || !asked || public || path != "/api/v3/repos/acme/app" {
+		t.Errorf("--forge github:<host> asks its API: public %v, asked %v, err %v, path %q", public, asked, err, path)
+	}
+
+	actions := forge.Client{Getenv: func(k string) string {
+		return map[string]string{"GITHUB_ACTIONS": "true", "GITHUB_SERVER_URL": "https://github.acme.example", "GITHUB_TOKEN": "job"}[k]
+	}}
+	if !actions.Trusted("github.acme.example") || !actions.CanOpen("github", remote) {
+		t.Error("in its own Actions run the GitHub Enterprise host is known")
 	}
 }

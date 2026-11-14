@@ -19,9 +19,10 @@ import (
 // repository. Its Lookup method is an Options.Visibility.
 type ForgeLookup struct {
 	Client  forge.Client
-	mu      sync.Mutex     // fleet checks repositories in parallel
-	hidden  map[string]int // host -> repositories it did not show
-	unnamed map[string]int // Gitea host -> repositories not asked, the user did not name it
+	mu      sync.Mutex        // fleet checks repositories in parallel
+	hidden  map[string]int    // host -> repositories it did not show
+	unnamed map[string]int    // self-hosted forge -> repositories not asked, the user did not name it
+	kinds   map[string]string // host -> its forge kind, for the hints
 	failed  []string
 }
 
@@ -32,9 +33,16 @@ func (v *ForgeLookup) Lookup(ctx context.Context, r *repo.Repo, f facts.Facts) f
 		return ""
 	}
 	remote := r.RemoteURL() //nolint:contextcheck // git lookups run under the repository's own bounded context
-	public, asked, host, err := v.Client.RemoteVisibility(ctx, v.Client.KindOf(remote, f.Forge), remote)
+	kind := v.Client.KindOf(remote, f.Forge)
+	public, asked, host, err := v.Client.RemoteVisibility(ctx, kind, remote)
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	if host != "" {
+		if v.kinds == nil {
+			v.kinds = map[string]string{}
+		}
+		v.kinds[host] = kind
+	}
 	switch {
 	case !asked:
 		return ""
@@ -66,14 +74,15 @@ func (v *ForgeLookup) Notes() []string {
 	defer v.mu.Unlock()
 	var out []string
 	for _, host := range slices.Sorted(maps.Keys(v.hidden)) {
-		hint := "GITEA_TOKEN"
-		if host == "github.com" {
-			hint = "GITHUB_TOKEN, e.g. GITHUB_TOKEN=$(gh auth token)"
+		hint := forge.TokenVar(v.kinds[host])
+		if v.kinds[host] == "github" {
+			hint += ", e.g. GITHUB_TOKEN=$(gh auth token)"
 		}
 		out = append(out, fmt.Sprintf("visibility: %s does not show %s without a token; left unknown (set %s, or visibility in the fleet file)", host, Plural(v.hidden[host], "repository", "repositories"), hint))
 	}
 	for _, host := range slices.Sorted(maps.Keys(v.unnamed)) {
-		out = append(out, fmt.Sprintf("visibility: %s was not asked about %s; left unknown (set GITEA_HOST=%s to let fleetlint ask it, and GITEA_TOKEN for private repositories)", host, Plural(v.unnamed[host], "repository", "repositories"), host))
+		kind := v.kinds[host]
+		out = append(out, fmt.Sprintf("visibility: %s was not asked about %s; left unknown (%s to let fleetlint ask it, and %s for private repositories)", host, Plural(v.unnamed[host], "repository", "repositories"), forge.NameHint(kind, host), forge.TokenVar(kind)))
 	}
 	if len(v.failed) > 0 {
 		out = append(out, "visibility: lookup failed for "+strings.Join(v.failed, ", ")+"; left unknown")

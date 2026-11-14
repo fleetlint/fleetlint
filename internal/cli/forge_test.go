@@ -152,3 +152,15 @@ func TestInitLooksUpVisibility(t *testing.T) {
 		t.Fatalf("a repository the forge hides stays undetected, with a note: exit %d\n%s\n%s", code, stdout, stderr)
 	}
 }
+
+// A remote on a host named for GitHub is GitHub Enterprise: the forge is
+// github, and the host is asked only once --forge names it.
+func TestInitOnAGitHubEnterpriseRemote(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "")
+	t.Setenv("FLEETLINT_FORGE", "")
+	dir := testutil.GitFixture(t, map[string]string{"go.mod": "module x\n"}, "remote.origin.url", "https://github.acme.example/acme/app.git").Root
+	code, stdout, stderr := runCLI(t, dir, "init")
+	if code != cli.ExitOK || !strings.Contains(stdout, "forge=github ") || !strings.Contains(stderr, "pass --forge github:github.acme.example to let fleetlint ask it") {
+		t.Fatalf("exit %d\n%s\n%s", code, stdout, stderr)
+	}
+}

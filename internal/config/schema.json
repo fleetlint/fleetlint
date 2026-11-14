@@ -256,6 +256,7 @@
           }
         },
         "forge": {
+          "description": "Detected from the origin remote: a host with github in its name is github, one with gitlab in its name gitlab, any other host gitea; no remote is unknown.",
           "enum": [
             "github",
             "gitea",
