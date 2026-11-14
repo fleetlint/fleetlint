@@ -5,6 +5,10 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- A git or OCI catalog to extend with `stacks/`, `artifacts/` or `aliases.yaml` next to it dropped them in silence; it now warns that they are ignored, since only a catalog version (`catalog: {version}` or `{oci}`) defines them. An `aliases.yaml` in an OCI artifact is no longer read as a catalog.
+
 ## [0.11.0] - 2026-11-15
 
 ### Added

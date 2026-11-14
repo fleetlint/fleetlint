@@ -71,6 +71,7 @@ Repository shapes
 
 Governance of fleetlint
 - Deprecation policy, schema version in every output, conformance tests for third-party catalogs (1.0 row above).
+- Decision for 1.0: may a catalog to extend (`git+`, `oci://`, a local directory) define more than rules and templates, such as its own artifacts, stacks or aliases? Today only the catalog version defines them (built in, `catalog: {version}` or `{oci}`), so an organisation's internal artifact kind needs a fork of the catalog; such files next to a catalog to extend are ignored with a warning. Allowing them needs merge rules against the version's definitions (add only, or replace), alias conflicts, an engine level and an ADR, and it changes a format 1.0 freezes.
 - Kubernetes-project conventions: `OWNERS`, `SECURITY_CONTACTS`, DCO or CLA check, published support matrix.
 
 Adoption

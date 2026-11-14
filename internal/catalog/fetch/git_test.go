@@ -191,3 +191,16 @@ func keys(files map[string][]byte) string {
 	sort.Strings(names)
 	return strings.Join(names, ",")
 }
+
+// stacks/ and artifacts/ next to a catalog are named, not read.
+func TestGitTreeFetchNamesVersionOnlyTrees(t *testing.T) {
+	t.Parallel()
+	dir, _ := gitRepo(t, map[string]string{"p/catalog.yaml": "c\n", "p/stacks/go.yaml": "s\n", "p/artifacts/x/a.yaml": "a\n"})
+	files, err := GitTreeFetch(context.Background())(dir, "v1.0.0", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := keys(files); got != "artifacts/,catalog.yaml,stacks/" || files["stacks/"] != nil {
+		t.Errorf("files: %s", got)
+	}
+}

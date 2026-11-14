@@ -99,9 +99,10 @@ func (l Loader) loadOCI(ref string) ([]*Catalog, error) {
 
 func catalogsFromArtifact(ref string, art *fetch.OCIArtifact) ([]*Catalog, error) {
 	templates, library := shippedFiles(art.Files)
+	ignored := versionOnly(art.Files)
 	var names []string
 	for name := range art.Files {
-		if !strings.Contains(name, "/") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
+		if name != aliasesFile && !strings.Contains(name, "/") && (strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".yml")) {
 			names = append(names, name)
 		}
 	}
@@ -118,6 +119,9 @@ func catalogsFromArtifact(ref string, art *fetch.OCIArtifact) ([]*Catalog, error
 		// Each file keeps its own digest, so the files of one artifact are
 		// distinct catalogs; Artifact names the manifest they came in.
 		c.Ref, c.Artifact, c.Templates, c.Library = ref, art.Digest, templates, library
+		if len(ignored) > 0 {
+			c.Warnings = append(c.Warnings, versionOnlyWarning(ref, ignored))
+		}
 		out = append(out, c)
 	}
 	return out, nil

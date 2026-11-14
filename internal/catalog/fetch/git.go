@@ -20,6 +20,10 @@ const (
 	TemplatesDir = "templates/"
 	// RulesDir is where a catalog keeps its rule library.
 	RulesDir = "rules/"
+	// StacksDir belongs to a catalog version; a catalog to extend cannot ship it.
+	StacksDir = "stacks/"
+	// ArtifactsDir belongs to a catalog version; a catalog to extend cannot ship it.
+	ArtifactsDir = "artifacts/"
 	// MaxFiles bounds the files read from one catalog source.
 	MaxFiles = 1024 // catalog v0.7.0 pins 439 files
 	// MaxTreeLen bounds the bytes read from one catalog directory with its templates/ and rules/.
@@ -70,7 +74,8 @@ func GitFetch(ctx context.Context) func(repoURL, rev, path string) ([]byte, erro
 // GitTreeFetch returns a FetchGitTree function for Loader: the files of one
 // directory at a tag or commit, by path relative to that directory. It
 // serves the catalog file and the templates/ and rules/ trees next to it in
-// one fetch.
+// one fetch. A stacks/ or artifacts/ tree is listed by its name alone, without
+// content, so the loader can say it is ignored.
 func GitTreeFetch(ctx context.Context) func(repoURL, rev, dir string) (map[string][]byte, error) {
 	return func(repoURL, rev, dir string) (map[string][]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, gitFetchTimeout)
@@ -92,7 +97,8 @@ func GitTreeFetch(ctx context.Context) func(repoURL, rev, dir string) (map[strin
 }
 
 // readTree returns the files of dir in the fetched revision: its own files
-// and the templates/ and rules/ trees below it, nothing else.
+// and the templates/ and rules/ trees below it, nothing else; stacks/ and
+// artifacts/ as an empty entry each.
 func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 	listing, err := gitOut(ctx, tmp, "ls-tree", "-r", "-z", "--name-only", treeObject(dir))
 	if err != nil {
@@ -101,6 +107,10 @@ func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 	files := map[string][]byte{}
 	total := 0
 	for _, name := range strings.Split(strings.TrimRight(string(listing), "\x00"), "\x00") {
+		if top := topDir(name); top == StacksDir || top == ArtifactsDir {
+			files[top] = nil
+			continue
+		}
 		if name == "" || (strings.Contains(name, "/") && !strings.HasPrefix(name, TemplatesDir) && !strings.HasPrefix(name, RulesDir)) {
 			continue
 		}
@@ -115,6 +125,14 @@ func readTree(ctx context.Context, tmp, dir string) (map[string][]byte, error) {
 		}
 	}
 	return files, nil
+}
+
+// topDir is the first directory of name with its slash, or "".
+func topDir(name string) string {
+	if i := strings.Index(name, "/"); i >= 0 {
+		return name[:i+1]
+	}
+	return ""
 }
 
 // treeObject names a path of the fetched revision; "" is the root tree.

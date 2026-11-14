@@ -226,3 +226,25 @@ func TestGitCatalogShipsRules(t *testing.T) {
 		t.Errorf("a tag pin warns about what it ignores: %v", w)
 	}
 }
+
+// A git catalog cannot define stacks, artifacts or aliases; a pin of either
+// kind says they are ignored instead of dropping them in silence.
+func TestGitCatalogWarnsAboutVersionOnlyFiles(t *testing.T) {
+	t.Parallel()
+	src := testutil.GitFixture(t, map[string]string{
+		"policy/catalog.yaml": gitCatalogBody, "policy/stacks/cobol.yaml": "id: cobol\n", "policy/aliases.yaml": "a: [b]\n",
+	}).Root
+	testutil.Git(t, src, "tag", "v1.0.0")
+	commit := testutil.Git(t, src, "rev-parse", "HEAD")
+	tree := fetch.GitTreeFetch(context.Background())
+	l := catalog.Loader{FetchGitTree: func(_, rev, dir string) (map[string][]byte, error) { return tree(src, rev, dir) }}
+	for _, ref := range []string{commit, "v1.0.0#sha256-" + catalog.Digest([]byte(gitCatalogBody))} {
+		cats, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@" + ref)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if w := cats[0].Warnings; len(w) != 1 || !strings.Contains(w[0], "stacks/, aliases.yaml ignored: only a catalog version defines them") {
+			t.Errorf("%s: %v", ref, w)
+		}
+	}
+}

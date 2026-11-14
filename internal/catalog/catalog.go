@@ -115,7 +115,7 @@ func (s *Source) Aliases() (map[string][]string, error) {
 	s.aliases.once.Do(func() {
 		b := s.aliasBytes
 		if b == nil && s.Rules != nil {
-			if fb, err := fs.ReadFile(s.Rules, "aliases.yaml"); err == nil {
+			if fb, err := fs.ReadFile(s.Rules, aliasesFile); err == nil {
 				b = fb
 			}
 		}
@@ -729,6 +729,9 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
 	c.Ref, c.Templates = ref, tree.templates
+	if len(tree.versionOnly) > 0 {
+		c.Warnings = append(c.Warnings, versionOnlyWarning(ref, tree.versionOnly))
+	}
 	if len(tree.ignored) > 0 {
 		c.Warnings = append(c.Warnings, fmt.Sprintf("catalog %s: %s ignored: a git catalog pinned to a tag ships only its catalog file; pin a full commit SHA to ship them", ref, strings.Join(tree.ignored, " and ")))
 	}
@@ -739,8 +742,9 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 type gitTree struct {
 	body               []byte
 	templates, library fs.FS
-	// ignored names the trees a tag pin leaves behind.
-	ignored []string
+	// ignored names the trees a tag pin leaves behind; versionOnly what only
+	// a catalog version defines.
+	ignored, versionOnly []string
 }
 
 // readGitTree reads a git catalog with the templates/ and rules/ trees next
@@ -767,9 +771,9 @@ func (l Loader) readGitTree(ref string) (gitTree, error) {
 	}
 	templates, library := shippedFiles(files)
 	if g.isCommit() {
-		return gitTree{body: b, templates: templates, library: library}, nil
+		return gitTree{body: b, templates: templates, library: library, versionOnly: versionOnly(files)}, nil
 	}
-	tree := gitTree{body: b}
+	tree := gitTree{body: b, versionOnly: versionOnly(files)}
 	if library != nil {
 		tree.ignored = append(tree.ignored, rulesDir)
 	}
@@ -777,6 +781,28 @@ func (l Loader) readGitTree(ref string) (gitTree, error) {
 		tree.ignored = append(tree.ignored, templatesDir)
 	}
 	return tree, nil
+}
+
+// versionOnly names what a catalog to extend carries next to it that only a
+// catalog version defines: stacks/, artifacts/ and aliases.yaml.
+func versionOnly(files map[string][]byte) []string {
+	var found []string
+	for _, p := range []string{fetch.StacksDir, fetch.ArtifactsDir, aliasesFile} {
+		for name := range files {
+			if name == p || (strings.HasSuffix(p, "/") && strings.HasPrefix(name, p)) {
+				found = append(found, p)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// aliasesFile is a catalog version's list of renamed rule ids.
+const aliasesFile = "aliases.yaml"
+
+func versionOnlyWarning(ref string, found []string) string {
+	return fmt.Sprintf("catalog %s: %s ignored: only a catalog version defines them; pin one with `catalog: {repo: ..., version: ...}` or `catalog: {oci: ...}`", ref, strings.Join(found, ", "))
 }
 
 // shippedFiles sorts a catalog's companion files into its templates/ and

@@ -403,3 +403,18 @@ func TestArtifactWithSeveralCatalogs(t *testing.T) {
 		t.Errorf("digests %s %s, artifact %s %s", cats[0].Digest, cats[1].Digest, cats[0].Artifact, cats[1].Artifact)
 	}
 }
+
+// An artifact to extend cannot define stacks, artifacts or aliases: they are
+// ignored with a warning, and aliases.yaml is not read as a catalog.
+func TestArtifactWarnsAboutVersionOnlyFiles(t *testing.T) {
+	t.Parallel()
+	cats, err := catalogsFromArtifact("oci://r/x@sha256:abc", &fetch.OCIArtifact{Digest: "abc", Files: map[string][]byte{
+		"a.yaml": []byte(ociCatalog), "aliases.yaml": []byte("x: [y]\n"), "artifacts/internal.yaml": []byte("id: internal\n"),
+	}})
+	if err != nil || len(cats) != 1 {
+		t.Fatalf("cats=%d err=%v", len(cats), err)
+	}
+	if w := cats[0].Warnings; len(w) != 1 || !strings.Contains(w[0], "artifacts/, aliases.yaml ignored") {
+		t.Errorf("warnings: %v", w)
+	}
+}
