@@ -5,6 +5,28 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `fleetlint docs` generates `cli-reference.md`: every command and flag, the exit codes, and the environment variables fleetlint reads (plus the install script's `FLEETLINT_VERIFY`). A test fails when the code reads a variable the table lacks.
+- The CEL reference lists the cel-go string and list extension functions, read from the environment the rules run in. The rule index has a "What runs at each tier" section.
+
+### Changed
+
+- `exceptions: false` also forbids disabling the rule: a later catalog, the repository, a scope or a nested file that switches it off is a configuration error (exit 2) naming the catalog that set the policy, so `fleetlint:strict`'s security rules can no longer be disabled. A configuration that disabled such a rule fails to load; remove the override.
+- Forge detection: a host with `github` in its name is `github` (GitHub Enterprise Server), one with `gitlab` in its name `gitlab`, any other host `gitea`. A GitHub Enterprise host is contacted, and sent `GITHUB_TOKEN`, only when named (`--forge github:<host>`, a pull request on its own remote, or its own Actions run), at `https://<host>/api/v3`.
+- `fleet.json` is `version: 7`: each repository carries `team_from` and the catalog version it pinned (`catalog`), which 0.9.0 and 0.3.0 promised.
+- `fleetlint docs` removes the pages it generated earlier and no longer generates, and `docs --check` fails on them; pages without its footer are left alone. Implementations that do not apply get a short page with the reason, implementation pages link their capability's fix instead of repeating it, a computed `locate` is described in words, and the capability pages no longer mention `combine`.
+- Catalog 0.8.0: `deps/license-check` accepts the Licensee Gradle plugin (`app.cash.licensee`) for Kotlin and Java; `slop/narration-comments` finds `Fixed:` and "as requested" in any case; `public/security-policy`, `public/code-of-conduct` and `public/contributing` count a file at the root only; `repo/codeowners` accepts `.gitlab/CODEOWNERS`; the requirements of `repo/editorconfig`, `repo/gitattributes`, `repo/codeowners` and seven more rules say what the rule checks; implementations no longer inherit a fix written for another stack or artifact.
+
+### Fixed
+
+- `catalog: {version: …}` failed every run with catalog 0.7.0 (`artifact "android-app" is not defined`): a pinned version now brings `stacks/`, `artifacts/` and `aliases.yaml`. Cache entries written by earlier versions are fetched again once.
+- A git catalog pinned to a full commit SHA never shipped its `rules/`; it does now. A tag-pinned git catalog with `rules/` or `templates/` next to it warns that they are ignored.
+- A catalog source may hold 1024 files instead of 512; catalog 0.7.0 already pins 439.
+- Fleet `url` entries without `cache:` or `--cache` clone into the user cache directory instead of being reported as not checked. A relative `cache:` resolves against the fleet file, like `path` entries.
+- Unknown flags and wrong arguments exit 2 instead of 3, and `fix --apply --pr` exits 2 for a configuration error, an unmet `--require` or a missing remote, as `fix --apply` does.
+- `init --help` and the schema call tier 2 "a tool you rely on", the schema no longer says everything is optional (`version` is required), and the README's configuration example loads; a test keeps it loading.
+
 ## [0.10.2] - 2026-11-13
 
 ### Changed
