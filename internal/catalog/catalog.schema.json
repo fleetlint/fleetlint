@@ -172,7 +172,7 @@
           },
           "exceptions": {
             "type": "boolean",
-            "description": "false forbids per-finding exceptions to the rule."
+            "description": "false forbids per-finding exceptions to the rule and disabling it."
           }
         }
       }
@@ -396,7 +396,7 @@
           },
           "exceptions": {
             "type": "boolean",
-            "description": "false forbids per-finding exceptions to the rule."
+            "description": "false forbids per-finding exceptions to the rule and disabling it."
           }
         }
       }

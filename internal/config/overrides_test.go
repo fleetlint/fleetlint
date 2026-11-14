@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
 	"github.com/fleetlint/fleetlint/internal/model"
 )
@@ -252,5 +253,54 @@ func TestRedefinitionKeepsForbiddenExceptions(t *testing.T) {
 	reopen := catHead("team-a", "") + "rules:\n" + inlineRule("acme/x", "team", "error") + "    exceptions: true\n"
 	if _, err := loadLayered(t, layered("", org, reopen)); err == nil {
 		t.Error("a redefinition cannot allow exceptions again")
+	}
+}
+
+// Disabling is the widest exception: a rule that forbids exceptions cannot
+// be switched off by a later catalog, the repository, a scope or a nested
+// file. Severity, params, when and tiers may still change.
+func TestForbiddenExceptionsForbidDisabling(t *testing.T) {
+	t.Parallel()
+	org := catHead("acme", ", includes: [\"fleetlint:minimal\"]") + "rules:\n" + inlineRule("acme/x", "org", "error") + "    exceptions: false\n" +
+		"overrides:\n  hooks/config-present: {exceptions: false}\n"
+	team := func(overrides string) string {
+		return catHead("team-a", "") + "rules: []\noverrides:\n" + overrides
+	}
+	rejected := map[string]struct{ team, repo, by string }{
+		"later catalog, policy by override": {team: team("  hooks/config-present: {enabled: false, reason: r}\n"), by: "acme@1.0.0"},
+		"later catalog, policy inline":      {team: team("  acme/x: {enabled: false, reason: r}\n"), by: "acme@1.0.0"},
+		"later catalog, pattern":            {team: team("  \"hooks/*\": {enabled: false, reason: r}\n"), by: "acme@1.0.0"},
+		"repository":                        {repo: "overrides:\n  acme/x: {enabled: false, reason: r}\n", by: "acme@1.0.0"},
+		"scope":                             {repo: "scopes:\n  - path: api\n    overrides:\n      hooks/config-present: {enabled: false, reason: r}\n", by: "acme@1.0.0"},
+	}
+	for name, c := range rejected {
+		_, err := loadLayered(t, layered(c.repo, org, c.team))
+		if err == nil || !strings.Contains(err.Error(), "forbids exceptions (set by "+c.by+") and cannot be disabled") {
+			t.Errorf("%s: disabling must be refused, naming %s: %v", name, c.by, err)
+		}
+	}
+	allowed := team("  hooks/config-present: {severity: warning, reason: r, tiers: [1]}\n  acme/x: {when: \"false\"}\n")
+	eff, err := loadLayered(t, layered("overrides:\n  acme/x: {severity: info, reason: r}\n", org, allowed))
+	if err != nil {
+		t.Fatalf("severity, when and tiers stay adjustable: %v", err)
+	}
+	// A nested file goes through ScopeRules.
+	if _, err := eff.ScopeRules("web", map[string]catalog.Override{"acme/x": {Enabled: new(false), Reason: "r"}}); err == nil || !strings.Contains(err.Error(), "cannot be disabled") {
+		t.Errorf("a nested file cannot disable it either: %v", err)
+	}
+}
+
+// fleetlint:strict's security rules are neither excepted nor disabled,
+// through the capability or one implementation.
+func TestStrictSecurityRulesCannotBeDisabled(t *testing.T) {
+	t.Parallel()
+	for _, id := range []string{"hooks/secret-scan", "release/signing", "release/signing/image"} {
+		_, err := load(t, "version: 1\nextends: [fleetlint:strict]\noverrides:\n  "+id+": {enabled: false, reason: r}\n")
+		if err == nil || !strings.Contains(err.Error(), "(set by fleetlint-strict@") {
+			t.Errorf("%s: disabling under strict must be refused: %v", id, err)
+		}
+	}
+	if _, err := load(t, "version: 1\nextends: [fleetlint:recommended]\noverrides:\n  hooks/secret-scan: {enabled: false, reason: r}\n"); err != nil {
+		t.Errorf("recommended forbids nothing: %v", err)
 	}
 }

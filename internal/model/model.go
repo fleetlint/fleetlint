@@ -157,7 +157,7 @@ type Rule struct {
 	// Policy fields for organization catalogs. Locked: lower layers cannot
 	// disable the rule, lower its severity or redefine it. MinSeverity: a
 	// floor below which no layer may set the severity. AllowExceptions
-	// (`exceptions: false`) forbids per-finding exceptions entirely.
+	// (`exceptions: false`) forbids per-finding exceptions and disabling.
 	Locked          bool   `yaml:"locked,omitempty" json:"locked,omitempty"`
 	MinSeverity     string `yaml:"min_severity,omitempty" json:"min_severity,omitempty"`
 	AllowExceptions *bool  `yaml:"exceptions,omitempty" json:"exceptions,omitempty"`

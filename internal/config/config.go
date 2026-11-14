@@ -1386,6 +1386,10 @@ func (e *Effective) overrideAs(r *model.Rule, rc RuleConf, where, layer string, 
 		if r.MinSeverity != "" {
 			return fmt.Errorf("%s: rules.%s: %s set a severity floor of %s; off is below every floor", where, r.ID, r.PolicySource(), r.MinSeverity)
 		}
+		// Disabling is the widest exception.
+		if !r.ExceptionsAllowed() {
+			return fmt.Errorf("%s: rules.%s: rule forbids exceptions (set by %s) and cannot be disabled", where, r.ID, r.PolicySource())
+		}
 		if rc.Reason == "" {
 			return fmt.Errorf("%s: rules.%s: disabling a rule requires a reason", where, r.ID)
 		}
