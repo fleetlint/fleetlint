@@ -589,16 +589,7 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		}
 		return e.Path, nil
 	}
-	if cache == "" {
-		var err error
-		if cache, err = DefaultCache(); err != nil {
-			return "", err
-		}
-	}
-	if !validCloneURL(e.URL) || hasCredentials(e.URL) {
-		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path), without credentials", redact(e.URL))
-	}
-	dest, err := cacheDir(expandHome(cache), e.URL)
+	dest, err := cloneDest(e, cache)
 	if err != nil {
 		return "", err
 	}
@@ -620,6 +611,21 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		}
 	}
 	return dest, nil
+}
+
+// cloneDest is where the entry's URL is cloned: below cache, else below
+// the user cache directory.
+func cloneDest(e Entry, cache string) (string, error) {
+	if cache == "" {
+		var err error
+		if cache, err = DefaultCache(); err != nil {
+			return "", err
+		}
+	}
+	if !validCloneURL(e.URL) || hasCredentials(e.URL) {
+		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path), without credentials", redact(e.URL))
+	}
+	return cacheDir(expandHome(cache), e.URL)
 }
 
 // DefaultCache is where url entries are cloned when neither the fleet file's
