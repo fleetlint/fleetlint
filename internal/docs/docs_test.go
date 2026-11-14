@@ -55,6 +55,16 @@ func generated(t *testing.T) map[string]string {
 	return byPath
 }
 
+// combine left the catalog format at engine level 7: no page explains it.
+func TestCapabilityPagesHaveNoCombine(t *testing.T) {
+	t.Parallel()
+	for path, text := range generated(t) {
+		if strings.Contains(text, "Combine") || strings.Contains(text, "combine:") {
+			t.Errorf("%s mentions combine", path)
+		}
+	}
+}
+
 // The CEL reference lists the extension functions the environment enables.
 func TestCELReferenceListsExtensions(t *testing.T) {
 	t.Parallel()
