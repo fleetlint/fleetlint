@@ -264,7 +264,7 @@ func TestOCIArtifactLimits(t *testing.T) {
 	name := serve(t, reg)
 	fetch := OCIFetch(context.Background())
 	for tag, wantErr := range map[string]string{
-		"many":         "at most 512 files",
+		"many":         "at most 1024 files",
 		"oversized":    "the limit is",
 		"missing-blob": "layer gone",
 		"broken":       "manifest",

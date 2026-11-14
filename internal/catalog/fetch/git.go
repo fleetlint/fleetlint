@@ -21,7 +21,7 @@ const (
 	// RulesDir is where a catalog keeps its rule library.
 	RulesDir = "rules/"
 	// MaxFiles bounds the files read from one catalog source.
-	MaxFiles = 512
+	MaxFiles = 1024 // catalog v0.7.0 pins 439 files
 	// MaxTreeLen bounds the bytes read from one catalog directory with its templates/ and rules/.
 	MaxTreeLen = 16 << 20
 )
