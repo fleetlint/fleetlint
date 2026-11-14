@@ -162,7 +162,70 @@ func rulesIndex(rules []model.Rule, byPreset map[string][]string) []byte {
 		fmt.Fprintf(&b, "| [%s](%s.md) | %s | %s | %s | %s | %s |\n",
 			r.ID, pageName(r.ID), r.Severity, tiers(r), stackList(r), scope(r), presetOf[r.ID])
 	}
+	writeTiers(&b, rules)
 	return b.Bytes()
+}
+
+// tierNumbers are the tiers a repository can have.
+var tierNumbers = []int{1, 2, 3}
+
+// writeTiers groups the capabilities and standalone rules by the tiers they
+// run at, so each one is listed once; implementations follow their
+// capability.
+func writeTiers(b *bytes.Buffer, rules []model.Rule) {
+	groups := map[string][]string{}
+	counts := make([]int, len(tierNumbers))
+	for _, r := range rules {
+		if r.Capability != "" {
+			continue
+		}
+		var at []string
+		for i, t := range tierNumbers {
+			if r.AppliesToTier(t) {
+				at = append(at, fmt.Sprint(t))
+				counts[i]++
+			}
+		}
+		key := strings.Join(at, ", ")
+		groups[key] = append(groups[key], fmt.Sprintf("[%s](%s.md)", r.ID, pageName(r.ID)))
+	}
+	keys := make([]string, 0, len(groups))
+	for k := range groups {
+		keys = append(keys, k)
+	}
+	// Widest reach first: every tier, then 1 and 2, then 1 alone.
+	slices.SortFunc(keys, func(x, y string) int {
+		if d := len(y) - len(x); d != 0 {
+			return d
+		}
+		return strings.Compare(x, y)
+	})
+	b.WriteString("\n## What runs at each tier\n\nThe repository's tier is pinned with `facts.tier` or inferred (see [configuration](../configuration.md#facts)); a rule runs at the tiers it lists. Capabilities and standalone rules are counted, each listed once; a capability's implementations run at its tiers.\n\n")
+	parts := make([]string, 0, len(tierNumbers))
+	for i, t := range tierNumbers {
+		parts = append(parts, fmt.Sprintf("tier %d runs %d", t, counts[i]))
+	}
+	fmt.Fprintf(b, "Of %d rules, %s.\n\n| Tiers | Rules | Count |\n|---|---|---|\n", countStandalone(rules), strings.Join(parts, ", "))
+	for _, k := range keys {
+		fmt.Fprintf(b, "| %s | %s | %d |\n", orText(k, "none"), strings.Join(groups[k], ", "), len(groups[k]))
+	}
+}
+
+func countStandalone(rules []model.Rule) int {
+	n := 0
+	for _, r := range rules {
+		if r.Capability == "" {
+			n++
+		}
+	}
+	return n
+}
+
+func orText(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }
 
 // writeOriginRows adds the rows that depend on how the rule was taken in.

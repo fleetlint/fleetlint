@@ -128,3 +128,25 @@ func TestCELReferenceListsExtensions(t *testing.T) {
 		}
 	}
 }
+
+// The tier section lists every capability and standalone rule once, in the
+// row of the tiers it runs at; implementations follow their capability.
+func TestRuleIndexTiers(t *testing.T) {
+	t.Parallel()
+	index := generated(t)["rules/_index.md"]
+	section := index[strings.Index(index, "## What runs at each tier"):]
+	rows := map[string]string{}
+	for _, line := range strings.Split(section, "\n") {
+		if cells := strings.Split(line, " | "); len(cells) == 3 && strings.HasPrefix(line, "| ") {
+			rows[strings.TrimPrefix(cells[0], "| ")] = cells[1]
+		}
+	}
+	for tiers, id := range map[string]string{"1, 2, 3": "repo/no-tracked-junk", "1, 2": "hooks/secret-scan", "1": "release/checksums"} {
+		if !strings.Contains(rows[tiers], "["+id+"]") {
+			t.Errorf("tiers %s does not list %s: %q", tiers, id, rows[tiers])
+		}
+	}
+	if strings.Contains(section, "[types/strict/go]") || strings.Count(section, "[types/strict]") != 1 {
+		t.Error("a capability is listed once, its implementations not at all")
+	}
+}
