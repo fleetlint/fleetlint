@@ -1,7 +1,8 @@
 // Package docs generates the reference pages that must never drift from the
-// code: one page per rule from the presets, and the CEL reference from the
-// environment. `fleetlint docs --check` fails when the pages in the output
-// directory differ; the documentation repository runs it.
+// code: one page per rule from the presets, the CEL reference from the
+// environment and the CLI reference from the command tree. `fleetlint docs
+// --check` fails when the pages in the output directory differ; the
+// documentation repository runs it.
 package docs
 
 import (
@@ -29,6 +30,8 @@ type Options struct {
 	// IndexFile names the rule index inside rules/ (README.md for a plain
 	// directory, _index.md for a Hugo section).
 	IndexFile string
+	// CLI is what cli-reference.md documents; nil leaves the page out.
+	CLI *CLI
 }
 
 // Generate renders every generated page. Each page ends with the catalog
@@ -61,6 +64,9 @@ func Generate(opts Options) ([]Page, error) {
 		{Path: "rules/" + opts.IndexFile, Content: rulesIndex(rules, byPreset)},
 		{Path: "rules/capabilities.md", Content: capabilityMatrix(rules, byID, defs, arts)},
 		{Path: "cel-reference.md", Content: cel},
+	}
+	if opts.CLI != nil {
+		pages = append(pages, Page{Path: "cli-reference.md", Content: cliReference(*opts.CLI)})
 	}
 	for _, r := range rules {
 		pages = append(pages, Page{Path: "rules/" + pageName(r.ID) + ".md", Content: rulePage(r, byID)})

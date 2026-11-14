@@ -41,13 +41,13 @@ func docsCmd() *cobra.Command {
 	var check bool
 	cmd := &cobra.Command{
 		Use:   "docs",
-		Short: "Generate the rule and CEL reference pages (or verify they are current with --check)",
-		Long: `docs writes a page per rule of the built-in presets, the capability matrix and
-the CEL reference into --out, and removes the pages it generated earlier that it
-no longer generates, such as those of a removed rule. Pages it did not generate
-are left alone.`,
+		Short: "Generate the rule, CEL and CLI reference pages (or verify they are current with --check)",
+		Long: `docs writes a page per rule of the built-in presets, the capability matrix, the
+CEL reference and the CLI reference into --out, and removes the pages it
+generated earlier that it no longer generates, such as those of a removed rule.
+Pages it did not generate are left alone.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			pages, err := docs.Generate(docs.Options{IndexFile: indexFile})
+			pages, err := docs.Generate(docs.Options{IndexFile: indexFile, CLI: reference()})
 			if err != nil {
 				return err
 			}

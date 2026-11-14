@@ -15,6 +15,7 @@ import (
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
 	"github.com/fleetlint/fleetlint/internal/config"
+	"github.com/fleetlint/fleetlint/internal/docs"
 	"github.com/fleetlint/fleetlint/internal/engine"
 	"github.com/fleetlint/fleetlint/internal/fixplan"
 	"github.com/fleetlint/fleetlint/internal/fleet"
@@ -24,7 +25,7 @@ import (
 	_ "github.com/fleetlint/fleetlint/internal/rules/builtin" // register Go rules
 )
 
-// Exit codes. Documented in the README; scripts depend on them.
+// Exit codes. Documented in the README and the CLI reference (exitCodes); scripts depend on them.
 const (
 	ExitOK       = 0
 	ExitFindings = 1
@@ -60,6 +61,17 @@ type globals struct {
 // Run executes the CLI and returns the process exit code.
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, error) {
 	g := &globals{stderr: stderr}
+	var code int
+	root := newRoot(g, &code, stdout, stderr) //nolint:contextcheck // cobra hands the context from ExecuteContext to each command via cmd.Context()
+	root.SetArgs(withDefaultCommand(root, args))
+	if err := root.ExecuteContext(ctx); err != nil {
+		return classify(err), err
+	}
+	return code, nil
+}
+
+// newRoot is the command tree; `fleetlint docs` documents a fresh one.
+func newRoot(g *globals, code *int, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "fleetlint",
 		Short:         "Policy for a fleet of repositories",
@@ -72,17 +84,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) (int, err
 	root.PersistentFlags().StringVarP(&g.path, "path", "C", ".", "repository root")
 	root.PersistentFlags().StringArrayVar(&g.require, "require", nil, "catalog that must be part of the effective config (name, ref or ref#sha256-<digest>); repeatable; exit 2 when missing")
 	root.PersistentFlags().BoolVar(&g.color, "color", isTerminal(stdout), "colored output")
+	_ = root.PersistentFlags().SetAnnotation("color", docs.DefaultAnnotation, []string{"on when stdout is a terminal and `NO_COLOR` is unset"})
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-
-	var code int
-	//nolint:contextcheck // cobra hands the context from ExecuteContext to each command via cmd.Context()
-	root.AddCommand(checkCmd(g, &code), factsCmd(g), explainCmd(g), hierarchyCmd(g), initCmd(g, &code), fixCmd(g, &code), fleetCmd(g, &code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
-	root.SetArgs(withDefaultCommand(root, args))
-	if err := root.ExecuteContext(ctx); err != nil {
-		return classify(err), err
-	}
-	return code, nil
+	root.AddCommand(checkCmd(g, code), factsCmd(g), explainCmd(g), hierarchyCmd(g), initCmd(g, code), fixCmd(g, code), fleetCmd(g, code), baselineCmd(g), catalogCmd(g), schemaCmd(), docsCmd(), versionCmd())
+	return root
 }
 
 func classify(err error) int {
