@@ -16,7 +16,6 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
-	"cel.dev/cel-go/ext"
 
 	"github.com/fleetlint/fleetlint/internal/ci"
 	"github.com/fleetlint/fleetlint/internal/facts"
@@ -125,12 +124,14 @@ func New(ctx context.Context, r *repo.Repo, f facts.Facts) (*Env, error) {
 		cel.Variable("artifact", cel.MapType(cel.StringType, cel.DynType)),
 	}
 	fns, ci, code := e.functions(), e.ciAccessors(), e.codeAccessors() //nolint:contextcheck // git lookups run under the repository's own bounded context
-	opts := make([]cel.EnvOption, 0, len(vars)+len(fns)+len(ci)+len(code)+2)
+	opts := make([]cel.EnvOption, 0, len(vars)+len(fns)+len(ci)+len(code)+len(Extensions))
 	opts = append(opts, vars...)
 	opts = append(opts, fns...)
 	opts = append(opts, ci...)
 	opts = append(opts, code...)
-	opts = append(opts, ext.Strings(), ext.Lists())
+	for _, x := range Extensions {
+		opts = append(opts, x.option)
+	}
 	env, err := cel.NewEnv(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("build CEL environment: %w", err)

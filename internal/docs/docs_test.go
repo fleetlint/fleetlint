@@ -41,3 +41,27 @@ func TestGeneratedPagesAreSafeMarkdown(t *testing.T) {
 		t.Errorf("expected the index, the CEL reference and a page per rule")
 	}
 }
+
+func generated(t *testing.T) map[string]string {
+	t.Helper()
+	pages, err := docs.Generate(docs.Options{IndexFile: "_index.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := map[string]string{}
+	for _, p := range pages {
+		byPath[p.Path] = string(p.Content)
+	}
+	return byPath
+}
+
+// The CEL reference lists the extension functions the environment enables.
+func TestCELReferenceListsExtensions(t *testing.T) {
+	t.Parallel()
+	page := generated(t)["cel-reference.md"]
+	for _, want := range []string{"## Extension functions", "`.split()`", "`.lowerAscii()`", "`.flatten()`", "`lists.range()`", "https://pkg.go.dev/cel.dev/cel-go"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}
