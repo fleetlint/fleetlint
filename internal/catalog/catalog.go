@@ -290,6 +290,8 @@ type Catalog struct {
 	// git tree or an OCI artifact); its `use:` entries search it before the
 	// source's library. nil when the catalog brings none.
 	Library fs.FS `yaml:"-"`
+	// Warnings name what the run ignores of the catalog; config prints them.
+	Warnings []string `yaml:"-"`
 	// uses are the `use:` entries awaiting expansion; used are the ids they
 	// brought in, which the same rule loaded earlier supersedes.
 	uses []useEntry
@@ -707,57 +709,74 @@ func (l Loader) loadPinned(ref string) ([]*Catalog, error) {
 		return l.loadOCI(ref)
 	}
 	var (
-		b                  []byte
-		templates, library fs.FS
-		err                error
+		tree gitTree
+		err  error
 	)
 	if strings.HasPrefix(ref, gitPrefix) && l.FetchGitTree != nil {
-		b, templates, library, err = l.readGitTree(ref)
+		tree, err = l.readGitTree(ref)
 	} else {
-		b, err = l.readPinned(ref)
+		tree.body, err = l.readPinned(ref)
 	}
 	if err != nil {
 		return nil, err
 	}
-	c, err := Parse(b)
+	c, err := Parse(tree.body)
 	if err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
-	c.Library = library
+	c.Library = tree.library
 	if err := l.expand(c); err != nil {
 		return nil, fmt.Errorf("catalog %s: %w", ref, err)
 	}
-	c.Ref, c.Templates = ref, templates
+	c.Ref, c.Templates = ref, tree.templates
+	if len(tree.ignored) > 0 {
+		c.Warnings = append(c.Warnings, fmt.Sprintf("catalog %s: %s ignored: a git catalog pinned to a tag ships only its catalog file; pin a full commit SHA to ship them", ref, strings.Join(tree.ignored, " and ")))
+	}
 	return []*Catalog{c}, nil
 }
 
-// readGitTree reads a git catalog with the templates/ directory next to it.
-// Templates are taken only from a commit-pinned reference: the digest of a
+// gitTree is a git catalog's file and the trees it ships next to it.
+type gitTree struct {
+	body               []byte
+	templates, library fs.FS
+	// ignored names the trees a tag pin leaves behind.
+	ignored []string
+}
+
+// readGitTree reads a git catalog with the templates/ and rules/ trees next
+// to it. They are taken only from a commit-pinned reference: the digest of a
 // tag reference covers the catalog file, not the files around it.
-func (l Loader) readGitTree(ref string) ([]byte, fs.FS, fs.FS, error) {
+func (l Loader) readGitTree(ref string) (gitTree, error) {
 	g, err := parseGitRef(ref)
 	if err != nil {
-		return nil, nil, nil, err
+		return gitTree{}, err
 	}
 	dir, file := path.Split(g.Path)
 	files, err := l.FetchGitTree(g.URL, g.Rev, strings.TrimSuffix(dir, "/"))
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("fetch %s: %w", ref, err)
+		return gitTree{}, fmt.Errorf("fetch %s: %w", ref, err)
 	}
 	b, ok := files[file]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("fetch %s: %s has no file %s", ref, g.URL, g.Path)
+		return gitTree{}, fmt.Errorf("fetch %s: %s has no file %s", ref, g.URL, g.Path)
 	}
 	if g.Digest != "" {
 		if err := VerifyDigest(b, g.Digest); err != nil {
-			return nil, nil, nil, fmt.Errorf("%s: %w", ref, err)
+			return gitTree{}, fmt.Errorf("%s: %w", ref, err)
 		}
 	}
-	if !g.isCommit() {
-		return b, nil, nil, nil
-	}
 	templates, library := shippedFiles(files)
-	return b, templates, library, nil
+	if g.isCommit() {
+		return gitTree{body: b, templates: templates, library: library}, nil
+	}
+	tree := gitTree{body: b}
+	if library != nil {
+		tree.ignored = append(tree.ignored, rulesDir)
+	}
+	if templates != nil {
+		tree.ignored = append(tree.ignored, templatesDir)
+	}
+	return tree, nil
 }
 
 // shippedFiles sorts a catalog's companion files into its templates/ and
@@ -768,7 +787,7 @@ func shippedFiles(files map[string][]byte) (templates, library fs.FS) {
 		switch {
 		case strings.HasPrefix(name, templatesDir):
 			t[name] = body
-		case strings.HasPrefix(name, "rules/"):
+		case strings.HasPrefix(name, rulesDir):
 			r[name] = body
 		}
 	}

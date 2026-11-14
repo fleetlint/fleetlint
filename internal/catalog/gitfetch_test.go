@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlint/fleetlint/internal/catalog/fetch"
 
 	"github.com/fleetlint/fleetlint/internal/catalog"
+	"github.com/fleetlint/fleetlint/internal/model"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
@@ -165,5 +166,63 @@ func TestGitCatalogShipsTemplates(t *testing.T) {
 	}
 	if _, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@v1.0.0#sha256-" + strings.Repeat("0", 64)); err == nil {
 		t.Error("the digest still guards the catalog file")
+	}
+}
+
+// A commit-pinned git catalog ships its rules/ library: an implementation
+// there fills a stack the base capability lacks. A tag pin ignores it and
+// says so.
+func TestGitCatalogShipsRules(t *testing.T) {
+	t.Parallel()
+	body := "apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: org, version: 1.0.0}\nrules:\n  - use: deps/unused-check\n"
+	src := testutil.GitFixture(t, map[string]string{
+		"policy/catalog.yaml": body,
+		"policy/rules/deps/unused-check/ruby.yaml": "id: deps/unused-check/ruby\nkind: outcome\nsatisfiers:\n" +
+			"  - {name: our-tool, expr: 'workflows().exists(w, steps(w).exists(s, s.run.contains(\"bin/unused-gems\")))'}\n",
+		"policy/templates/SECURITY.md": "org policy\n",
+	}).Root
+	git := func(args ...string) string {
+		t.Helper()
+		cmd := exec.CommandContext(context.Background(), "git", append([]string{"-C", src}, args...)...)
+		cmd.Env = testutil.GitEnv()
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("tag", "v1.0.0")
+	commit := git("rev-parse", "HEAD")
+	tree := fetch.GitTreeFetch(context.Background())
+	l := catalog.Loader{FetchGitTree: func(_, rev, dir string) (map[string][]byte, error) { return tree(src, rev, dir) }}
+	ruby := func(c *catalog.Catalog) (model.Rule, bool) {
+		for _, r := range c.Rules {
+			if r.ID == "deps/unused-check/ruby" {
+				return r, true
+			}
+		}
+		return model.Rule{}, false
+	}
+
+	cats, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@" + commit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, ok := ruby(cats[0]); !ok || r.Title != "Unused dependencies are detected" || !strings.HasPrefix(r.Source, "org@1.0.0 rules/") {
+		t.Errorf("the shipped implementation inherits from the base capability: %+v %v", r, ok)
+	}
+	if len(cats[0].Warnings) != 0 {
+		t.Errorf("a commit pin ships everything: %v", cats[0].Warnings)
+	}
+
+	tagged, err := l.Load("git+ssh://git@example.com/o/r.git//policy/catalog.yaml@v1.0.0#sha256-" + catalog.Digest([]byte(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ruby(tagged[0]); ok || tagged[0].Library != nil || tagged[0].Templates != nil {
+		t.Error("a tag pin ships neither rules/ nor templates/")
+	}
+	if w := tagged[0].Warnings; len(w) != 1 || !strings.Contains(w[0], "rules/ and templates/ ignored") || !strings.Contains(w[0], "pin a full commit SHA") {
+		t.Errorf("a tag pin warns about what it ignores: %v", w)
 	}
 }

@@ -265,3 +265,31 @@ func TestSourcesPinRepoIsValidated(t *testing.T) {
 		}
 	}
 }
+
+// A tag-pinned git catalog with rules/ or templates/ next to it loads its
+// catalog file alone and warns once; without either it stays quiet.
+func TestTagPinnedGitCatalogWarnsAboutIgnoredTrees(t *testing.T) {
+	t.Parallel()
+	body := "apiVersion: fleetlint.org/v1\nkind: Catalog\nmetadata: {name: acme, version: 1.0.0, includes: [\"fleetlint:minimal\"], catalog: {version: " + catalog.ModuleVersion() + "}}\nrules: []\n"
+	ref := "git+https://git.example/acme/policy.git//catalog.yaml@v1.0.0#sha256-" + catalog.Digest([]byte(body))
+	load := func(files map[string][]byte) *config.Effective {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, config.FileName), []byte("version: 1\nextends: [\""+ref+"\", \""+ref+"\"]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		l := catalog.Loader{FetchGitTree: func(string, string, string) (map[string][]byte, error) { return files, nil }}
+		eff, err := config.Load(dir, config.Options{Loader: l})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff
+	}
+	eff := load(map[string][]byte{"catalog.yaml": []byte(body), "rules/acme/x.yaml": []byte("id: acme/x\n")})
+	if len(eff.Deprecations) != 1 || !strings.Contains(eff.Deprecations[0], "rules/ ignored") || !strings.Contains(eff.Deprecations[0], "pin a full commit SHA") {
+		t.Errorf("one warning for the ignored rules/: %v", eff.Deprecations)
+	}
+	if eff := load(map[string][]byte{"catalog.yaml": []byte(body), "README.md": []byte("x\n")}); len(eff.Deprecations) != 0 {
+		t.Errorf("nothing ignored, nothing said: %v", eff.Deprecations)
+	}
+}

@@ -116,7 +116,7 @@ func TestGitTreeFetch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := keys(root); got != "catalog.yaml,templates/SECURITY.md,templates/sub/x.md" {
+	if got := keys(root); got != "catalog.yaml,rules/r.yaml,templates/SECURITY.md,templates/sub/x.md" {
 		t.Errorf("root: %s", got)
 	}
 	if string(root["templates/sub/x.md"]) != "x\n" {

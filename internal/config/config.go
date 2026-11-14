@@ -170,8 +170,8 @@ type Effective struct {
 	// `path: .` entry of scopes, or the deprecated facts.stacks and
 	// facts.taskrunner.
 	Root Scope
-	// Deprecations name configuration forms that still work but will go;
-	// the CLI prints them as warnings.
+	// Deprecations name configuration forms that still work but will go,
+	// and catalog files the run ignores; the CLI prints them as warnings.
 	Deprecations []string
 	// Stacks are the stack definitions of the catalog source; Artifacts its
 	// artifact definitions (none for a catalog before engine level 5).
@@ -834,6 +834,11 @@ func (e *Effective) settleCatalog(c *catalog.Catalog, en extendsEntry) error {
 	}
 	if c.Metadata.Layer != "" && c.Metadata.Label == c.Metadata.Layer {
 		e.Deprecations = append(e.Deprecations, fmt.Sprintf("catalog %s: metadata.layer is deprecated: write it as metadata.label", c.Ref))
+	}
+	for _, w := range c.Warnings {
+		if !slices.Contains(e.Deprecations, w) {
+			e.Deprecations = append(e.Deprecations, w)
+		}
 	}
 	return e.checkBuildsOn(c)
 }

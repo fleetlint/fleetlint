@@ -17,6 +17,7 @@ import (
 const (
 	ociPrefix              = "oci://"
 	templatesDir           = fetch.TemplatesDir
+	rulesDir               = fetch.RulesDir
 	ociMaxFiles            = fetch.MaxFiles
 	ociErrSignatureMissing = "no sigstore bundle is attached to the artifact (sign it with `cosign sign --new-bundle-format`)"
 )
