@@ -26,6 +26,7 @@ var environment = []docs.EnvVar{
 	{Names: []string{"GITLAB_TOKEN"}, Doc: "Token for a GitLab host fleetlint may contact."},
 	{Names: []string{"GITEA_HOST", "GITLAB_HOST"}, Doc: "Comma-separated self-hosted Gitea, Forgejo or GitLab hosts fleetlint may contact and send their token to. Not needed for gitlab.com, a host named by `--forge` or `--from`, the remote of a `--pr`, or the instance running the CI job."},
 	{Names: []string{"GITHUB_API_URL"}, Doc: "Set by GitHub Actions: on GitHub Enterprise Server, the API fleetlint uses for GitHub. In Gitea and Forgejo Actions, the API of that instance."},
+	{Names: []string{"GITHUB_ACTIONS"}, Doc: "Set by GitHub Actions: with `GITHUB_SERVER_URL`, the GitHub Enterprise Server running the job, which fleetlint then treats as a known GitHub host."},
 	{Names: []string{"GITEA_ACTIONS", "FORGEJO_ACTIONS", "GITHUB_SERVER_URL"}, Doc: "Set by Gitea and Forgejo Actions: the instance running the job, which fleetlint then treats as a known Gitea host."},
 	{Names: []string{"GITLAB_CI", "CI_SERVER_HOST", "CI_API_V4_URL"}, Doc: "Set by GitLab CI: the instance running the job and its API, which fleetlint then treats as a known GitLab host."},
 	{Names: []string{"FLEETLINT_VERIFY"}, Doc: "`cosign` makes `install.sh` fail unless cosign is installed and verifies the signature of the release's `checksums.txt` (`curl … | FLEETLINT_VERIFY=cosign sh`).", InstallOnly: true},
