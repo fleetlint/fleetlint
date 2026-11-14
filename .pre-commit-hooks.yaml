@@ -1,6 +1,6 @@
 # Hook definitions for prek / pre-commit. In a repository:
 #   - repo: https://github.com/fleetlint/fleetlint
-#     rev: v0.1.0
+#     rev: <a release tag>   # `prek autoupdate` or Renovate keeps it current
 #     hooks:
 #       - id: fleetlint
 - id: fleetlint

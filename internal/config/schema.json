@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/fleetlint/fleetlint/schema/fleetlint.json",
   "title": ".fleetlint.yaml",
-  "description": "Repository policy for fleetlint. Everything is optional; the whole policy lives in this one file.",
+  "description": "Repository policy for fleetlint. Only version is required; an unknown key is a configuration error. The whole policy lives in this one file.",
   "type": "object",
   "additionalProperties": false,
   "required": [
