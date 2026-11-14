@@ -40,7 +40,7 @@ func TestOpenProposesTheFixesOfTheDefaultBranch(t *testing.T) {
 	dir, remote := published(t)
 	var got []forge.PullRequest
 	opts := fixpr.Options{
-		GitEnv: testutil.GitEnv()[len(os.Environ()):],
+		GitEnv: testutil.GitSettings(),
 		Open: func(_ context.Context, _ forge.Client, _, _, _ string, pr forge.PullRequest) (forge.Opened, error) {
 			got = append(got, pr)
 			return forge.Opened{URL: "https://forge.example/pr/1", Updated: len(got) > 1}, nil
@@ -95,7 +95,7 @@ func TestOpenWithNothingToFix(t *testing.T) {
 	r, _ := repo.Open(context.Background(), dir)
 	res, err := fixpr.Open(context.Background(), r, fixpr.Options{
 		Rules:  []string{"repo/editorconfig"},
-		GitEnv: testutil.GitEnv()[len(os.Environ()):],
+		GitEnv: testutil.GitSettings(),
 		Open: func(context.Context, forge.Client, string, string, string, forge.PullRequest) (forge.Opened, error) {
 			opened = true
 			return forge.Opened{}, nil
@@ -112,7 +112,7 @@ func TestOpenRefusesConfigurationErrors(t *testing.T) {
 	t.Parallel()
 	dir, _ := published(t)
 	r, _ := repo.Open(context.Background(), dir)
-	_, err := fixpr.Open(context.Background(), r, fixpr.Options{Require: []string{"acme-baseline"}, GitEnv: testutil.GitEnv()[len(os.Environ()):]})
+	_, err := fixpr.Open(context.Background(), r, fixpr.Options{Require: []string{"acme-baseline"}, GitEnv: testutil.GitSettings()})
 	var ce *fixpr.ConfigError
 	if !errors.As(err, &ce) || !strings.Contains(err.Error(), "acme-baseline") {
 		t.Errorf("a missing required catalog: %v", err)

@@ -30,7 +30,7 @@ func onboardingRepo(t *testing.T) (dir, remote string) {
 // in <name>.log and exits with status. Not for parallel tests: it sets the environment.
 func toolbox(t *testing.T, fakes map[string]int) string {
 	t.Helper()
-	for _, kv := range testutil.GitEnv()[len(os.Environ()):] {
+	for _, kv := range testutil.GitSettings() {
 		k, v, _ := strings.Cut(kv, "=")
 		t.Setenv(k, v)
 	}

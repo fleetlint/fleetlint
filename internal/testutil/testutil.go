@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/proc"
 	"github.com/fleetlint/fleetlint/internal/repo"
 )
 
@@ -73,18 +74,26 @@ func Git(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// GitEnv is the environment for fixture git commands: a fixed identity, no
-// user or system configuration, so settings such as tag.gpgsign cannot
-// change what a test does, and no background maintenance, so nothing writes
-// into a repository after the test that owns it has ended.
+// GitEnv is the environment for fixture git commands: proc.GitEnv, without
+// the variables a git hook exports that would point git at the repository
+// running the tests, plus GitSettings.
 func GitEnv() []string {
-	return append(os.Environ(),
-		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
+	return append(proc.GitEnv(), GitSettings()...)
+}
+
+// GitSettings are what GitEnv adds: a fixed identity, no user or system
+// configuration, so settings such as tag.gpgsign cannot change what a test
+// does, and no background maintenance, so nothing writes into a repository
+// after the test that owns it has ended.
+func GitSettings() []string {
+	return []string{
+		"GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t",
 		"GIT_CONFIG_COUNT=3",
 		"GIT_CONFIG_KEY_0=gc.auto", "GIT_CONFIG_VALUE_0=0",
 		"GIT_CONFIG_KEY_1=gc.autoDetach", "GIT_CONFIG_VALUE_1=false",
-		"GIT_CONFIG_KEY_2=maintenance.auto", "GIT_CONFIG_VALUE_2=false")
+		"GIT_CONFIG_KEY_2=maintenance.auto", "GIT_CONFIG_VALUE_2=false",
+	}
 }
 
 // WriteFiles creates the given files under dir.

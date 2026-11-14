@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fleetlint/fleetlint/internal/proc"
 	"github.com/fleetlint/fleetlint/internal/testutil"
 )
 
@@ -23,7 +24,7 @@ func TestFixturesStartNoBackgroundGit(t *testing.T) {
 	testutil.Git(t, remote, "init", "-q", "--bare")
 	testutil.NoBackgroundGit(t, remote)
 	trace := filepath.Join(t.TempDir(), "trace.json")
-	env := append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TRACE2_EVENT="+trace,
+	env := append(proc.GitEnv(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1", "GIT_TRACE2_EVENT="+trace,
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
 	testutil.WriteFiles(t, r.Root, map[string]string{"b.txt": "b\n"})
 	for _, args := range [][]string{{"add", "-A"}, {"commit", "-q", "-m", "b", "--no-verify"}, {"push", "-q", remote, "main"}} {

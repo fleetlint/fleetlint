@@ -3,6 +3,8 @@ SHELL := bash
 .SHELLFLAGS := -euo pipefail -c
 .ONESHELL:
 .DEFAULT_GOAL := check-fast
+# A git hook exports these; tests that run git in a temp dir would otherwise act on this repository.
+unexport GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX
 
 MAIN_BRANCH ?= main
 COVER_MIN   ?= 80
