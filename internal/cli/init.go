@@ -41,7 +41,7 @@ func initCmd(g *globals, code *int) *cobra.Command {
 	}
 	addForgeFlags(cmd, &ff)
 	cmd.Flags().StringVar(&preset, "preset", "recommended", "preset to extend: minimal, recommended")
-	cmd.Flags().IntVar(&tier, "tier", 0, "pin the tier (1 production/public, 2 personal tool, 3 experiment); default: keep auto-detection")
+	cmd.Flags().IntVar(&tier, "tier", 0, "pin the tier (1 production or public, 2 a tool you rely on, 3 experiment); default: keep auto-detection")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing .fleetlint.yaml")
 	cmd.Flags().BoolVar(&pr, "pr", false, "commit the config on a branch and open a pull request with the report (a token for the forge, or gh, tea or glab)")
 	return cmd

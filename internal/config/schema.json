@@ -213,7 +213,7 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 3,
-          "description": "1 production/public, 2 personal tool, 3 experiment."
+          "description": "1 production or public, 2 a tool you rely on, 3 experiment."
         },
         "visibility": {
           "enum": [
