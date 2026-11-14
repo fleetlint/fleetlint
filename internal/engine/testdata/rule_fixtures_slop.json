@@ -574,6 +574,13 @@
         "go.mod": "module x\n"
       },
       "message": "SECURITY.md"
+    },
+    {
+      "fail": {
+        "go.mod": "module x\n",
+        "pkg/api/SECURITY.md": "Not ours\n"
+      },
+      "message": "SECURITY.md"
     }
   ],
   "public/code-of-conduct": [
@@ -582,6 +589,13 @@
         "go.mod": "module x\n",
         ".gitea/CODE_OF_CONDUCT.md": "Be kind\n"
       }
+    },
+    {
+      "fail": {
+        "go.mod": "module x\n",
+        "web/CODE_OF_CONDUCT.md": "Not ours\n"
+      },
+      "message": "CODE_OF_CONDUCT"
     }
   ],
   "quality/duplication-gate": [
@@ -615,6 +629,24 @@
         ".golangci.yml": "version: \"2\"\nlinters:\n  enable: [dupl]\n"
       },
       "message": "duplication"
+    }
+  ],
+  "repo/codeowners": [
+    {
+      "pass": {
+        "go.mod": "module x\n",
+        ".gitlab/CODEOWNERS": "* @team\n"
+      },
+      "fail": {
+        "go.mod": "module x\n"
+      },
+      "message": "CODEOWNERS"
+    },
+    {
+      "pass": {
+        "go.mod": "module x\n",
+        "docs/CODEOWNERS": "* @team\n"
+      }
     }
   ]
 }
