@@ -65,6 +65,23 @@ func TestCapabilityPagesHaveNoCombine(t *testing.T) {
 	}
 }
 
+// An implementation that declares its capability does not apply says why,
+// and nothing about a check or a fix.
+func TestNotApplicablePage(t *testing.T) {
+	t.Parallel()
+	page := generated(t)["rules/types--strict--go.md"]
+	for _, want := range []string{"[types/strict](types--strict.md) does not apply to go", "## Why it does not apply", "no separate type checker", "https://fleetlint.org/stacks/#go"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("missing %q:\n%s", want, page)
+		}
+	}
+	for _, unwanted := range []string{"Severity", "## Check", "## Fix", "## Applies when", "strict mode"} {
+		if strings.Contains(page, unwanted) {
+			t.Errorf("has %q:\n%s", unwanted, page)
+		}
+	}
+}
+
 // A computed locate is never raw CEL inside a sentence.
 func TestLocateIsProse(t *testing.T) {
 	t.Parallel()
