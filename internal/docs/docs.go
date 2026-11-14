@@ -283,8 +283,9 @@ func writeCapabilityNote(b *bytes.Buffer, r model.Rule) {
 }
 
 func rulePage(r model.Rule, byID map[string]model.Rule) []byte {
+	capRule, hasCap := byID[r.Capability]
 	if notApplicable(r) {
-		return notApplicablePage(r, byID[r.Capability])
+		return notApplicablePage(r, capRule)
 	}
 	var b bytes.Buffer
 	fmt.Fprintf(&b, "# %s\n\n%s\n\n", r.ID, prose(r.Title))
@@ -297,37 +298,11 @@ func rulePage(r model.Rule, byID map[string]model.Rule) []byte {
 	if r.Rationale != "" {
 		fmt.Fprintf(&b, "## Why\n\n%s\n\n", prose(strings.TrimSpace(r.Rationale)))
 	}
-	if r.Gate != "" && r.Kind != model.KindCapability {
-		fmt.Fprintf(&b, "## Capability applies when\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.Gate))
-	}
-	if r.When != "" {
-		fmt.Fprintf(&b, "## Applies when\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.When))
-	}
-	if r.Expr != "" {
-		b.WriteString("## Check\n\n")
-		if r.Foreach != "" {
-			fmt.Fprintf(&b, "For each `item` in:\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.Foreach))
-		}
-		fmt.Fprintf(&b, "```cel\n%s\n```\n\n", strings.TrimSpace(r.Expr))
-	}
-	if len(r.Params) > 0 {
-		b.WriteString("## Parameters\n\n")
-		keys := make([]string, 0, len(r.Params))
-		for k := range r.Params {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&b, "- `%s`: `%v`\n", k, r.Params[k])
-		}
-		b.WriteString("\n")
-	}
-	fmt.Fprintf(&b, "## Fix\n\n%s\n\n", prose(r.Fix.Human))
-	if r.Fix.Agent != "" {
-		fmt.Fprintf(&b, "Agent instruction: %s\n\n", prose(r.Fix.Agent))
-	}
-	if len(r.Fix.Actions) > 0 {
-		fmt.Fprintf(&b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
+	writeCheck(&b, r)
+	if hasCap {
+		writeFix(&b, r, &capRule)
+	} else {
+		writeFix(&b, r, nil)
 	}
 	writeLocate(&b, r)
 	writeSources(&b, r.Refs)
@@ -353,6 +328,62 @@ func notApplicablePage(r, capRule model.Rule) []byte {
 	}
 	writeSources(&b, own)
 	return append(bytes.TrimRight(b.Bytes(), "\n"), '\n')
+}
+
+// writeCheck is when the rule applies, what it checks and its parameters.
+func writeCheck(b *bytes.Buffer, r model.Rule) {
+	if r.Gate != "" && r.Kind != model.KindCapability {
+		fmt.Fprintf(b, "## Capability applies when\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.Gate))
+	}
+	if r.When != "" {
+		fmt.Fprintf(b, "## Applies when\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.When))
+	}
+	if r.Expr != "" {
+		b.WriteString("## Check\n\n")
+		if r.Foreach != "" {
+			fmt.Fprintf(b, "For each `item` in:\n\n```cel\n%s\n```\n\n", strings.TrimSpace(r.Foreach))
+		}
+		fmt.Fprintf(b, "```cel\n%s\n```\n\n", strings.TrimSpace(r.Expr))
+	}
+	if len(r.Params) > 0 {
+		b.WriteString("## Parameters\n\n")
+		keys := make([]string, 0, len(r.Params))
+		for k := range r.Params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(b, "- `%s`: `%v`\n", k, r.Params[k])
+		}
+		b.WriteString("\n")
+	}
+}
+
+// writeFix is the rule's fix. An implementation that inherits its
+// capability's text links it instead of presenting it as its own.
+func writeFix(b *bytes.Buffer, r model.Rule, capRule *model.Rule) {
+	b.WriteString("## Fix\n\n")
+	var capLink string
+	ownHuman, ownAgent := true, true
+	if capRule != nil {
+		capLink = fmt.Sprintf("[%s](%s.md#fix)", capRule.ID, pageName(capRule.ID))
+		ownHuman, ownAgent = r.Fix.Human != capRule.Fix.Human, r.Fix.Agent != capRule.Fix.Agent
+	}
+	switch {
+	case ownHuman:
+		fmt.Fprintf(b, "%s\n\n", prose(r.Fix.Human))
+		if r.Fix.Agent != "" && !ownAgent {
+			fmt.Fprintf(b, "Agent instruction (from %s): %s\n\n", capLink, prose(r.Fix.Agent))
+		}
+	default:
+		fmt.Fprintf(b, "This implementation has no fix of its own: see %s.\n\n", capLink)
+	}
+	if r.Fix.Agent != "" && ownAgent {
+		fmt.Fprintf(b, "Agent instruction: %s\n\n", prose(r.Fix.Agent))
+	}
+	if len(r.Fix.Actions) > 0 {
+		fmt.Fprintf(b, "`fleetlint fix` can apply this rule's fix automatically (%d action(s)).\n\n", len(r.Fix.Actions))
+	}
 }
 
 func celReference() ([]byte, error) {

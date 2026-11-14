@@ -98,6 +98,26 @@ func TestLocateIsProse(t *testing.T) {
 	}
 }
 
+// An implementation without a fix of its own links its capability's
+// instead of presenting the capability's text as its own.
+func TestInheritedFixLinksCapability(t *testing.T) {
+	t.Parallel()
+	pages := generated(t)
+	impl, capability := pages["rules/quality--duplication-gate--any.md"], pages["rules/quality--duplication-gate.md"]
+	fix := capability[strings.Index(capability, "## Fix\n\n")+8:]
+	fix = fix[:strings.Index(fix, "\n")]
+	if !strings.Contains(impl, "no fix of its own: see [quality/duplication-gate](quality--duplication-gate.md#fix)") || strings.Contains(impl, fix) {
+		t.Errorf("implementation repeats the capability's fix %q:\n%s", fix, impl)
+	}
+	inherited := 0
+	for _, text := range pages {
+		inherited += strings.Count(text, "Agent instruction (from [")
+	}
+	if inherited == 0 {
+		t.Error("no implementation marks an agent instruction it inherits")
+	}
+}
+
 // The CEL reference lists the extension functions the environment enables.
 func TestCELReferenceListsExtensions(t *testing.T) {
 	t.Parallel()
