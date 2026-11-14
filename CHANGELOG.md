@@ -5,6 +5,8 @@ Format: Keep a Changelog. Versioning: Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-15
+
 ### Added
 
 - `fleetlint docs` generates `cli-reference.md`: every command and flag, the exit codes, and the environment variables fleetlint reads (plus the install script's `FLEETLINT_VERIFY`). A test fails when the code reads a variable the table lacks.
