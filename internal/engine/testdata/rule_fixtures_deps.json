@@ -135,6 +135,14 @@
    "pass": {
     "pom.xml": "<project><build><plugins><plugin><artifactId>license-maven-plugin</artifactId><configuration><failOnBlacklist>true</failOnBlacklist></configuration></plugin></plugins></build></project>\n"
    }
+  },
+  {
+   "fail": {
+    "build.gradle": "plugins {\n  id 'java'\n}\n"
+   },
+   "pass": {
+    "build.gradle": "plugins {\n  id 'java'\n  id 'app.cash.licensee' version '1.14.1'\n}\n\nlicensee {\n  allow('MIT')\n}\n"
+   }
   }
  ],
  "deps/license-check/kotlin": [
@@ -146,6 +154,25 @@
    "pass": {
     ".github/workflows/ci.yml": "on: push\njobs:\n  a:\n    steps:\n      - run: |\n          ./gradlew checkLicense\n",
     "build.gradle.kts": "plugins { kotlin(\"jvm\") version \"2.2.0\" }\n"
+   }
+  },
+  {
+   "fail": {
+    "build.gradle.kts": "plugins {\n  kotlin(\"jvm\") version \"2.2.0\"\n  id(\"app.cash.licensee\") version \"1.14.1\"\n}\n\nlicensee {\n  allow(\"Apache-2.0\")\n  violationAction(app.cash.licensee.ViolationAction.LOG)\n}\n"
+   },
+   "message": "no license check",
+   "pass": {
+    "build.gradle.kts": "plugins {\n  kotlin(\"jvm\") version \"2.2.0\"\n  id(\"app.cash.licensee\") version \"1.14.1\"\n}\n\nlicensee {\n  allow(\"Apache-2.0\")\n}\n"
+   }
+  },
+  {
+   "fail": {
+    "build.gradle.kts": "plugins {\n  kotlin(\"jvm\") version \"2.2.0\"\n  alias(libs.plugins.licensee) apply false\n}\n",
+    "gradle/libs.versions.toml": "[plugins]\nlicensee = { id = \"app.cash.licensee\", version = \"1.14.1\" }\n"
+   },
+   "pass": {
+    "build.gradle.kts": "plugins {\n  kotlin(\"jvm\") version \"2.2.0\"\n  alias(libs.plugins.licensee)\n}\n",
+    "gradle/libs.versions.toml": "[plugins]\nlicensee = { id = \"app.cash.licensee\", version = \"1.14.1\" }\n"
    }
   }
  ],

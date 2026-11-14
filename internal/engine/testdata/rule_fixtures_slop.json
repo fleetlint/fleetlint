@@ -158,6 +158,25 @@
       }
     }
   ],
+  "slop/narration-comments": [
+    {
+      "pass": {
+        "go.mod": "module x\n",
+        "a.go": "package a\n\n// Fixed-size frames: the protocol sends 512 bytes.\nconst Frame = 512\n\n// Page returns the page as requested by the caller.\nfunc Page() {}\n"
+      },
+      "fail": {
+        "go.mod": "module x\n",
+        "a.go": "package a\n\n// Fixed: off by one in the page count\nconst Limit = 50\n"
+      },
+      "message": "narrates a change"
+    },
+    {
+      "fail": {
+        "go.mod": "module x\n",
+        "retry.py": "# as requested by the user, retry twice\nRETRIES = 2\n"
+      }
+    }
+  ],
   "slop/placeholder-comments": [
     {
       "pass": {
