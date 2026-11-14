@@ -29,7 +29,7 @@
         "oci": {
           "type": "string",
           "minLength": 1,
-          "description": "The catalog version as a published artifact: <registry>/<repository>:<tag>, optionally @sha256:<digest> (ghcr.io/fleetlint/catalog:v0.1.0). Instead of version and repo. A tag of ghcr.io/fleetlint/catalog is verified against the catalog repository's signature; any other tag needs signers in the sources file, a digest needs none."
+          "description": "The catalog version as a published artifact: <registry>/<repository>:<tag>, optionally @sha256:<digest> (ghcr.io/fleetlint/catalog:v0.7.0). Instead of version and repo. A tag of ghcr.io/fleetlint/catalog is verified against the catalog repository's signature; any other tag needs signers in the sources file, a digest needs none."
         }
       },
       "oneOf": [

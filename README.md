@@ -14,7 +14,7 @@ On Linux and macOS, the install script puts the latest release into `~/.local/bi
 curl --proto '=https' --tlsv1.2 -fsSL https://fleetlint.org/install.sh | sh
 ```
 
-`sh -s -- v0.9.0 ~/bin` picks a version and a directory ([`scripts/install.sh`](scripts/install.sh)). With a package manager or a container:
+`sh -s -- <tag> ~/bin` picks a release and a directory ([`scripts/install.sh`](scripts/install.sh)). With a package manager or a container:
 
 ```sh
 brew install fleetlint/tap/fleetlint                     # macOS, Linux
