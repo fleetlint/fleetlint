@@ -479,9 +479,9 @@ type Loader struct {
 	// FetchGit reads one file from a git repository at a tag or commit; nil
 	// disables git catalogs.
 	FetchGit func(repoURL, rev, path string) ([]byte, error)
-	// FetchGitTree reads a directory (its files and its templates/ tree) at
-	// a tag or commit, so a git catalog can ship templates; nil means the
-	// catalog file alone is read through FetchGit.
+	// FetchGitTree reads a directory (its files and its templates/ and
+	// rules/ trees) at a tag or commit, so a git catalog can ship them; nil
+	// means the catalog file alone is read through FetchGit.
 	FetchGitTree func(repoURL, rev, dir string) (map[string][]byte, error)
 	// FetchCatalog provides a whole catalog repository at a tag or commit as
 	// a directory, with the commit it resolved to; nil disables pinning.

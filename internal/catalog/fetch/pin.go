@@ -23,8 +23,9 @@ const (
 	digestFile = "DIGEST"
 )
 
-// pinnedDirs are the parts of a catalog repository a run reads.
-var pinnedDirs = []string{"presets", "templates", "rules"}
+// pinnedPaths are the parts of a catalog repository a run reads: what the
+// catalog module embeds. An older version without some of them still loads.
+var pinnedPaths = []string{"presets", "templates", "rules", "stacks", "artifacts", "aliases.yaml"}
 
 // maxPinnedBytes bounds one cached catalog version.
 const maxPinnedBytes = 64 << 20
@@ -97,7 +98,7 @@ func WriteCacheEntry(dest string, files map[string][]byte, commit string) error 
 	defer os.RemoveAll(tmp) //nolint:errcheck // best-effort cleanup; after a successful rename there is nothing left
 	all := maps.Clone(files)
 	all[commitFile] = []byte(commit + "\n")
-	all[digestFile] = []byte(treeDigest(files) + "\n")
+	all[digestFile] = []byte(entryDigest(files) + "\n")
 	if err := writeTree(tmp, all); err != nil {
 		return err
 	}
@@ -145,7 +146,7 @@ func readCacheEntry(dir string) (string, error) {
 	}
 	files := map[string][]byte{}
 	fsys := os.DirFS(dir)
-	for _, top := range pinnedDirs {
+	for _, top := range pinnedPaths {
 		err := fs.WalkDir(fsys, top, func(p string, d fs.DirEntry, err error) error {
 			switch {
 			case errors.Is(err, fs.ErrNotExist) && p == top:
@@ -164,10 +165,17 @@ func readCacheEntry(dir string) (string, error) {
 			return "", err
 		}
 	}
-	if treeDigest(files) != strings.TrimSpace(string(want)) {
+	if entryDigest(files) != strings.TrimSpace(string(want)) {
 		return "", errors.New("cached catalog does not match its digest")
 	}
 	return strings.TrimSpace(string(commit)), nil
+}
+
+// entryDigest is what a cache entry records: its files and the paths they
+// were taken from, so an entry that read fewer paths is fetched again.
+func entryDigest(files map[string][]byte) string {
+	sum := sha256.Sum256([]byte(strings.Join(pinnedPaths, ",") + "\n" + treeDigest(files)))
+	return hex.EncodeToString(sum[:])
 }
 
 // treeDigest hashes file names and contents in a fixed order.
@@ -185,9 +193,9 @@ func treeDigest(files map[string][]byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// fetchCatalogTree reads presets/, templates/ and rules/ of one revision
-// from git's objects, without a checkout, so no filter or hook configured
-// for the user runs on fetched content, and stores them in dest.
+// fetchCatalogTree reads the pinned paths of one revision from git's
+// objects, without a checkout, so no filter or hook configured for the user
+// runs on fetched content, and stores them in dest.
 func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitFetchTimeout)
 	defer cancel()
@@ -204,7 +212,7 @@ func fetchCatalogTree(ctx context.Context, repoURL, rev, dest string) (string, e
 		return "", err
 	}
 	commit := strings.TrimSpace(string(out))
-	listing, err := gitOut(ctx, tmp, append([]string{"ls-tree", "-r", "-z", "--name-only", "FETCH_HEAD", "--"}, pinnedDirs...)...)
+	listing, err := gitOut(ctx, tmp, append([]string{"ls-tree", "-r", "-z", "--name-only", "FETCH_HEAD", "--"}, pinnedPaths...)...)
 	if err != nil {
 		return "", err
 	}

@@ -71,6 +71,50 @@ func TestPinFetch(t *testing.T) {
 	}
 }
 
+// A pin keeps everything the catalog module embeds. An entry an earlier
+// fleetlint wrote from fewer paths is incomplete and fetched again.
+func TestPinFetchKeepsWhatTheCatalogEmbeds(t *testing.T) {
+	t.Parallel()
+	repoDir, commit := gitRepo(t, map[string]string{
+		"presets/p.yaml": "p\n", "rules/r.yaml": "r\n", "templates/t.md": "t\n",
+		"stacks/go.yaml": "s\n", "artifacts/image.yaml": "a\n", "aliases.yaml": "x: [y]\n", "README.md": "no\n",
+	})
+	cacheRoot := t.TempDir()
+	fetch := PinFetch(context.Background(), cacheRoot)
+	dir, _, err := fetch(repoDir, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"presets/p.yaml", "rules/r.yaml", "templates/t.md", "stacks/go.yaml", "artifacts/image.yaml", "aliases.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "README.md")); err == nil {
+		t.Error("README.md was cached")
+	}
+	// What an earlier fleetlint left: presets, templates and rules, digested alone.
+	old := map[string][]byte{"presets/p.yaml": []byte("p\n"), "rules/r.yaml": []byte("r\n"), "templates/t.md": []byte("t\n")}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteCacheEntry(dir, old, commit); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, digestFile), []byte(treeDigest(old)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readCacheEntry(dir); err == nil {
+		t.Fatal("an entry from fewer paths is incomplete")
+	}
+	if _, _, err := fetch(repoDir, "v1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "artifacts/image.yaml")); err != nil {
+		t.Errorf("the incomplete entry is fetched again: %v", err)
+	}
+}
+
 func TestPinFetchNeedsPresets(t *testing.T) {
 	t.Parallel()
 	repoDir, _ := gitRepo(t, map[string]string{"catalog.yaml": "x\n", "templates/a.md": "a\n"})
