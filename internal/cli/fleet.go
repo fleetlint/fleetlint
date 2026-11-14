@@ -32,7 +32,8 @@ func fleetCmd(g *globals, code *int) *cobra.Command {
 		Short: "Check many repositories and write one report (matrix, per-repo tasks, history)",
 		Long: `fleet reads a fleet file (--repos) and/or repository paths given as arguments,
 runs check in each, and writes fleet.html, fleet.md, fleet.json, actions/<repo>.md
-and history/<timestamp>.json into --out. URL entries are cloned into --cache.
+and history/<timestamp>.json into --out. URL entries are cloned into --cache,
+else the fleet file's cache:, else the user cache directory (fleetlint/repos).
 --from lists an owner's repositories through the forge API (GITHUB_TOKEN,
 GITEA_TOKEN or GITLAB_TOKEN from the environment, if set) and clones them over
 https with the same token; without one, public repositories only. --discover walks a
@@ -52,7 +53,7 @@ clones (url entries, --from) run that code only with --deep-clones.`,
 	cmd.Flags().StringArrayVar(&f.discoverRoots, "discover", nil, fmt.Sprintf("find git repositories under a directory, up to %d levels down (repeatable)", fleet.DiscoverDepth))
 	cmd.Flags().StringArrayVar(&f.exclude, "exclude", nil, "with --discover: skip paths matching this glob, relative to the directory (e.g. '*/third_party/*'; repeatable)")
 	cmd.Flags().StringVar(&f.out, "out", "fleet-report", "output directory")
-	cmd.Flags().StringVar(&f.cache, "cache", "", "directory for cloned url entries (overrides the fleet file)")
+	cmd.Flags().StringVar(&f.cache, "cache", "", "directory for cloned url entries (overrides the fleet file; default: the user cache directory)")
 	cmd.Flags().BoolVar(&f.update, "update", false, "git pull cached clones before checking")
 	cmd.Flags().BoolVar(&f.fail, "fail", false, "exit 1 if any repository has errors")
 	cmd.Flags().IntVar(&f.jobs, "jobs", 4, "check this many repositories at once")

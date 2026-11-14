@@ -590,7 +590,10 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		return e.Path, nil
 	}
 	if cache == "" {
-		return "", errors.New("a cache directory is required for url entries (fleet file `cache:` or --cache)")
+		var err error
+		if cache, err = DefaultCache(); err != nil {
+			return "", err
+		}
 	}
 	if !validCloneURL(e.URL) || hasCredentials(e.URL) {
 		return "", fmt.Errorf("url %q must start with https://, ssh:// or git@ (or be an absolute local path), without credentials", redact(e.URL))
@@ -617,6 +620,16 @@ func materialize(ctx context.Context, e Entry, cache string, update bool) (strin
 		}
 	}
 	return dest, nil
+}
+
+// DefaultCache is where url entries are cloned when neither the fleet file's
+// `cache:` nor --cache names a directory.
+func DefaultCache() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("no cache directory for clones (set the fleet file's cache: or --cache): %w", err)
+	}
+	return filepath.Join(dir, "fleetlint", "repos"), nil
 }
 
 // cacheDir is cache/<host>/<path segments>-<hash> for a clone URL, each

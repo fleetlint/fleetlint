@@ -135,7 +135,7 @@ func absPath(p string) string {
 }
 
 // addDiscovered appends the repositories of each --from source and makes
-// sure the run has something to check and somewhere to clone into.
+// sure the run has something to check.
 func addDiscovered(ctx context.Context, spec *Spec, from []string, client forge.Client) error {
 	names := map[string]bool{}
 	for _, e := range spec.Repos {
@@ -156,13 +156,6 @@ func addDiscovered(ctx context.Context, spec *Spec, from []string, client forge.
 	}
 	if len(spec.Repos) == 0 {
 		return errors.New("no repositories: pass paths, --repos fleet.yaml, --discover <dir> or --from github:<owner>")
-	}
-	if len(from) > 0 && spec.Cache == "" {
-		dir, err := os.UserCacheDir()
-		if err != nil {
-			return fmt.Errorf("no cache directory for clones (set --cache): %w", err)
-		}
-		spec.Cache = filepath.Join(dir, "fleetlint", "repos")
 	}
 	return nil
 }

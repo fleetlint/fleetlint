@@ -164,10 +164,25 @@ func TestURLEntryIsClonedIntoCache(t *testing.T) {
 	if err != nil || rep2.Repos[0].Err != "" {
 		t.Fatalf("update run: %v %+v", err, rep2.Repos[0])
 	}
-	noCache := &fleet.Spec{Version: 1, Repos: []fleet.Entry{{URL: origin.Root}}}
-	rep3, _ := fleet.Run(context.Background(), noCache, fleet.Options{})
-	if !strings.Contains(rep3.Repos[0].Err, "cache directory is required") {
-		t.Fatalf("url without cache must report an error: %+v", rep3.Repos[0])
+}
+
+// Without cache: or --cache a url entry is cloned into the user cache
+// directory, as --from does.
+func TestURLEntryDefaultsToTheUserCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CACHE_HOME", home)
+	t.Setenv("HOME", home)
+	origin := testutil.GitFixture(t, map[string]string{"go.mod": "module z\n", ".fleetlint.yaml": "version: 1\nextends: [fleetlint:minimal]\n"})
+	rep, err := fleet.Run(context.Background(), &fleet.Spec{Version: 1, Repos: []fleet.Entry{{URL: origin.Root, Name: "cloned"}}}, fleet.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := fleet.DefaultCache()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rr := rep.Repos[0]; rr.Err != "" || !strings.HasPrefix(rr.Root, want+string(filepath.Separator)) {
+		t.Fatalf("cloned into %q, want below %q: %s", rr.Root, want, rr.Err)
 	}
 }
 
