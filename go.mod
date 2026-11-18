@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.4
 
 require (
-	cel.dev/cel-go v0.33.2
+	cel.dev/cel-go v0.33.4
 	github.com/BurntSushi/toml v1.6.0
 	github.com/fleetlint/catalog v0.8.0
 	github.com/goccy/go-yaml v1.19.2
