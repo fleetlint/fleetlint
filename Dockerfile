@@ -1,6 +1,6 @@
 # The release image: GoReleaser puts the binary for each platform at
 # $TARGETPLATFORM/fleetlint. fleetlint runs git, so the base has it.
-FROM cgr.dev/chainguard/git:latest@sha256:592c8fc588840f4c16d91b38b4be07d71c56db954a3f4e20ad384841cd993720
+FROM cgr.dev/chainguard/git:latest@sha256:b96434395210106ff2c2db440bae340dc79ce8cdaea276ee7f6dbb21c64bdec2
 ARG TARGETPLATFORM
 COPY $TARGETPLATFORM/fleetlint /usr/bin/fleetlint
 # A mounted checkout belongs to another user; git refuses it unless trusted.
